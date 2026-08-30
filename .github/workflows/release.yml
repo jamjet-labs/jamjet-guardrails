@@ -15,8 +15,8 @@ jobs:
       # at a single thing this workflow is here to check.
       contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           # 3.11 or later, because the tag check below uses tomllib. This is
           # not a support claim: the wheel is py3-none-any and the versions
