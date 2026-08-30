@@ -1,0 +1,664 @@
+{
+  "results": [
+    {
+      "detector": "pii",
+      "detector_version": "0.1.0",
+      "corpus_name": "pii/in-repo",
+      "corpus_source": "in-repo",
+      "corpus_version": "06fb3b601aba",
+      "cases": 81,
+      "precision": 0.6308,
+      "recall": 0.8723,
+      "f1": 0.7321,
+      "true_positives": 41,
+      "false_positives": 24,
+      "false_negatives": 6,
+      "decision_mismatches": 24,
+      "per_type": {
+        "CREDIT_CARD": {
+          "precision": 0.6667,
+          "recall": 0.8333,
+          "true_positives": 10,
+          "false_positives": 5,
+          "false_negatives": 2
+        },
+        "EMAIL": {
+          "precision": 0.4516,
+          "recall": 0.875,
+          "true_positives": 14,
+          "false_positives": 17,
+          "false_negatives": 2
+        },
+        "PHONE_NUMBER": {
+          "precision": 0.8182,
+          "recall": 1.0,
+          "true_positives": 9,
+          "false_positives": 2,
+          "false_negatives": 0
+        },
+        "US_SSN": {
+          "precision": 1.0,
+          "recall": 0.8,
+          "true_positives": 8,
+          "false_positives": 0,
+          "false_negatives": 2
+        }
+      },
+      "failures": [
+        {
+          "case_id": "pii-0031",
+          "kind": "decision_mismatch",
+          "expected": "redact",
+          "predicted": "allow"
+        },
+        {
+          "case_id": "pii-0032",
+          "kind": "decision_mismatch",
+          "expected": "redact",
+          "predicted": "allow"
+        },
+        {
+          "case_id": "pii-0035",
+          "kind": "decision_mismatch",
+          "expected": "redact",
+          "predicted": "allow"
+        },
+        {
+          "case_id": "pii-0060",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "redact"
+        },
+        {
+          "case_id": "pii-0062",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "redact"
+        },
+        {
+          "case_id": "pii-0063",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "redact"
+        },
+        {
+          "case_id": "pii-0064",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "redact"
+        },
+        {
+          "case_id": "pii-0065",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "redact"
+        },
+        {
+          "case_id": "pii-0066",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "redact"
+        },
+        {
+          "case_id": "pii-0067",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "redact"
+        },
+        {
+          "case_id": "pii-0068",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "redact"
+        },
+        {
+          "case_id": "pii-0069",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "redact"
+        },
+        {
+          "case_id": "pii-0070",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "redact"
+        },
+        {
+          "case_id": "pii-0071",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "redact"
+        },
+        {
+          "case_id": "pii-0072",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "redact"
+        },
+        {
+          "case_id": "pii-0073",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "redact"
+        },
+        {
+          "case_id": "pii-0074",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "redact"
+        },
+        {
+          "case_id": "pii-0075",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "redact"
+        },
+        {
+          "case_id": "pii-0076",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "redact"
+        },
+        {
+          "case_id": "pii-0077",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "redact"
+        },
+        {
+          "case_id": "pii-0078",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "redact"
+        },
+        {
+          "case_id": "pii-0079",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "redact"
+        },
+        {
+          "case_id": "pii-0080",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "redact"
+        },
+        {
+          "case_id": "pii-0081",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "redact"
+        },
+        {
+          "case_id": "pii-0031",
+          "kind": "false_negative",
+          "expected": "US_SSN@(4, 13)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "pii-0032",
+          "kind": "false_negative",
+          "expected": "US_SSN@(4, 15)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "pii-0033",
+          "kind": "false_negative",
+          "expected": "CREDIT_CARD@(5, 24)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "pii-0034",
+          "kind": "false_negative",
+          "expected": "CREDIT_CARD@(11, 30)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "pii-0035",
+          "kind": "false_negative",
+          "expected": "EMAIL@(5, 23)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "pii-0036",
+          "kind": "false_negative",
+          "expected": "EMAIL@(5, 32)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "pii-0033",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "CREDIT_CARD@(10, 29)"
+        },
+        {
+          "case_id": "pii-0034",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "CREDIT_CARD@(6, 25)"
+        },
+        {
+          "case_id": "pii-0036",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "EMAIL@(5, 26)"
+        },
+        {
+          "case_id": "pii-0060",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "PHONE_NUMBER@(9, 21)"
+        },
+        {
+          "case_id": "pii-0062",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "CREDIT_CARD@(6, 23)"
+        },
+        {
+          "case_id": "pii-0063",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "CREDIT_CARD@(7, 23)"
+        },
+        {
+          "case_id": "pii-0064",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "EMAIL@(6, 16)"
+        },
+        {
+          "case_id": "pii-0065",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "EMAIL@(7, 24)"
+        },
+        {
+          "case_id": "pii-0066",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "EMAIL@(8, 21)"
+        },
+        {
+          "case_id": "pii-0067",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "EMAIL@(7, 25)"
+        },
+        {
+          "case_id": "pii-0068",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "EMAIL@(10, 23)"
+        },
+        {
+          "case_id": "pii-0069",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "EMAIL@(4, 17)"
+        },
+        {
+          "case_id": "pii-0070",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "EMAIL@(11, 24)"
+        },
+        {
+          "case_id": "pii-0071",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "EMAIL@(8, 24)"
+        },
+        {
+          "case_id": "pii-0072",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "EMAIL@(4, 16)"
+        },
+        {
+          "case_id": "pii-0073",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "EMAIL@(6, 12)"
+        },
+        {
+          "case_id": "pii-0074",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "EMAIL@(8, 25)"
+        },
+        {
+          "case_id": "pii-0075",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "EMAIL@(7, 18)"
+        },
+        {
+          "case_id": "pii-0076",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "EMAIL@(11, 25)"
+        },
+        {
+          "case_id": "pii-0077",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "EMAIL@(9, 24)"
+        },
+        {
+          "case_id": "pii-0078",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "EMAIL@(11, 21)"
+        },
+        {
+          "case_id": "pii-0079",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "EMAIL@(7, 22)"
+        },
+        {
+          "case_id": "pii-0080",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "CREDIT_CARD@(5, 20)"
+        },
+        {
+          "case_id": "pii-0081",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "PHONE_NUMBER@(6, 18)"
+        }
+      ]
+    },
+    {
+      "detector": "pii",
+      "detector_version": "0.1.0",
+      "corpus_name": "pii/third-party",
+      "corpus_source": "nvidia/Nemotron-PII@b70ffaf",
+      "corpus_version": "c25ef538d677",
+      "cases": 300,
+      "precision": 0.9605,
+      "recall": 0.9971,
+      "f1": 0.9784,
+      "true_positives": 340,
+      "false_positives": 14,
+      "false_negatives": 1,
+      "decision_mismatches": 6,
+      "per_type": {
+        "CREDIT_CARD": {
+          "precision": 0.92,
+          "recall": 1.0,
+          "true_positives": 46,
+          "false_positives": 4,
+          "false_negatives": 0
+        },
+        "EMAIL": {
+          "precision": 0.9936,
+          "recall": 1.0,
+          "true_positives": 155,
+          "false_positives": 1,
+          "false_negatives": 0
+        },
+        "PHONE_NUMBER": {
+          "precision": 0.9914,
+          "recall": 1.0,
+          "true_positives": 115,
+          "false_positives": 1,
+          "false_negatives": 0
+        },
+        "US_SSN": {
+          "precision": 0.75,
+          "recall": 0.96,
+          "true_positives": 24,
+          "false_positives": 8,
+          "false_negatives": 1
+        }
+      },
+      "failures": [
+        {
+          "case_id": "nemotron-us-079d8fa7f2724df5bd1a9e89fce28309",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "redact"
+        },
+        {
+          "case_id": "nemotron-us-84466b15421d4d70bc4ef197d398ab2b",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "redact"
+        },
+        {
+          "case_id": "nemotron-us-c39319589b4c4ea3b8e544daa13f16d7",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "redact"
+        },
+        {
+          "case_id": "nemotron-us-661cd7fadf4540b694f3776e00696f87",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "redact"
+        },
+        {
+          "case_id": "nemotron-us-0d5de439e848400396da9d25efaf92aa",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "redact"
+        },
+        {
+          "case_id": "nemotron-us-04b2d894369f49599885722cb98be9df",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "redact"
+        },
+        {
+          "case_id": "nemotron-us-4df7a6418fb348849f11eb24f73acb51",
+          "kind": "false_negative",
+          "expected": "US_SSN@(839, 851)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "nemotron-us-bc602353a8d240589dae646051840ed2",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "CREDIT_CARD@(352, 371)"
+        },
+        {
+          "case_id": "nemotron-us-559d31e001e746849bdd3c51b1f41abd",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "CREDIT_CARD@(388, 407)"
+        },
+        {
+          "case_id": "nemotron-us-4df7a6418fb348849f11eb24f73acb51",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "US_SSN@(710, 721)"
+        },
+        {
+          "case_id": "nemotron-us-4df7a6418fb348849f11eb24f73acb51",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "US_SSN@(839, 850)"
+        },
+        {
+          "case_id": "nemotron-us-654dcbb5a8ac4281bc1d1a1bbae6c2f3",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "CREDIT_CARD@(46, 65)"
+        },
+        {
+          "case_id": "nemotron-us-654dcbb5a8ac4281bc1d1a1bbae6c2f3",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "CREDIT_CARD@(324, 343)"
+        },
+        {
+          "case_id": "nemotron-us-b5c05d09ce3d4116a0307c946ed30663",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "US_SSN@(105, 116)"
+        },
+        {
+          "case_id": "nemotron-us-6d9768f5a76d47988f0ddba06559ca6e",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "US_SSN@(355, 366)"
+        },
+        {
+          "case_id": "nemotron-us-079d8fa7f2724df5bd1a9e89fce28309",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "EMAIL@(169, 195)"
+        },
+        {
+          "case_id": "nemotron-us-84466b15421d4d70bc4ef197d398ab2b",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "US_SSN@(121, 132)"
+        },
+        {
+          "case_id": "nemotron-us-c39319589b4c4ea3b8e544daa13f16d7",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "PHONE_NUMBER@(331, 343)"
+        },
+        {
+          "case_id": "nemotron-us-661cd7fadf4540b694f3776e00696f87",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "US_SSN@(367, 378)"
+        },
+        {
+          "case_id": "nemotron-us-0d5de439e848400396da9d25efaf92aa",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "US_SSN@(1120, 1131)"
+        },
+        {
+          "case_id": "nemotron-us-04b2d894369f49599885722cb98be9df",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "US_SSN@(99, 110)"
+        }
+      ]
+    },
+    {
+      "detector": "secrets",
+      "detector_version": "0.1.0",
+      "corpus_name": "secrets/in-repo",
+      "corpus_source": "in-repo",
+      "corpus_version": "e9e0ed70dc37",
+      "cases": 39,
+      "precision": 0.9565,
+      "recall": 0.88,
+      "f1": 0.9167,
+      "true_positives": 22,
+      "false_positives": 1,
+      "false_negatives": 3,
+      "decision_mismatches": 4,
+      "per_type": {
+        "ANTHROPIC_KEY": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "true_positives": 2,
+          "false_positives": 0,
+          "false_negatives": 0
+        },
+        "AWS_ACCESS_KEY": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "true_positives": 6,
+          "false_positives": 0,
+          "false_negatives": 0
+        },
+        "GITHUB_TOKEN": {
+          "precision": 1.0,
+          "recall": 0.75,
+          "true_positives": 3,
+          "false_positives": 0,
+          "false_negatives": 1
+        },
+        "JWT": {
+          "precision": 1.0,
+          "recall": 0.6667,
+          "true_positives": 2,
+          "false_positives": 0,
+          "false_negatives": 1
+        },
+        "OPENAI_KEY": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "true_positives": 3,
+          "false_positives": 0,
+          "false_negatives": 0
+        },
+        "PRIVATE_KEY": {
+          "precision": 0.75,
+          "recall": 1.0,
+          "true_positives": 3,
+          "false_positives": 1,
+          "false_negatives": 0
+        },
+        "SLACK_TOKEN": {
+          "precision": 1.0,
+          "recall": 0.75,
+          "true_positives": 3,
+          "false_positives": 0,
+          "false_negatives": 1
+        }
+      },
+      "failures": [
+        {
+          "case_id": "sec-0020",
+          "kind": "decision_mismatch",
+          "expected": "redact",
+          "predicted": "allow"
+        },
+        {
+          "case_id": "sec-0021",
+          "kind": "decision_mismatch",
+          "expected": "redact",
+          "predicted": "allow"
+        },
+        {
+          "case_id": "sec-0022",
+          "kind": "decision_mismatch",
+          "expected": "redact",
+          "predicted": "allow"
+        },
+        {
+          "case_id": "sec-0034",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "redact"
+        },
+        {
+          "case_id": "sec-0020",
+          "kind": "false_negative",
+          "expected": "GITHUB_TOKEN@(4, 97)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "sec-0021",
+          "kind": "false_negative",
+          "expected": "SLACK_TOKEN@(10, 62)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "sec-0022",
+          "kind": "false_negative",
+          "expected": "JWT@(22, 4306)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "sec-0034",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "PRIVATE_KEY@(14, 41)"
+        }
+      ]
+    }
+  ]
+}

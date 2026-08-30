@@ -1,0 +1,15 @@
+__pycache__/
+*.egg-info/
+dist/
+build/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.claude/
+.superpowers/
+docs/superpowers/
+CLAUDE.md
+progress-tracker.md
+REQUIREMENTS.md
+docs/specs/

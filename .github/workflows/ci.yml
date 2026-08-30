@@ -1,0 +1,76 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: ruff format --check .
+      # Bare `mypy`, no path: a path argument overrides [tool.mypy] files and
+      # would silently drop tests/ from the check.
+      - run: mypy
+      - run: pytest -q
+      # No `eval` subcommand. The console script takes flags only, and
+      # `jamjet-guardrails eval ...` exits 2 with "unrecognized arguments: eval"
+      # having measured nothing. That direction is at least loud, but the step
+      # would be red on every run for a reason that has nothing to do with a
+      # benchmark, which is its own way of making a gate stop meaning anything.
+      #
+      # Runs on EVERY matrix leg, and every leg regenerates and diffs the same
+      # two files. That is safe because generation is deterministic: the report
+      # sorts its rows explicitly rather than taking filesystem order, and the
+      # artifacts were compared byte for byte across 3.10.20, 3.13.2 and 3.14.5
+      # and across PYTHONHASHSEED 0, 1 and 12345.
+      #
+      # Running it on every leg anyway is the point rather than the cost. That
+      # byte-identity is a property of today's detectors and today's report, not
+      # a guarantee: a regex, a dict iteration or a float repr that differs by
+      # version would move a published number on one leg only. Measuring it once
+      # here proves it holds now; running every leg is what keeps proving it.
+      - name: Benchmarks must not regress
+        run: |
+          jamjet-guardrails \
+            --corpora-dir corpora \
+            --json benchmarks.json \
+            --md BENCHMARKS.md \
+            --gate corpora/baselines.json
+      # What stops the published numbers drifting from the code. The step above
+      # has just rewritten both artifacts from a fresh measurement; if a change
+      # moved a score, they now differ from what is committed and this fails
+      # until the new numbers are committed in the same pull request.
+      #
+      # `git ls-files --error-unmatch` FIRST, and the order is load-bearing:
+      # `git diff --exit-code` reports no difference for an UNTRACKED file, so
+      # an artifact that was never committed, or one that someone added to
+      # .gitignore, would pass the diff in silence. Asserting both paths are
+      # tracked is what makes the diff mean anything.
+      - name: Published artifacts must be committed and current
+        run: |
+          git ls-files --error-unmatch benchmarks.json BENCHMARKS.md
+          git diff --exit-code benchmarks.json BENCHMARKS.md
+      # The README quotes the headline table, so the README is a published
+      # number too, and the two steps above cannot see it: they gate the SCORES
+      # and they diff the generated files, and a README left behind by both
+      # still shows figures the code no longer produces. It is checked against
+      # the file that was regenerated two steps up rather than against the
+      # committed one, so a stale README cannot be excused by a stale artifact.
+      #
+      # `test -s` on the extraction, and it is not decoration. Both sides are
+      # cut out by the same sed address, so a change to the table's first
+      # column heading empties BOTH files, and `diff` of two empty files is a
+      # clean exit: the step would report success having compared nothing.
+      - name: README must quote the current headline table
+        run: |
+          sed -n '/^| Check |/,/^$/p' BENCHMARKS.md | sed '/^$/d' > "$RUNNER_TEMP/generated.md"
+          sed -n '/^| Check |/,/^$/p' README.md | sed '/^$/d' > "$RUNNER_TEMP/readme.md"
+          test -s "$RUNNER_TEMP/generated.md"
+          diff -u "$RUNNER_TEMP/generated.md" "$RUNNER_TEMP/readme.md"

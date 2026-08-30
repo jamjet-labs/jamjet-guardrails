@@ -1,0 +1,111 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "jamjet-guardrails"
+version = "0.1.0"
+description = "Content guardrails for LLM applications, with published precision and recall and provenance on every decision."
+readme = "README.md"
+# `Apache-2.0 AND CC-BY-4.0`, not `Apache-2.0`, and the AND is about the SDIST.
+# The code is Apache-2.0 throughout. The sdist also carries
+# `corpora/pii/third-party.jsonl`, 300 rows derived from nvidia/Nemotron-PII
+# under CC-BY-4.0, so the distribution as a whole is a combination and the SPDX
+# expression has to say so. `corpora/NOTICE.md` travels beside it and carries
+# the attribution, so the legal chain held either way; what did not hold was
+# the licence FIELD, which is the one line most consumers read.
+#
+# This document argues the same point against someone else. `docs/conformance.md`
+# rejects two otherwise-ideal corpora because "an Apache-2.0 tag downstream does
+# not cure a share-alike upstream, and no licence field anywhere in that chain
+# reveals it". A project that says that and then ships a CC-BY corpus under a
+# bare `Apache-2.0` has made the argument and not applied it to itself.
+#
+# The alternative was to drop `corpora/` from the sdist. Rejected: the sdist
+# ships the tests, and the tests ARE the corpora for anything that scores.
+license = "Apache-2.0 AND CC-BY-4.0"
+requires-python = ">=3.10"
+dependencies = []
+authors = [{ name = "Sunil Prakash" }]
+keywords = ["llm", "guardrails", "pii", "redaction", "secrets", "safety"]
+# Every "Programming Language :: Python" entry here is a support claim, and
+# tests/test_packaging.py holds it to the CI matrix: a version claimed and not
+# tested is a claim we cannot back, shown to everyone who opens the PyPI page.
+# 3.11 and 3.12 were added to the matrix rather than dropped from this list,
+# because `requires-python = ">=3.10"` lets pip install onto them either way.
+#
+# There is deliberately NO "License :: OSI Approved" classifier. The SPDX
+# `license` field above is authoritative under PEP 639 and hatchling emits it
+# verbatim as `License-Expression` in Metadata-Version 2.5, which is where a
+# consumer reads the licence from. A duplicate classifier is the deprecated
+# spelling of the same fact and can only disagree with it.
+#
+# Nothing local enforces that. Measured rather than assumed: adding the
+# classifier back builds cleanly under hatchling 1.32.0 and passes `twine
+# check`. It is left out on the merits, not because a tool refuses it.
+#
+# "Typing :: Typed" is a claim too, and py.typed below is what makes it true.
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Security",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/jamjet-labs/jamjet-guardrails"
+Repository = "https://github.com/jamjet-labs/jamjet-guardrails"
+Issues = "https://github.com/jamjet-labs/jamjet-guardrails/issues"
+Benchmarks = "https://github.com/jamjet-labs/jamjet-guardrails/blob/main/BENCHMARKS.md"
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.11"]
+
+[project.scripts]
+jamjet-guardrails = "jamjet_guardrails.eval.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/jamjet_guardrails"]
+# PEP 561. Without this marker in the BUILT distribution, a consumer's type
+# checker must ignore this package entirely: downstream `mypy --strict` reports
+# import-untyped and every symbol degrades to Any, which disables exactly the
+# static checking `Kind`, `Direction` and the `Guardrail` protocol exist to
+# provide. This repo's own gate cannot see that, because `mypy` reads the source
+# tree rather than an installed distribution.
+#
+# This line is NOT what puts the marker in the wheel, and saying so matters
+# because it changes where the real guard has to live. Measured on hatchling
+# 1.32.0: delete the line, rebuild, and py.typed is still in the wheel, because
+# it sits inside the package directory and nothing excludes it. The line states
+# the requirement so that a later exclusion rule cannot drop it in silence. What
+# actually checks the shipped artifact is the release workflow, which asserts
+# py.typed is inside the wheel before anything is published.
+artifacts = ["src/jamjet_guardrails/py.typed"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+# Ruff >=0.16 includes "*.md" by default and reformats Python blocks inside it.
+# Documentation snippets are illustrative, not source; keep ruff to real Python.
+include = ["*.py", "*.pyi", "**/pyproject.toml"]
+
+[tool.mypy]
+strict = true
+# Tests too, not just src. The doubles annotate every protocol member because a
+# bare `kind = "constraint"` infers `str` and does not satisfy Guardrail -- an
+# annotation nothing checks is a comment. Note that a path argument on the mypy
+# command line OVERRIDES this list, so CI runs a bare `mypy`.
+files = ["src", "tests"]
+# Typecheck against the declared floor, not whatever interpreter happens to run.
+# Typeshed's version gates then catch stdlib used above the supported minimum.
+python_version = "3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

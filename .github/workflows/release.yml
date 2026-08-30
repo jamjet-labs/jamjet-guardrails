@@ -1,0 +1,59 @@
+name: Release
+on:
+  push:
+    tags: ["v*"]
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      # OIDC trusted publisher; no API token in secrets.
+      id-token: write
+      # Named explicitly because naming ANY scope sets every unnamed one to
+      # none, and actions/checkout authenticates with the job token. With
+      # id-token alone the job fails at the first step, before it has looked
+      # at a single thing this workflow is here to check.
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          # 3.11 or later, because the tag check below uses tomllib. This is
+          # not a support claim: the wheel is py3-none-any and the versions
+          # this package supports are the ones ci.yml runs.
+          python-version: "3.11"
+      - run: pip install -e ".[dev]"
+      # A tag push also triggers ci.yml, but the two jobs are independent and
+      # nothing makes this one wait for that one. Without this step a red test
+      # suite and a successful publish can happen at the same moment, and only
+      # one of them is reversible.
+      - run: pytest -q
+      - name: Tag must match the packaged version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          VER=$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          test "$TAG" = "$VER" || { echo "tag $TAG != pyproject version $VER"; exit 1; }
+      - run: pip install build
+      - run: python -m build
+      - name: Exactly one wheel and one sdist
+        run: |
+          test "$(ls dist/*.whl | wc -l)" -eq 1
+          test "$(ls dist/*.tar.gz | wc -l)" -eq 1
+      # The Typing :: Typed classifier is a claim about the artefact being
+      # uploaded, and this is the only place anything looks inside it. The
+      # repository's own gate runs mypy over the source tree and the test suite
+      # runs against an editable install, so both see a marker in src/ whether
+      # or not the wheel carries one. PEP 561 says a consumer's type checker
+      # must ignore a package with no marker, so shipping without it silently
+      # turns every downstream symbol into Any.
+      - name: The wheel must carry the PEP 561 typing marker
+        run: |
+          python - <<'PY'
+          import glob, sys, zipfile
+          wheel = glob.glob("dist/*.whl")[0]
+          names = zipfile.ZipFile(wheel).namelist()
+          if "jamjet_guardrails/py.typed" not in names:
+              sys.exit(f"{wheel} ships no py.typed; the Typing :: Typed classifier would be false")
+          print(f"{wheel} carries jamjet_guardrails/py.typed")
+          PY
+      - uses: pypa/gh-action-pypi-publish@release/v1

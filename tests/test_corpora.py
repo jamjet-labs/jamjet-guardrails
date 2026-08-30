@@ -1,0 +1,430 @@
+"""The committed corpora: the data every published number is measured on.
+
+The brief's tests come first, verbatim apart from the annotations mypy strict
+needs. Everything after them guards the corpus CONTENT, which is the half a
+loader cannot check: that every type carries a positive, that the shapes an
+independent review measured are all labelled, and that a licence obligation
+which lives in a separate file is actually discharged there.
+
+The failure direction for a corpus is not "malformed". It is "shaped like the
+detector": a corpus that only holds cases the detector already handles publishes
+a number that measures nothing, and no loader, formatter or gate downstream can
+tell that from a good result.
+"""
+
+from pathlib import Path
+
+import pytest
+
+from jamjet_guardrails.detectors import build
+from jamjet_guardrails.detectors.pii import PII_TYPES
+from jamjet_guardrails.detectors.secrets import SECRET_TYPES
+from jamjet_guardrails.eval.corpus import Corpus, load_corpus
+from jamjet_guardrails.eval.metrics import evaluate
+from jamjet_guardrails.eval.report import to_markdown
+from jamjet_guardrails.types import Context
+
+# Read from the detector's own test module rather than copied. tests/ is not a
+# package, so pytest and mypy both see these as top-level modules; the import is
+# what keeps this file in step with a list that another task owns and adds to.
+from test_pii import _KNOWN_FALSE_POSITIVES, _NEW_FALSE_POSITIVES
+
+ROOT = Path(__file__).resolve().parent.parent
+CORPORA = ROOT / "corpora"
+
+EXPECTED = [("pii", "in-repo"), ("pii", "third-party"), ("secrets", "in-repo")]
+
+
+MINIMUM_CASES = {"in-repo": 30, "third-party": 20}
+
+
+@pytest.mark.parametrize(("check", "source"), EXPECTED)
+def test_corpus_exists_and_loads(check: str, source: str) -> None:
+    corpus = load_corpus(CORPORA / check / f"{source}.jsonl", name=f"{check}/{source}")
+    floor = MINIMUM_CASES[source]
+    assert len(corpus.cases) >= floor, (
+        f"{check}/{source} has {len(corpus.cases)} cases; a corpus under {floor} "
+        "cannot support a published number"
+    )
+
+
+@pytest.mark.parametrize(("check", "source"), EXPECTED)
+def test_decision_and_findings_agree(check: str, source: str) -> None:
+    """For a constraint, redact means findings and allow means none."""
+    corpus = load_corpus(CORPORA / check / f"{source}.jsonl", name=f"{check}/{source}")
+    for case in corpus.cases:
+        if case.expect_decision == "allow":
+            assert not case.expect_findings, f"{case.id}: allow with findings"
+        else:
+            assert case.expect_findings, f"{case.id}: {case.expect_decision} with no findings"
+
+
+@pytest.mark.parametrize(("check", "source"), EXPECTED)
+def test_corpus_carries_positives(check: str, source: str) -> None:
+    """A negatives-only corpus makes both ratios vacuous: a detector that denies
+    everything scores 1.000 precision and 1.000 recall on it, because there is
+    nothing to miss and nothing it failed to predict. Only the wrong-decision
+    count would show the failure, and that one is not thresholded."""
+    corpus = load_corpus(CORPORA / check / f"{source}.jsonl", name=f"{check}/{source}")
+    positives = [c for c in corpus.cases if c.expect_decision != "allow"]
+    assert len(positives) >= len(corpus.cases) // 4, "at least a quarter must be positives"
+
+
+@pytest.mark.parametrize(("check", "source"), EXPECTED)
+def test_corpus_carries_negatives(check: str, source: str) -> None:
+    """Precision is only meaningful if the corpus contains things that must NOT match."""
+    corpus = load_corpus(CORPORA / check / f"{source}.jsonl", name=f"{check}/{source}")
+    negatives = [c for c in corpus.cases if c.expect_decision == "allow"]
+    assert len(negatives) >= len(corpus.cases) // 4, "at least a quarter must be negatives"
+
+
+# NOTE: the two tests this block used to contain, "every case records a licence"
+# and "every span slices inside its text", were deleted, not moved. Task 9's
+# loader now REFUSES a case missing either, so both tests became unable to fail:
+# they asserted a property the constructor guarantees. A test that cannot fail is
+# not coverage, it is decoration that reads as coverage. What still needs
+# asserting here is the corpus CONTENT (below), not its well-formedness.
+
+
+def test_the_detectors_actually_score_on_their_corpora() -> None:
+    """A smoke floor, not the published number. CI's gate is the real bar."""
+    for check, source in EXPECTED:
+        corpus = load_corpus(CORPORA / check / f"{source}.jsonl", name=f"{check}/{source}")
+        ev = evaluate(build(check), corpus)
+        assert ev.overall.precision > 0.5, f"{check}/{source} precision floor"
+        assert ev.overall.recall > 0.5, f"{check}/{source} recall floor"
+
+
+FNG_DOMAINS = frozenset(
+    {
+        "dayrep.com",
+        "armyspy.com",
+        "rhyta.com",
+        "cuvox.de",
+        "einrot.com",
+        "fleckens.hu",
+        "gustr.com",
+        "jourrapide.com",
+        "superrito.com",
+        "teleworm.us",
+    }
+)
+
+
+@pytest.mark.parametrize(("check", "source"), EXPECTED)
+def test_no_corpus_carries_share_alike_values(check: str, source: str) -> None:
+    """Fake Name Generator identities are GPLv3 / CC-BY-SA-3.0-US and cannot be
+    redistributed here. Two upstream datasets advertise MIT and carry them
+    anyway, so the licence tag is not the thing to check. These ten house
+    domains are diagnostic: Faker does not issue them.
+    """
+    corpus = load_corpus(CORPORA / check / f"{source}.jsonl", name=f"{check}/{source}")
+    hits = [
+        case.id for case in corpus.cases for domain in FNG_DOMAINS if domain in case.text.lower()
+    ]
+    assert hits == [], f"share-alike values in {check}/{source}: {hits[:5]}"
+
+
+# Everything below this line is content, not shape. None of it is in the brief.
+
+
+def _load(check: str, source: str) -> Corpus:
+    return load_corpus(CORPORA / check / f"{source}.jsonl", name=f"{check}/{source}")
+
+
+def _labelled_types(corpus: Corpus) -> set[str]:
+    return {finding.type for case in corpus.cases for finding in case.expect_findings}
+
+
+@pytest.mark.parametrize("pii_type", sorted(PII_TYPES))
+def test_every_pii_type_carries_a_positive_in_the_in_repo_corpus(pii_type: str) -> None:
+    """A type with no positive is a type whose recall is never measured.
+
+    Parametrised per type rather than asserted as a set difference, so a missing
+    type names itself instead of being one entry in a diff.
+    """
+    assert pii_type in _labelled_types(_load("pii", "in-repo"))
+
+
+@pytest.mark.parametrize("secret_type", sorted(SECRET_TYPES))
+def test_every_secret_type_carries_a_positive_in_the_in_repo_corpus(secret_type: str) -> None:
+    assert secret_type in _labelled_types(_load("secrets", "in-repo"))
+
+
+# Every shape the independent review measured, whether or not Task 18 closed it.
+# The closed ones guard against regression; the open ones are the honest false
+# negatives this project exists to publish, and they are the cases most likely to
+# be quietly dropped later, because dropping them raises the published recall.
+#
+# Each shape carries the TYPE its finding must have. Without it a shape covered
+# by a wrong-typed finding passed: "123 45 6789" labelled PHONE_NUMBER would have
+# satisfied a test whose whole subject is a US_SSN the detector does not match.
+#
+# Written as escapes for the two accented forms, so that an editor normalising
+# this file cannot turn the decomposed spelling into the composed one and leave
+# two identical entries claiming to cover both.
+_MEASURED_SHAPES = (
+    ("4111111111111111", "CREDIT_CARD"),
+    ("3782 822463 10005", "CREDIT_CARD"),
+    ("4000000000000000006", "CREDIT_CARD"),
+    ("(415) 555-2671", "PHONE_NUMBER"),
+    ("415.555.2671", "PHONE_NUMBER"),
+    ("+1-415-555-2671", "PHONE_NUMBER"),
+    ("+14155552671", "PHONE_NUMBER"),
+    ("jose\u0301@example.com", "EMAIL"),  # decomposed: e then U+0301
+    ("jos\u00e9@example.com", "EMAIL"),  # composed: U+00E9
+    ("alice@example.\u0440\u0444", "EMAIL"),  # the Cyrillic .rf ccTLD
+    ("ssn-123-45-6789", "US_SSN"),
+    ("123456789", "US_SSN"),
+    ("123 45 6789", "US_SSN"),
+    ("4111 1111 1111 1111-0000", "CREDIT_CARD"),
+)
+
+
+@pytest.mark.parametrize(("shape", "expected_type"), _MEASURED_SHAPES)
+def test_every_measured_shape_is_labelled_as_a_finding(shape: str, expected_type: str) -> None:
+    """Present, in a POSITIVE case, under a finding of the right type covering it.
+
+    Presence alone is not enough: a shape sitting in a case labelled ``allow``,
+    or in a case whose findings all point somewhere else, is a shape the recall
+    number does not pay for.
+
+    A null span does NOT satisfy this. Type-only matching is the weaker bar, and
+    these fourteen shapes are exactly the ones whose localisation is the point,
+    so weakening one of them to a null span has to fail here rather than pass
+    quietly. That is also why the span is read after the None test rather than
+    around it.
+    """
+    corpus = _load("pii", "in-repo")
+    for case in corpus.cases:
+        start = case.text.find(shape)
+        if start < 0:
+            continue
+        end = start + len(shape)
+        for finding in case.expect_findings:
+            if finding.type != expected_type or finding.span is None:
+                continue
+            if finding.span[0] < end and start < finding.span[1]:
+                return
+    pytest.fail(
+        f"{shape!r} is in no positive case of pii/in-repo, or no {expected_type} finding "
+        "with a real span covers it"
+    )
+
+
+def test_the_two_spellings_of_the_accented_address_are_different_byte_sequences() -> None:
+    """The pair is only worth two cases if they really are two.
+
+    Task 18 found the brief's own test and pattern disagreed about which normal
+    form they meant, which is invisible on screen: both render as jose@example
+    with an accent. If a normalising editor collapses one into the other, the
+    corpus silently stops covering the decomposed form while still carrying two
+    cases that look right.
+    """
+    composed, decomposed = "jos\u00e9@example.com", "jose\u0301@example.com"
+    assert composed != decomposed
+    texts = [case.text for case in _load("pii", "in-repo").cases]
+    assert any(composed in text for text in texts)
+    assert any(decomposed in text for text in texts)
+
+
+@pytest.mark.parametrize(("check", "source"), EXPECTED)
+def test_null_spans_stay_a_minority(check: str, source: str) -> None:
+    """A null span asks for the weaker type-only match, so a corpus of them
+    measures type detection and nothing about localisation. It is the honest
+    label only where the boundary genuinely has no single right answer, which
+    here is an UNTERMINATED PEM block and nothing else.
+    """
+    corpus = _load(check, source)
+    findings = [finding for case in corpus.cases for finding in case.expect_findings]
+    null_spans = [finding for finding in findings if finding.span is None]
+    assert len(null_spans) * 4 <= len(findings), (
+        f"{check}/{source} labels {len(null_spans)} of {len(findings)} findings with a "
+        "null span; over a quarter is no longer a minority"
+    )
+
+
+NOTICE = CORPORA / "NOTICE.md"
+
+
+@pytest.mark.parametrize(("check", "source"), EXPECTED)
+def test_every_corpus_declares_its_provenance_in_the_notice(check: str, source: str) -> None:
+    """Attribution is a licence condition, not a courtesy, and the failure
+    direction is silence: a corpus added later with an unrecorded upstream is a
+    licence violation with no symptom.
+
+    The source and the licence have to appear on the SAME LINE, which here means
+    the same row of the notice's table. Searching for them as independent
+    substrings is what this test used to do, and it accepted the exact violation
+    the sentence above describes: `Apache-2.0` and `in-repo` are both already in
+    the file for the first-party corpora, so rewriting every third-party case's
+    licence to `Apache-2.0`, or its source to `in-repo`, passed. A dataset named
+    without its licence and a licence named without its dataset are each half an
+    attribution, and two halves from different rows are not a whole one.
+    """
+    corpus = _load(check, source)
+    licences = corpus.license.split(", ")
+    rows = [
+        line
+        for line in NOTICE.read_text(encoding="utf-8").splitlines()
+        if corpus.source in line and all(licence in line for licence in licences)
+    ]
+    assert rows, (
+        f"no single line of {NOTICE} names source {corpus.source!r} together with "
+        f"{licences}; an attribution split across two rows attributes nothing"
+    )
+
+
+def test_the_notice_carries_what_cc_by_asks_for() -> None:
+    """Creator, title, URL and licence, which is what the licence text lists."""
+    notice = NOTICE.read_text(encoding="utf-8")
+    for required in (
+        "Nemotron-PII",
+        "NVIDIA",
+        "https://huggingface.co/datasets/nvidia/Nemotron-PII",
+        "CC-BY-4.0",
+        "https://creativecommons.org/licenses/by/4.0/",
+    ):
+        assert required in notice, f"{required} missing from {NOTICE}"
+
+
+def test_the_published_report_carries_the_attribution_pointer() -> None:
+    """CC BY 4.0 asks for attribution wherever the material is used, and a
+    published precision figure is a use. ``to_markdown`` renders BENCHMARKS.md,
+    so the pointer has to come out of the formatter: a line added to the
+    committed file by hand is overwritten the next time CI regenerates it.
+
+    A pointer rather than the full notice, which the licence allows in as many
+    words: the reader gets the dataset in the Source column and the rest one
+    click away, and the formatter states nothing corpus-specific it cannot know.
+    """
+    evaluations = [evaluate(build(check), _load(check, source)) for check, source in EXPECTED]
+    markdown = to_markdown(evaluations)
+
+    assert "corpora/NOTICE.md" in markdown
+    for ev in evaluations:
+        assert ev.corpus_source in markdown, "the Source column has to name what it measured"
+
+
+# The cases whose whole purpose is to record something the detector gets wrong.
+# Their labels say what SHOULD happen, and the one edit that would quietly
+# destroy them is relabelling to what the detector DOES: that scores a clean hit
+# and erases the miss from the published numbers, which is the self-grading this
+# corpus exists to prevent.
+_RECORDS_A_MISS = {
+    "pii": (
+        "pii-0031",  # a bare nine-digit SSN, which the pattern deliberately skips
+        "pii-0032",  # a space-separated SSN, the same deliberate gap
+        "pii-0033",  # the shifted four-group window, leading group left standing
+        "pii-0034",  # the same window shifting left, final group left standing
+        "pii-0035",  # a TLD carrying a Devanagari spacing mark
+        "pii-0036",  # punycode, whose final label the letters-only TLD class drops
+    ),
+    "secrets": (
+        "sec-0020",  # github_pat_ fine-grained tokens are in no pattern here
+        "sec-0021",  # xapp- Slack app-level tokens likewise
+        "sec-0022",  # a JWT header over the 4096 bound, a complete miss
+        "sec-0034",  # a PEM header in prose with no key body
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    ("check", "case_id"),
+    [(check, case_id) for check, ids in _RECORDS_A_MISS.items() for case_id in ids],
+)
+def test_a_case_that_records_a_miss_is_not_labelled_with_what_the_detector_does(
+    check: str, case_id: str
+) -> None:
+    """The property stated directly, rather than by pinning a span.
+
+    Deletion of one of these cases is already caught by the measured-shape test.
+    The RELABEL is not, and it is the edit the brief named: labelling
+    `4111 1111 1111 1111-0000` with the span the detector produces passes every
+    other test in this file and moves published precision, because the miss
+    stops being a miss without anything reading differently.
+
+    This test fails if the detector is ever FIXED, which is the point. The fix
+    is to move the case out of `_RECORDS_A_MISS` and let it be an ordinary
+    positive, not to restore the old label. `tests/test_pii.py` keeps its
+    false-positive records the same way and says so in the same words.
+    """
+    corpus = _load(check, "in-repo")
+    case = next(c for c in corpus.cases if c.id == case_id)
+    guardrail = build(check)
+    verdict = guardrail.check(case.text, Context(direction=case.direction, origin="model"))
+
+    labelled = sorted((f.type, f.span) for f in case.expect_findings)
+    predicted = sorted((f.type, f.span) for f in verdict.findings)
+    assert labelled != predicted or case.expect_decision != verdict.decision, (
+        f"{case_id} is listed as recording a miss, but its label is exactly what "
+        f"{check} produces on it. Either the label was moved onto the detector's "
+        "output, which erases the miss, or the detector was fixed and this case "
+        "should leave _RECORDS_A_MISS."
+    )
+
+
+@pytest.mark.parametrize(
+    ("case_id", "card"),
+    [("pii-0033", "4111 1111 1111 1111"), ("pii-0034", "4111 1111 1111 1111")],
+)
+def test_a_shifted_window_card_is_labelled_over_the_card(case_id: str, card: str) -> None:
+    """The sharpest pair in the corpus, pinned exactly rather than by property.
+
+    Both texts put a four-digit neighbour beside a card, and in both the detector
+    matches a shifted four-group window: it keeps `4111 ` in one and the final
+    `1111` in the other, while claiming a redaction it did not make. The label is
+    the CARD, so the span is computed from the card's own position here rather
+    than written down, for the same reason no span in these corpora is hand
+    counted.
+    """
+    case = next(c for c in _load("pii", "in-repo").cases if c.id == case_id)
+    start = case.text.index(card)
+
+    assert [(f.type, f.span) for f in case.expect_findings] == [
+        ("CREDIT_CARD", (start, start + len(card)))
+    ]
+
+
+@pytest.mark.parametrize(
+    "recorded",
+    [text for text, _ in _KNOWN_FALSE_POSITIVES] + [text for text, _, _ in _NEW_FALSE_POSITIVES],
+)
+def test_every_recorded_false_positive_is_in_the_corpus(recorded: str) -> None:
+    """The claim "this corpus carries every recorded false positive", checked.
+
+    `tests/test_pii.py` pins both records as CURRENT behaviour and says in as
+    many words that they are listed so that this task scores them and Task 15
+    publishes them. Until this test existed that was an unchecked promise, and
+    the composition was unpinned in the flattering direction: deleting the
+    sixteen dotted-tail negatives passed every test here and lifted published
+    in-repo precision from 0.641 to 0.854.
+
+    Reading the lists from `test_pii.py` rather than copying them is what makes
+    this hold for the NEXT recorded false positive too. A guard that repeats the
+    list it guards goes stale the first time somebody adds to one copy.
+    """
+    texts = [case.text for case in _load("pii", "in-repo").cases]
+    assert any(recorded in text for text in texts), (
+        f"{recorded!r} is recorded in tests/test_pii.py as a false positive the "
+        "detector produces today, and no case in pii/in-repo carries it, so the "
+        "published precision number does not pay for it"
+    )
+
+
+def test_the_notice_qualifies_the_two_numbers_that_need_qualifying() -> None:
+    """Prose a published figure depends on, pinned so it cannot quietly go.
+
+    Two things about these numbers are not visible in them. The in-repo PII
+    corpus is a stress set rather than a sample of real text, so its precision
+    is not a field figure; and the detector's issuer-digit guard on bare card
+    runs stops working on a date, after which epoch-millisecond timestamps sit
+    back inside the range it excludes.
+
+    A substring pin on prose is a weak test, and it is here for the one failure
+    it does catch: the qualifier being deleted while the figure it qualifies
+    stays published.
+    """
+    notice = NOTICE.read_text(encoding="utf-8")
+    assert "stress set" in notice
+    assert "2033-05-18" in notice

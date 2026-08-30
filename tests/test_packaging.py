@@ -1,0 +1,201 @@
+import json
+import re
+from importlib.metadata import metadata, requires, version
+from importlib.resources import files
+from pathlib import Path
+
+import jamjet_guardrails
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def _installed_classifiers() -> set[str]:
+    """The classifiers in the BUILT metadata, not the ones pyproject.toml asks for.
+
+    Read through `importlib.metadata` rather than by parsing TOML, and the
+    reason is not style. `tomllib` arrived in 3.11 and this package's floor is
+    3.10, which CI runs, so a test that reached for it would fail on the floor
+    leg for a reason that has nothing to do with packaging. Reading the built
+    metadata needs no parser, works on every supported version, and checks the
+    artefact that is actually published.
+    """
+    return set(metadata("jamjet-guardrails").get_all("Classifier") or [])
+
+
+def test_package_exposes_a_version() -> None:
+    assert isinstance(jamjet_guardrails.__version__, str)
+    assert jamjet_guardrails.__version__.count(".") == 2
+
+
+def test_dunder_version_matches_the_distribution_version() -> None:
+    """`__version__` and the packaged version must not drift.
+
+    This library stamps provenance onto every decision it returns, so a version
+    that disagrees with the installed distribution is a silent falsehood in the
+    artefact the product sells.
+    """
+    assert jamjet_guardrails.__version__ == version("jamjet-guardrails")
+
+
+def test_the_installed_distribution_declares_no_runtime_dependencies() -> None:
+    """The core must install into a Lambda. Guard the promise, do not just state it.
+
+    Asserts the BUILT metadata, not what pyproject.toml claims. `extra ==` markers
+    are the dev extra and are expected; anything else is a runtime dependency and
+    this library ships none.
+    """
+    declared = requires("jamjet-guardrails") or []
+    runtime = [r for r in declared if "extra ==" not in r]
+    assert runtime == [], f"unexpected runtime dependencies: {runtime}"
+
+
+def test_every_python_classifier_is_a_version_ci_runs() -> None:
+    """A classifier is a support claim. An untested version is a claim we
+    cannot back, and PyPI shows it to everyone who opens the page.
+    """
+    claimed = {
+        c.rsplit(" :: ", 1)[1]
+        for c in _installed_classifiers()
+        if c.startswith("Programming Language :: Python :: 3.")
+    }
+    assert claimed, "no Python version classifiers found; this check would prove nothing"
+
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    # Anchored on the matrix itself rather than on every quoted "3.x" in the
+    # file. A loose scan would count a version named in a comment, or the one
+    # the release workflow builds on, as a leg that runs the test suite.
+    matrix = re.search(r"python-version:\s*\[([^\]]*)\]", workflow)
+    assert matrix is not None, "could not find the CI python-version matrix"
+    tested = set(re.findall(r'"(3\.\d+)"', matrix.group(1)))
+    # Also catches the YAML trap of writing the matrix unquoted, where 3.10
+    # parses as the float 3.1 and the leg silently runs the wrong interpreter.
+    assert tested, f"no quoted versions in the CI matrix {matrix.group(1)!r}"
+
+    assert claimed <= tested, f"claimed but untested: {sorted(claimed - tested)}"
+
+
+def test_the_installed_metadata_carries_every_classifier_pyproject_declares() -> None:
+    """Without this, the check above can pass against a stale editable install.
+
+    `pip install -e` writes the metadata once, so editing pyproject.toml and
+    not reinstalling leaves the built classifiers behind while the file reads
+    correctly. CI installs fresh and would catch it; this makes the local run
+    mean the same thing.
+    """
+    declared = re.findall(
+        r'"(Programming Language :: Python :: 3\.\d+)"',
+        (ROOT / "pyproject.toml").read_text(encoding="utf-8"),
+    )
+    assert declared, "pyproject.toml declares no Python version classifiers"
+    missing = [c for c in declared if c not in _installed_classifiers()]
+    assert missing == [], f"installed metadata is stale; reinstall. Missing: {missing}"
+
+
+def test_the_installed_distribution_ships_a_py_typed_marker() -> None:
+    """PEP 561. Without it a consumer's type checker ignores this package.
+
+    Note honestly what this sees. Under the editable install CI and local
+    development both use, `files()` resolves to the source tree, so this
+    catches the marker being deleted and NOT the wheel being built without it.
+    The wheel itself is asserted in the release workflow, before publication.
+    """
+    assert (files("jamjet_guardrails") / "py.typed").is_file()
+
+
+def test_the_typing_classifier_and_the_py_typed_marker_agree() -> None:
+    """Two ways of saying the same thing, so they must not say different things.
+
+    `Typing :: Typed` on PyPI tells a consumer their type checker will read
+    this package. The marker is what makes that true. Either without the other
+    is a claim with nothing behind it or a capability nobody is told about.
+    """
+    claimed = "Typing :: Typed" in _installed_classifiers()
+    shipped = (files("jamjet_guardrails") / "py.typed").is_file()
+    assert claimed == shipped, (
+        f"the Typing :: Typed classifier is {claimed} and the py.typed marker is {shipped}"
+    )
+
+
+def test_source_never_imports_jamjet() -> None:
+    """Zero JamJet dependency is a hard constraint. Prove it over the source tree."""
+    offenders = []
+    scanned = 0
+    for path in (ROOT / "src").rglob("*.py"):
+        scanned += 1
+        for line in path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if stripped.startswith(("import jamjet", "from jamjet")) and (
+                "jamjet_guardrails" not in stripped
+            ):
+                offenders.append(f"{path.name}: {stripped}")
+    assert scanned > 0, f"scanned no files under {ROOT / 'src'}; this guard proves nothing"
+    assert offenders == [], f"these import JamJet: {offenders}"
+
+
+def test_no_description_a_reader_receives_promises_a_kind_we_do_not_ship() -> None:
+    """WIDENED: it checked the PyPI Summary only, and the same claim shipped next door.
+
+    The Summary said "constraints and classifiers" while every registered
+    detector declares `kind="constraint"`. A classifier is a real thing in this
+    library's type system, so a reader takes that as a shipped feature rather
+    than a design intention. The commit that fixed the Summary left the
+    identical sentence as the package docstring one file over, where
+    `help(jamjet_guardrails)` prints it: the argument applied to the case in
+    hand and not to the case one step over, in the last commit on the branch.
+
+    So the domain is both strings a reader is handed, not the one that happened
+    to be noticed. Both are read from the built or imported artifact rather
+    than from a source file: `tomllib` is 3.11+ and the floor is 3.10, and the
+    installed metadata is what PyPI actually renders.
+
+    Checked against the registry rather than a word list, so it stays true the
+    day a classifier is added.
+    """
+    from importlib.metadata import metadata
+
+    import jamjet_guardrails
+    from jamjet_guardrails.detectors import AVAILABLE
+
+    described = {
+        "the PyPI Summary": metadata("jamjet-guardrails")["Summary"],
+        "the package docstring": jamjet_guardrails.__doc__ or "",
+    }
+    assert all(described.values()), f"nothing to check in {described}"
+    kinds = {cls().kind for cls in AVAILABLE.values()}
+    if "classifier" not in kinds:
+        offenders = [where for where, text in described.items() if "classifier" in text.lower()]
+        assert offenders == [], f"{offenders} promise a classifier; none is registered"
+
+
+def test_the_declared_licence_covers_every_licence_the_corpora_carry() -> None:
+    """The licence field is derived from what actually ships, not restated.
+
+    The distribution declared `Apache-2.0` while the sdist redistributed 300
+    CC-BY-4.0 rows. `corpora/NOTICE.md` travelled beside them, so the legal
+    chain held; the licence FIELD did not, and it is the one line most
+    consumers read. `docs/conformance.md` rejects two corpora with the argument
+    that "an Apache-2.0 tag downstream does not cure a share-alike upstream,
+    and no licence field anywhere in that chain reveals it", which is this
+    project's own argument turned on it.
+
+    The domain is READ from the corpora rather than listed here, so adding a
+    corpus under a third licence fails until the expression names it. Every
+    case in a corpus carries its own `license`, and `load_corpus` already
+    refuses a file whose rows disagree.
+    """
+    from importlib.metadata import metadata
+
+    declared = metadata("jamjet-guardrails")["License-Expression"]
+    shipped = sorted(
+        {
+            json.loads(line)["license"]
+            for path in sorted((ROOT / "corpora").rglob("*.jsonl"))
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        }
+    )
+    assert shipped, "no corpus licences found; this check would prove nothing"
+    missing = [licence for licence in shipped if licence not in declared]
+    assert missing == [], (
+        f"the distribution declares {declared!r} but ships corpora licensed {missing}"
+    )
