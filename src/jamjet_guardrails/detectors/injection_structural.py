@@ -709,11 +709,19 @@ _MAX_TRANSPARENT = 4
 # `_MIN_RUN` 1 makes `_MIN_TOTAL` irrelevant, since every single character is
 # then a reportable run. `_MIN_TOTAL` 5, 6 and 7 are identical and so are
 # `_MIN_RUN` 3 and 4: no case carries five or six unexplained characters, and no
-# allowing case has a run longer than one, so the corpus can say what 5 costs and
-# cannot say where between 5 and 7 the answer lies. That is a fact about the
-# corpus, not about the bounds. The counts that DO appear above four are 7
-# (`inj-0123`), 8, 9, 16 and 80, all of them payloads; the reason 5 through 7
-# behave alike is the gap between four and seven, not an absence above four.
+# case has a run of exactly THREE, so the corpus can say what 5 costs and cannot
+# say where between 5 and 7 the answer lies. That is a fact about the corpus, not
+# about the bounds. The totals that appear above four are 7 (`inj-0123`), 8, 9,
+# 16 and 80, all of them payloads, so 5 through 7 behave alike because of the gap
+# between four and seven rather than any absence above four; the run lengths that
+# appear are 1, 2, 4, 16 and 80, so 3 and 4 behave alike for the same reason one
+# step down.
+#
+# An earlier version of this note gave the reason as "no allowing case has a run
+# longer than one", which is true only of what the detector allows and false of
+# what the corpus LABELS allow: `inj-0129` is labelled allow and has a run of
+# two. That run of two is the whole reason it is a false positive, and it is why
+# `_MIN_RUN` 3 scores 0.980 -- raising the run bound stops reporting it.
 #
 _MIN_RUN = 2
 _MIN_TOTAL = 5
@@ -729,7 +737,7 @@ _MIN_TOTAL = 5
 #
 #   Hindi with five conjunct joiners                    1
 #   Persian prose with six ZWNJ                         1
-#   Malayalam sentence, four chillu words               1
+#   Malayalam sentence, five chillu words               1
 #   kiss sequence (a variation selector inside it)      2
 #   four-person family emoji                            3
 #   ten family emoji written next to each other         3

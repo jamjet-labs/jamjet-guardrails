@@ -14,6 +14,7 @@ from jamjet_guardrails.detectors.injection_structural import (
     _MIN_PERIODIC,
     _MIN_RUN,
     _MIN_TOTAL,
+    _MONGOLIAN,
     _RGI_SUBDIVISION_CODES,
     _ZERO_WIDTH,
     INJECTION_TYPES,
@@ -1238,12 +1239,38 @@ def test_two_zero_width_characters_together_are_not_an_accident() -> None:
     expensive thing for prose to produce by accident, and `inj-0129` -- musical
     notation, where an END BEAM abuts the next BEGIN BEAM -- is the corpus case
     that only this bound catches.
+
+    THE VALUE, not just the boundary. The fixture below is built from `_MIN_RUN`,
+    so it follows the constant and stops being a regression check on what the
+    constant IS -- the same trade `test_the_periodicity_bound_is_where_the_
+    measurement_put_it` records, found one constant later. Base to head of the
+    round that introduced it, `_MIN_RUN = 3` went from four killing tests to one.
+    So the measurement that chose two is asserted here as well: `inj-0129` is a
+    real document whose only fault is an adjacent PAIR, so a run bound above two
+    stops reporting it, and two is the smallest run a bound can name at all.
     """
-    content = f"total{ZWSP * _MIN_RUN}cost"
-    assert content.count(ZWSP) == _MIN_RUN < _MIN_TOTAL, (
+    pair = f"total{ZWSP * _MIN_RUN}cost"
+    assert pair.count(ZWSP) == _MIN_RUN < _MIN_TOTAL, (
         "a run at the run bound and under the total bound, so only _MIN_RUN reports it"
     )
-    assert InjectionStructuralGuardrail().check(content, IN).decision == "deny"
+    assert InjectionStructuralGuardrail().check(pair, IN).decision == "deny"
+
+    music = next(
+        json.loads(line)
+        for line in CORPUS.read_text(encoding="utf-8").splitlines()
+        if line and json.loads(line)["id"] == "inj-0129"
+    )
+    suspicious = [
+        index
+        for index, char in enumerate(music["text"])
+        if char in _ZERO_WIDTH and not _is_contextually_legitimate(music["text"], index)
+    ]
+    longest = max((len(run) for run in _chains(suspicious, 1)), default=0)
+    assert longest == _MIN_RUN, (
+        "inj-0129's adjacent pair is what chose this value; a bound above it stops "
+        "reporting a document the check is meant to report"
+    )
+    assert len(suspicious) < _MIN_TOTAL, "and the total bound never reaches it"
 
 
 VIRAMA = "्"
@@ -2170,14 +2197,81 @@ def test_a_run_of_mongolian_vowel_separators_does_not_excuse_itself() -> None:
 
     U+180E is inside U+1800..U+18AF, so a bare "both neighbours are in the
     Mongolian block" test makes a run of separators excuse ITSELF. Measured
-    against that version, `note` followed by four separators and `end` ALLOWED:
-    the total bound defeated by the one character the branch was added to catch.
+    against that version, `note` followed by separators and `end` ALLOWED, the
+    check defeated by the one character the branch was added to catch.
+
+    WHICH BOUND reports this is the run bound, not the total, and this docstring
+    said the total until round 4. Consecutive separators are ADJACENT, so
+    `_MIN_RUN` reports them from two onwards and the total bound never reaches
+    the input at all -- measured, `note` plus two, three, four or five U+180E all
+    deny. That is why this test kept discriminating when `_MIN_TOTAL` was raised
+    while the four-occurrence Mongolian negatives beside it stopped. The same
+    sentence in `_is_contextually_legitimate` was corrected one round earlier and
+    this copy was missed, which is the module-and-test twin biting twice.
 
     `_joining_neighbour` over the block is what closes it, because that asks for
     a letter, a decimal digit, or a mark written on one, and a separator is none
     of the three.
+
+    THE COUNT IS NOT DERIVED FROM A BOUND, and that is deliberate after round 4
+    briefly made it `_MIN_RUN`. Four is what the BYPASS shape needs, not what
+    either bound needs: a bare range test excuses every separator with a
+    separator on both sides, so it excuses the interior and leaves the two ends,
+    which are non-adjacent once there are three or more and number two, which is
+    under the total bound. At `_MIN_RUN` separators there is no interior, both
+    ends stay unexcused, they are adjacent, and the mutant denies for the wrong
+    reason -- the test passes and tests nothing. The three conditions are
+    asserted below so the shape survives a bound moving under it.
     """
-    assert InjectionStructuralGuardrail().check(f"note{MVS * 4}end", IN).decision == "deny"
+    separators = 4
+    ends = 2
+    assert separators > _MIN_RUN, "the shipped code reports this as a run"
+    assert separators >= 3, "so a bare range test has an interior to excuse"
+    assert ends < _MIN_TOTAL, "and the ends it leaves are under the total bound"
+
+    content = f"note{MVS * separators}end"
+    assert InjectionStructuralGuardrail().check(content, IN).decision == "deny"
+
+
+@pytest.mark.parametrize(
+    ("shape", "which"),
+    [
+        pytest.param("{letter}{mvs}x ", "left", id="mongolian-letter-only-to-the-left"),
+        pytest.param("x{mvs}{letter} ", "right", id="mongolian-letter-only-to-the-right"),
+    ],
+)
+def test_the_vowel_separator_needs_both_neighbours_not_either(shape: str, which: str) -> None:
+    """The MVS branch asks for BOTH neighbours, and nothing was asking whether it did.
+
+    The guard inventory covered deleting this branch and replacing its
+    `_joining_neighbour` calls with a bare range test. It did not cover changing
+    the `and` between them to an `or`, and measured, that mutation survives the
+    whole suite and leaves all 146 corpus cases where they are.
+
+    What `or` opens is the per-occurrence shape this module closes everywhere
+    else: one cover character per separator excuses every separator, so repeating
+    the construct costs an attacker one visible Mongolian letter per bit and
+    nothing more. Both orderings are here because `or` is symmetric and a test
+    that only wrote the left one would leave half the mutation alive.
+
+    `test_mongolian_orthography_is_not_an_attack` is the other side of this: real
+    Mongolian puts a letter on both sides of the separator, so asking for both
+    costs the orthography nothing.
+    """
+    letter = "\u182e"  # MONGOLIAN LETTER MA, so the cover is visible and real
+    content = shape.format(letter=letter, mvs=MVS) * _MIN_TOTAL
+    assert content.count(MVS) >= _MIN_TOTAL, "at the total bound, so the rule is what decides"
+    neighbours = [
+        (content[index - 1], content[index + 1])
+        for index, char in enumerate(content)
+        if char == MVS
+    ]
+    assert all(
+        (_in_ranges(before, _MONGOLIAN) is (which == "left"))
+        and (_in_ranges(after, _MONGOLIAN) is (which == "right"))
+        for before, after in neighbours
+    ), "exactly one neighbour is Mongolian, which is what an `or` would excuse"
+    assert InjectionStructuralGuardrail().check(content, IN).decision == "deny"
 
 
 @pytest.mark.parametrize(
@@ -2574,7 +2668,9 @@ def test_the_bound_passes_four_non_adjacent_characters_and_what_they_carry() -> 
     guardrail = InjectionStructuralGuardrail()
 
     assert len(page) == 2502
-    assert sum(1 for char in page if char in _ZERO_WIDTH) < _MIN_TOTAL
+    counted = sum(1 for char in page if char in _ZERO_WIDTH)
+    assert counted == 3, "the corpus fact the docstring above states"
+    assert counted < _MIN_TOTAL, "and the relation to the bound that makes it allow"
     assert guardrail.check(page, IN).decision == "allow"
 
     bare = page.replace(ZWSP, "")

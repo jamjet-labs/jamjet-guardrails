@@ -356,22 +356,27 @@ characters: the same one-bit-per-character assumption, four lines under a
 sentence rejecting it.
 
 **And a cost per bit is itself one accounting.** An attacker already sending a
-document pays only for the characters they ADD, and the total bound lets three
+document pays only for the characters they ADD, and the total bound lets four
 counted characters through **provided no two are adjacent** -- two adjacent are
 a run, and the run bound is 2. Measured: two adjacent deny, two scattered allow,
-three scattered allow, four scattered deny.
+four scattered allow, five scattered deny.
 
 Priced over the alphabet that bound actually governs, which is the **counted**
-set: the three counted characters in `inj-0105`, a 2,502-character retrieved
-page that allows with zero findings, choose among C(2500, 3) pairwise
-non-adjacent positions and 3,773 symbols each, which is **66.9 bits carried by 3
-added characters**. An earlier version of this passage said 55.3, having charged
-three characters against a bound only counted characters consume and then priced
-them over the 259 symbols that bound does not count -- understating the leak of
-the very bound it names by 11.6 bits, in the fourth rewrite of this paragraph.
-Whether 66.9 bits for three characters reads as "cheap" or "free" depends on
-what the cover is charged to, which is a second reason no single number carries
-this claim.
+set: four counted characters in `inj-0105`, a 2,502-character retrieved page
+that allows with zero findings, choose among C(2499, 4) pairwise non-adjacent
+positions and 3,773 symbols each, which is **88.1 bits carried by 4 added
+characters**. Priced instead over the 259 symbols that bound does not count it
+comes to 72.6, which is an accounting of two different things and understates
+the leak of the very bound it names.
+
+**Raising `_MIN_TOTAL` from 4 to 5 widened this by 21.2 bits** on this document,
+from three characters and 66.9 bits to four and 88.1. That is the standing price
+of the twelve false-positive cases the raise bought back, and it belongs beside
+the leak rather than only beside the corpus. Whether 88.1 bits for four
+characters reads as "cheap" or "free" depends on what the cover is charged to,
+which is a second reason no single number carries this claim.
+`test_the_bound_passes_four_non_adjacent_characters_and_what_they_carry` holds
+all three figures.
 
 **Nothing here is closed.** The `Prepended_Concatenation_Mark` characters --
 ten Arabic, two Kaithi and U+070F SYRIAC ABBREVIATION MARK -- are `Cf` and are
