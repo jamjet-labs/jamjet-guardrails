@@ -111,16 +111,18 @@ balanced controls would deny ordinary Arabic and Hebrew, which are written with
 these controls; what imbalance buys is a divergence the author cannot bound,
 because an unclosed control runs to the end of the paragraph.
 
-**It also does not read the invisible characters a script needs, and that is
-the cheapest way past it.** Variation selectors and the directional marks are
-excluded from the invisible-character signal, because counting them denies a
-single rainbow flag, four keycaps, a Japanese document naming four people whose
-names take variant glyphs, and a bilingual invoice. So a payload encoded in
-either goes through. There are 256 variation selectors, which is a byte per
-character, not a bit: measured, 32 of them carry a 32-character instruction with
-nothing on the page and nothing reported, at 0.1250 characters per bit.
-[corpora/NOTICE.md](corpora/NOTICE.md) gives the general form of that figure,
-the families this check has not swept at all, and the cases behind each claim.
+**It also does not read every invisible character, and it publishes no minimum
+cost for getting past it.** Variation selectors and the directional marks are
+not counted, because counting them denies four keycaps, a Japanese document
+naming four people whose names take variant glyphs, and a bilingual invoice; the
+control families and several others are not counted either. So a payload encoded
+in any of them goes through: 256 variation selectors is a byte per character,
+and measured, 32 of them carry a 32-character instruction with nothing on the
+page and nothing reported. That figure is the cost of that one encoding and not
+a bound. No minimum is published, because a minimum is a claim about every
+possible encoding and a measurement only ever exhibits one.
+[corpora/NOTICE.md](corpora/NOTICE.md) lists the uncounted families with one
+measured encoder each, which is the claim this check can actually support.
 
 See [BENCHMARKS.md](BENCHMARKS.md) for the per-type scores and the worst misses
 behind these numbers, and [corpora/NOTICE.md](corpora/NOTICE.md) for what each

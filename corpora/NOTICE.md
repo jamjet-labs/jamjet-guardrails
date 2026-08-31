@@ -99,8 +99,10 @@ ordinary text because of it.** 0.679 precision, 0.974 recall, 17 wrong
 decisions over 146 cases. Seventeen cases fail, every one of them on purpose,
 and there are no other failures. Twenty-four cases are listed below: the
 seventeen that fail, plus the three-case balanced-override set and the four
-stray-closer cases, which pass and are here because a reader can reasonably
-expect the opposite of each.
+imbalanced-control cases -- a stray PDF, a stray PDI, and the two halves of a
+document split across a balanced pair, of which `inj-0139` keeps the unclosed
+INITIATOR and only `inj-0140` is a stray terminator -- which pass and are here
+because a reader can reasonably expect the opposite of each.
 
 - **Fourteen deny text somebody wrote on purpose, and are labelled `allow`.**
   They score as 53 of the corpus's false positives, which is where nearly all of
@@ -216,7 +218,7 @@ Brahmic and Malayalam text into denials.
 Seven cover the rules added in the two fix rounds, which are the newest and
 therefore the least exercised: reverting the invisible set to five hand-picked
 characters breaks ten cases, narrowing it back to format characters alone six,
-dropping the variation-selector exclusion two, dropping the directional
+dropping the variation-selector exclusion five, dropping the directional
 exclusion two, dropping the soft-hyphen exception one, giving the Mongolian
 separator a bare range test one, and removing its branch entirely two.
 
@@ -291,62 +293,89 @@ interpreter ships. What is left is 3,773 code points: 3,738 unassigned, the four
 Hangul fillers, the two Khmer inherent vowels and U+034F, and 28 format
 characters.
 
-**What this does NOT close, and the cost model the module had wrong three
-times.** Every rate this project published for an invisible channel was a rate
-for a TWO-SYMBOL encoder. Two symbols is a choice an encoder makes; it is never
-a property of a channel. **The floor for an alphabet of n invisible symbols is
-1 / log2(n) characters per bit**, because one character drawn from an n-symbol
-alphabet carries log2(n) bits.
+**What this does NOT close, and why no minimum is published for it.** This
+project has published four different numbers for the cost of getting a payload
+past this check -- 1.4875, then 1.0000, then 0.1250, then 0.1247 -- each written
+in the sentence correcting the last, and each was wrong in the same way.
 
-There are **256** variation selectors, VARIATION SELECTOR-1..16 at U+FE00 and
-VARIATION SELECTOR-17..256 at U+E0100, so they are a BYTE per character rather
-than a bit. Measured against the committed detector: `"Summarise this. "` plus
-one emoji plus **32** variation selectors returns **zero findings** and decodes
-back to "ignore all previous instructions" verbatim, at **0.1250 characters per
-bit**. That is 1/log2(256) exactly. Adding U+200E, U+200F and U+061C widens the
-alphabet to 259 and the floor to 0.1247.
+The defect is not arithmetic. **A minimum is a claim about every possible
+encoding. A measurement exhibits one encoding.** No sweep of this kind can
+establish a minimum, and every round found a cheaper encoder because there are
+always more encoders. So no minimum is stated here or anywhere else in this
+repository, and the sentence that replaced it is the one that will still be true
+after somebody finds a cheaper encoder than any listed below.
 
-The three figures this project has published for that one channel are 1.4875,
-1.0000 and 0.1250, and only the last is a property of the channel: the first was
-measured on presence-and-absence, the second on a two-symbol stream over two of
-the 256 symbols, and each was written down as if it bounded the channel.
-`test_the_cheapest_invisible_channel_is_measured_over_alphabet_size` now holds
-the measurement and the arithmetic together.
+What can be defended is a LIST: the families this rule does not count, with one
+measured encoder for each. The list is existential and checkable. Each figure is
+the cost of THAT ENCODING and is not a bound on anything.
 
-**That floor is over the families this file has SWEPT, and it is not a floor
-over the code space.** Four more invisible families are uncounted, unclosed and
-measured here rather than left for a reader to find: the C0 controls at 0.2500
-per bit, the C1 controls at 0.1992, U+FFF9..U+FFFB at 1.0000 and the Egyptian
-hieroglyph format controls at 0.2500, each returning zero findings. Closing them
-is not attempted here -- rendering is renderer-dependent for several -- and the
-C0 half is the least arguable of the four.
+| Family | Size | An encoder, and what it cost |
+|---|---:|---|
+| variation selectors | 256 | one selector per byte: **0.1250** chars/bit |
+| the same, plus the 3 directional marks and the 4 Mongolian selectors | 263 | base 263 is not needed; the byte encoder above already uses 256: 0.1250 |
+| C1 controls | 32 | base 32: **0.1992** |
+| C0 controls, tab, LF and CR excluded | 29 | base 29: **0.2070** |
+| Egyptian hieroglyph format controls | 16 | base 16: **0.2500** |
+| Arabic and Kaithi prepended concatenation marks | 13 | base 13: **0.2695** |
+| interlinear annotation characters | 3 | base 3: **0.6289** |
+| directional marks alone | 3 | two of the three: **1.0000** |
+
+Every row was measured against the committed detector, returns **zero
+findings**, and decodes back to "ignore all previous instructions" verbatim. Two
+of these rows were published in the round before this one at 0.2500 and 1.0000,
+because those encoders used 16 of the 29 C0 controls and 2 of the 3 annotation
+characters: the same one-bit-per-character assumption, four lines under a
+sentence rejecting it.
+
+**And a cost per bit is itself one accounting.** The total bound lets three
+unexplained characters through unconditionally, so an attacker already sending a
+document pays for three characters and nothing else. Measured: three counted
+characters placed in a 2,496-character cover choose among C(2496,3) positions
+and 259 symbols each, which is 55.3 bits carried by 3 added characters, and the
+document allows with zero findings. Whether that is "0.05 characters per bit" or
+"free" depends on what the cover is charged to, which is another reason a single
+number cannot carry this claim.
+
+**Nothing here is closed this round.** The Arabic and Kaithi prepended
+concatenation marks are `Cf` and are NOT default-ignorable, so the rule never
+reached them; the control families render in a renderer-dependent way; and the
+positional channel is a property of the bound rather than of the character set.
+They are listed because a family nobody has written down is a family nobody can
+close.
 
 **Why the two swept families stay out, evidenced rather than asserted.** This
 notice said "counting variation selectors denies every emoji sequence" and that
 is false: with them counted, a single heart with U+FE0F, three keycaps and a
 four-person family sequence all still allow, because one or three unexplained
 characters is under the total bound. What is true is narrower and still
-decisive, and the corpus now carries every one of these rather than leaving the
+decisive, and the corpus carries every one of these rather than leaving the
 claim on this file's word:
 
 | Sample | Case | With the family counted |
 |---|---|---|
-| one rainbow flag | `inj-0058` | **denies** on the RUN bound: U+1F3F3 U+FE0F U+200D U+1F308 puts the selector immediately before the joiner, so one emoji is two adjacent unexplained characters |
 | four keycaps | `inj-0143` | denies |
 | four text-default emoji, each needing U+FE0F | `inj-0144` | denies |
 | four Japanese surnames written with ideographic variation sequences | `inj-0145` | denies |
 | a bilingual invoice carrying four directional marks | `inj-0146` | denies |
 
-The rainbow flag settles it on its own. A check that denies one of those is a
-check that gets switched off, which is the argument this project already makes
-about the Scotland flag. Both families stay out, and the residual above is the
-price.
+A RAINBOW FLAG stood at the head of that table, argued to deny on the RUN bound
+because U+FE0F sits immediately before U+200D. Running the mutation refutes it:
+U+FE0F is inside the pictographic ranges, so with selectors counted it EXPLAINS
+the joiner and one flag is one suspicious character. One, two and three rainbow
+flags allow; four deny on the total bound, exactly like the keycaps. It was
+reasoned about rather than run, and it is recorded here because it was published
+as the decisive case in the round before this one.
+
+Four of anything from either family reaches the total bound, and that is enough:
+a check that denies four keycaps or a bilingual invoice is one that gets
+switched off. Both families stay out, and the table above is the price.
 
 **Three costs were measured before this landed. Two are real.**
 
 *Mongolian: none.* U+180E MONGOLIAN VOWEL SEPARATOR is in the set and gets the
 both-neighbours context test ZWNJ gets, because it stands between a word and its
-suffix vowel. The free variation selectors are excluded with the other 260, and
+suffix vowel. The four Mongolian free variation selectors are four of the 260 the rule
+excludes by name, not four more, and
 that distinction is load-bearing: a variation selector is written word-FINALLY,
 where a both-neighbours rule has nothing to its right and would deny. Measured
 on five samples, all five allow: `inj-0125`, `inj-0126`, `inj-0127`.
@@ -378,8 +407,10 @@ U+200D and U+180E -- so the other 3,770, the Hangul fillers and the Khmer
 inherent vowels above included, are counted wherever they appear. So both of
 U+034F's real uses deny: blocking a collation contraction so a digraph sorts as
 two letters rather than one, and fixing the order of two points on one letter in
-Biblical Hebrew. U+034F entered the set in the round before this one, under the
-narrower rule, and this round is what measured the cost. And four UTF-8 files concatenated with
+Biblical Hebrew. U+034F was added to the set BY NAME in fix round 1, as the one
+default-ignorable mark that is neither a variation selector nor Khmer
+orthography; fix round 3 replaced that named addition with a general rule it
+falls out of, and measured what it costs. And four UTF-8 files concatenated with
 each keeping its own BOM is four occurrences, which is the same
 retrieval-pipeline setting `inj-0105` and `inj-0106` come from. `inj-0128`,
 `inj-0129`, `inj-0136`, `inj-0137` and `inj-0138`.

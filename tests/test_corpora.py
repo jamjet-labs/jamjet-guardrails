@@ -12,6 +12,7 @@ a number that measures nothing, and no loader, formatter or gate downstream can
 tell that from a good result.
 """
 
+import ast
 import re
 from pathlib import Path
 
@@ -600,20 +601,27 @@ def test_an_id_cited_as_a_labelled_case_carries_that_label() -> None:
     "carry these as owned false positives, labelled `allow`" when both are the
     attack bitstreams over the same characters and are labelled `deny`.
 
-    The window is the sentence, not the file: an id and a label phrase have to
-    be close enough that a reader would read them together.
+    The window is the SENTENCE, and that is load-bearing rather than tidy. This
+    check first ran on a fixed 240-character window and failed on a paragraph
+    where an id and an unrelated label phrase sat two sentences apart: a guard
+    whose window is wider than a reader's attention reports things a reader
+    would never misread.
     """
     cases = _injection_cases()
+    # A sentence ends at a full stop, a blank line, or the start of a list item
+    # or table row, which is what a docstring and a markdown table are made of.
+    boundary = re.compile(r"(?<=\.)\s+|\n\s*\n|\n\s*[-|]\s*")
     for path in _CITING:
         text = path.read_text(encoding="utf-8")
-        for phrase, decision in (("labelled `allow`", "allow"), ("labelled `deny`", "deny")):
-            for hit in re.finditer(re.escape(phrase), text):
-                window = text[max(0, hit.start() - 240) : hit.end() + 240]
-                for case_id in _CASE_ID.findall(window):
+        for sentence in boundary.split(text):
+            for phrase, decision in (("labelled `allow`", "allow"), ("labelled `deny`", "deny")):
+                if phrase not in sentence:
+                    continue
+                for case_id in _CASE_ID.findall(sentence):
                     case = cases[case_id]
                     assert case.expect_decision == decision, (  # type: ignore[attr-defined]
-                        f"{path.name} says {phrase!r} near {case_id}, which is labelled "
-                        f"{case.expect_decision!r}"  # type: ignore[attr-defined]
+                        f"{path.name} says {phrase!r} in the same sentence as {case_id}, "
+                        f"which is labelled {case.expect_decision!r}"  # type: ignore[attr-defined]
                     )
 
 
@@ -667,3 +675,34 @@ def test_an_id_cited_inside_a_signal_names_a_case_that_signal_is_about() -> None
                 f"the {kind} region of injection_structural.py cites {case_id}, which "
                 f"neither produces nor expects a {kind} finding"
             )
+
+
+_TEST_NAME = re.compile(r"`(test_[a-z0-9_]+)`")
+
+
+def test_every_test_name_cited_in_prose_exists() -> None:
+    """The case-id class, one field over, and it has already bitten once.
+
+    A commit renamed `test_the_cheapest_invisible_channel_is_measured_not_assumed`
+    and left three citations of it standing -- one of them on a line the same
+    diff ADDED. A docstring that points at a test which no longer exists reads
+    exactly like one that points at a test which does, and nothing failed.
+
+    Names are read from the test modules with `ast`, not by importing them, so
+    this stays cheap and cannot be fooled by a name that only exists at runtime.
+    """
+    defined: set[str] = set()
+    for path in sorted((ROOT / "tests").glob("test_*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        defined |= {
+            node.name
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name.startswith("test_")
+        }
+    assert defined, "no tests found; this check would prove nothing"
+
+    for path in _CITING:
+        cited = set(_TEST_NAME.findall(path.read_text(encoding="utf-8")))
+        missing = sorted(cited - defined)
+        assert missing == [], f"{path.name} cites {missing}, which no test module defines"

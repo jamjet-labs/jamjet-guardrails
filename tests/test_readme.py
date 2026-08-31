@@ -584,7 +584,12 @@ def test_the_readme_states_the_size_of_the_disclosed_set_the_notice_carries() ->
     spelled = words.get(count)
     assert spelled is not None, f"{count} disclosed cases; add the word to this table"
     text = _flat(_text())
-    assert f"{spelled} `injection-structural`" in text or f"{spelled.lower()} " in text, (
+    # Both spellings, with no `or` between them. The disjunct that used to sit
+    # here accepted the lowercase word appearing ANYWHERE in the README, which a
+    # sentence about something else can satisfy; only the second assertion was
+    # really binding, and a guard that is carried by one of its two halves is a
+    # guard that quietly loses the other.
+    assert f"{spelled} `injection-structural`" in text, (
         f"the README does not say how many disclosed cases there are; it is {count}"
     )
     assert f"All {spelled.lower()} are named by case id" in text, (

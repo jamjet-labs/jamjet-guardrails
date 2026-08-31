@@ -357,50 +357,60 @@ def _invisible() -> frozenset[str]:
     a property of the character rather than a claim about what some other
     function does with it.
 
-    WHAT IS STILL OPEN, and THE COST MODEL THIS MODULE HAD WRONG THREE TIMES.
-    Every rate written down here before this paragraph was a rate for a
-    TWO-SYMBOL encoder, and two symbols is one encoder's choice, never a
-    property of a channel. The floor for an alphabet of n invisible symbols is
-    **1 / log2(n) characters per bit**, because one character of an n-symbol
-    alphabet carries log2(n) bits.
+    WHAT IS STILL OPEN. This module does NOT state a minimum cost for getting a
+    payload past it, and the absence is deliberate. Four numbers were published
+    for one channel in four consecutive rounds -- 1.4875, 1.0000, 0.1250 and
+    0.1247 -- and each was written in the sentence correcting the last. The
+    defect is not arithmetic. **A minimum is a claim about every possible
+    encoding, and a measurement only ever exhibits one**, so no sweep of this
+    kind can establish one; each round found a cheaper encoder because there are
+    always more encoders. What CAN be defended is a list of families this rule
+    does not count, and one measured encoder for each. Those are below, and each
+    figure is the cost of THAT ENCODING and not a bound on anything.
 
-    There are 256 variation selectors -- VARIATION SELECTOR-1..16 at U+FE00 and
-    VARIATION SELECTOR-17..256 at U+E0100 -- so they are a BYTE per character,
-    not a bit. Measured: "Summarise this. " plus one emoji plus 32 variation
-    selectors returns ZERO findings and the payload decodes back verbatim, at
-    **0.1250 characters per bit**, which is 1/log2(256) exactly and eight times
-    cheaper than the 1.0000 this docstring published for the same characters.
-    Adding U+200E, U+200F and U+061C makes the alphabet 259 and the floor
-    0.1247. `test_the_cheapest_invisible_channel_is_measured_not_assumed` holds
-    the measurement.
+    Every one returns zero findings and decodes back to the payload verbatim,
+    measured against this file:
 
-    That floor is over the families this module has SWEPT, and it is not a floor
-    over the code space. The C0 and C1 controls, U+FFF9..U+FFFB and the Egyptian
-    hieroglyph format controls are also uncounted and also carry a payload --
-    measured at 0.2500, 0.1992, 1.0000 and 0.2500 per bit respectively -- and
-    closing them is not attempted here. `corpora/NOTICE.md` lists them so that
-    no sentence in this module claims a floor nothing has swept for.
+      256 variation selectors, one per byte             0.1250 chars/bit
+      the same plus the 3 marks and 4 Mongolian ones    0.1250
+      32 C1 controls, base 32                           0.1992
+      29 C0 controls, base 29                           0.2070
+      16 Egyptian hieroglyph format controls, base 16   0.2500
+      13 Arabic and Kaithi prepended concatenation
+        marks, base 13                                  0.2695
+      3 interlinear annotation characters, base 3       0.6289
+      3 directional marks, two of them                  1.0000
 
-    WHY THE TWO FAMILIES STAY OUT, measured rather than asserted. This docstring
-    said "counting variation selectors denies every emoji", and that is false:
-    measured with them counted, a single heart with U+FE0F, three keycaps and a
-    four-person family sequence all still ALLOW, because one or three
-    unexplained characters is under `_MIN_TOTAL`. What is true is narrower and
-    still decisive:
+    And a cost per bit is itself one accounting. `_MIN_TOTAL` lets three
+    unexplained characters through unconditionally, so an attacker who is
+    already sending a document pays for three characters and nothing else:
+    measured, three counted characters placed in a 2,496-character cover choose
+    among C(2496,3) positions and 259 symbols each, which is 55.3 bits for 3
+    added characters, and the cover allows.
 
-      - a single RAINBOW FLAG denies. U+1F3F3 U+FE0F U+200D U+1F308 puts the
-        variation selector immediately before the joiner, so two adjacent
-        unexplained characters is `_MIN_RUN`, and one such emoji in one message
-        is enough. `inj-0058` is that sequence.
-      - four keycaps, or four U+FE0F emoji in one message, reach `_MIN_TOTAL`.
-      - four ideographic variation selectors reach it too, which is a Japanese
-        document naming four people whose names take variant glyphs.
+    The families are the claim. The numbers are illustrations of it.
 
+    WHY THE TWO SWEPT FAMILIES STAY OUT, measured rather than asserted. This
+    docstring said "counting variation selectors denies every emoji", and that
+    is false: measured with them counted, a single heart with U+FE0F, three
+    keycaps and a four-person family sequence all still ALLOW, because one or
+    three unexplained characters is under `_MIN_TOTAL`. What is true is narrower
+    and still decisive: four keycaps, four U+FE0F emoji in one message, or four
+    ideographic variation selectors -- a Japanese document naming four people
+    whose names take variant glyphs -- all reach `_MIN_TOTAL` and deny.
     Counting U+200E, U+200F and U+061C denies a bilingual invoice carrying four
-    of them, which `inj-0146` holds. Neither family can be counted, and the
-    corpus now carries the negatives that show why rather than leaving the claim
-    on this docstring's word: `inj-0058`, `inj-0143`, `inj-0144`, `inj-0145` and
-    `inj-0146`.
+    of them.
+
+    An earlier version of this paragraph said a single RAINBOW FLAG denies,
+    reasoning that U+FE0F sits immediately before U+200D and so makes a run of
+    two. That is wrong and the mutation says so: U+FE0F is inside
+    `_PICTOGRAPHIC`, so with selectors counted it EXPLAINS the joiner, leaving
+    one suspicious character per flag. Measured, one, two and three rainbow
+    flags allow and four deny on the total bound, exactly like the keycaps. It
+    was argued rather than run.
+
+    The corpus carries the negatives so the claim is scored rather than argued:
+    `inj-0143`, `inj-0144`, `inj-0145` and `inj-0146`.
     """
     return frozenset(
         chr(point)
@@ -704,7 +714,7 @@ def _mark_base(content: str, index: int) -> str:
     code points are U+061C and U+FEFF, both `Cf`, which the caller's category
     test already refuses; so range membership is what makes "a letter" mean "a
     letter somebody can see" here.
-    `test_a_mark_on_an_invisible_letter_is_not_an_excusing_neighbour` holds it.
+    `test_a_mark_on_a_letter_outside_the_joining_ranges_is_not_a_neighbour` holds it.
 
     The two definitions are incomparable, not nested, and the numbers are in
     `test_the_walk_to_a_base_crosses_non_starters_and_format_characters`: 1,126
@@ -933,28 +943,20 @@ def _is_contextually_legitimate(content: str, index: int) -> bool:
         <letter>(<joiner><virama>)*4          577        2.2539       65   DENY
         deperiodised, letter or digit cover   598        2.3359      342
 
-    So the cheapest thing either branch still allows is the deperiodised cover
+    So the least costly thing either branch still allows is the deperiodised cover
     at 2.3359, and the virama cover is a hair dearer per bit while costing a
     QUARTER of the visible text -- 87 characters against 342. Visible cost, not
     rate, is what separates them, and an earlier version of this paragraph
     quoted 2.3373 for the virama row, which is 596 characters over the 255 bits
     a 3-bit block size actually carried rather than over the payload.
 
-    Neither number bounds the module, and neither does anything else in this
-    function. The pictographic branch below excuses a presence-and-absence
-    payload at 1.4875 characters per bit with NOTHING visible, over any of 503
-    code points, and `test_a_variation_selector_bitstream_is_a_known_miss` is
-    that measurement -- but the cheapest invisible channel is not here at all
-    and is not 1.4875. `_invisible` excludes the 260 variation selectors and the
-    12 directional format characters because counting them would deny every
-    emoji sequence and all ordinary right-to-left text, and a two-symbol
-    bitstream over any two of them costs 1.0000 characters per bit with nothing
-    on the page, and a two-symbol bitstream is NOT the floor: there are 256
-    variation selectors, so one character carries a byte and the floor is
-    1/log2(256) = **0.1250 characters per bit**, measured. See `_invisible`.
-    `test_the_cheapest_invisible_channel_is_measured_not_assumed` holds it, and
-    an earlier version of this paragraph named 1.4875 as the floor, which was a
-    rate measured on the dearer of the two shapes a variation selector supports.
+    Neither number bounds this function and NOTHING here bounds the module. The
+    pictographic branch below excuses a presence-and-absence payload at 1.4875
+    characters per bit with nothing visible, over any of 503 code points, and
+    `test_a_variation_selector_bitstream_is_a_known_miss` is that measurement.
+    It is the cost of that encoding and not a minimum: `_invisible` records the
+    families this module does not count at all, with a measured encoder for
+    each, and records why no minimum is stated.
     """
     char = content[index]
     if char not in _CONTEXTUAL:
