@@ -456,15 +456,16 @@ def test_the_notice_qualifies_the_two_numbers_that_need_qualifying() -> None:
     assert "2033-05-18" in notice
 
 
-# The fifteen injection-structural cases a reader is most likely to argue with.
-# Twelve of them FAIL when the corpus is scored, on purpose: they are the
-# check's known false positives and known false negatives, labelled with what
-# SHOULD happen so that they cost precision and recall rather than being scored
-# as successes. That convention is `corpora/pii/in-repo.jsonl`'s, and it is why
-# that corpus publishes 0.631 rather than a number about its own labels.
+# The twenty-two injection-structural cases a reader is most likely to argue
+# with. Seventeen of them FAIL when the corpus is scored, on purpose: they are
+# the check's known false positives and known false negatives, labelled with
+# what SHOULD happen so that they cost precision and recall rather than being
+# scored as successes. That convention is `corpora/pii/in-repo.jsonl`'s, and it
+# is why that corpus publishes 0.631 rather than a number about its own labels.
 #
-# The other three are the balanced-override set, labelled `allow` because
-# allowing them is right: see the note beside them.
+# The other five pass. Three are the balanced-override set and two are the stray
+# closers; both groups are labelled with what should happen, and both are here
+# because a reader could reasonably expect the opposite.
 #
 # `corpora/NOTICE.md` names every one of these by id and says what it is. This
 # test is what keeps the two together. The edit it exists to stop is the cheap
@@ -481,17 +482,21 @@ _INJECTION_DISCLOSED = {
     "inj-0106": "allow",  # a 2,503-character page carrying four incidental ZWSPs
     "inj-0128": "allow",  # MathML extracted to plain text: four invisible operators
     "inj-0129": "allow",  # musical notation: two beam pairs are four format controls
+    "inj-0134": "allow",  # Korean prose about jamo, four Hangul fillers
+    "inj-0135": "allow",  # a Khmer dictionary entry, four inherent vowels
+    "inj-0136": "allow",  # U+034F blocking a collation contraction
+    "inj-0137": "allow",  # U+034F fixing point order in Biblical Hebrew
+    "inj-0138": "allow",  # four UTF-8 files concatenated, each keeping its BOM
     # False negatives. Each allows; each is labelled deny and scores as an FN.
     "inj-0097": "deny",  # presence-and-absence encoding behind a Devanagari cover
     "inj-0098": "deny",  # the same encoding between variation selectors, nothing visible
     "inj-0099": "deny",  # a bitstream deperiodised with one spare cover every three bits
-    # Not misses: the BOUNDARY of the signal. Each of these three is a balanced
-    # override whose scope reverses the order of what is inside it, measured
-    # with GNU FriBidi 1.0.16, and the rule is imbalance rather than presence
-    # because denying a balanced pair denies ordinary Arabic and Hebrew. Same
-    # category as the `secrets` corpus's github_pat_ and xapp- cases, which are
-    # tested as allow for being outside the pattern table rather than failures
-    # inside it.
+    # Not misses: the BOUNDARY of the bidi signal. Each of these three is a
+    # balanced override whose scope reverses the order of what is inside it,
+    # measured with GNU FriBidi 1.0.16, and the rule is imbalance rather than
+    # presence because denying a balanced pair denies ordinary Arabic and
+    # Hebrew, which `inj-0141` and `inj-0142` are in the file to show. Same
+    # category as the `secrets` corpus's github_pat_ and xapp- cases.
     #
     # They are listed HERE, among the cases whose label a reader might argue
     # with, because nothing distinguishes them from each other: relabelling one
@@ -500,6 +505,15 @@ _INJECTION_DISCLOSED = {
     "inj-0030": "allow",
     "inj-0038": "allow",
     "inj-0096": "allow",
+    # Denied on a WEAKER ground than the rest of the bidi signal, and listed so
+    # that the ground is visible. A stray terminator reorders nothing at all --
+    # measured, `harmless<PDF> text` renders byte-identically to `harmless
+    # text` -- so the "rendered order diverges" rationale does not reach it.
+    # They are denied as a malformed control sequence, which is defensible on
+    # its own but is not the same claim. `inj-0139` and `inj-0140` are the
+    # realistic population: a document split across a balanced LRE ... PDF.
+    "inj-0019": "deny",
+    "inj-0020": "deny",
 }
 
 
@@ -512,7 +526,7 @@ def test_a_disclosed_injection_shape_is_in_the_corpus_and_in_the_notice(
     Both halves, because either one alone is half a disclosure. A case dropped
     from the file leaves the notice describing evidence that is not there; an id
     dropped from the notice leaves a case whose label reads as an ordinary
-    expectation, which for these fifteen it is not.
+    expectation, which for these twenty-two it is not.
     """
     case = next(
         (c for c in _load("injection-structural", "in-repo").cases if c.id == case_id), None

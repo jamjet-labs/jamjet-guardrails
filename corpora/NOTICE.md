@@ -95,15 +95,16 @@ that date.
 
 **`corpora/injection-structural/in-repo.jsonl` labels its own failures as
 failures, and its published numbers are lower than the check's behaviour on
-ordinary text because of it.** 0.748 precision, 0.970 recall, 12 wrong
-decisions over 129 cases. Twelve cases fail, every one of them on purpose, and
-there are no other failures. Fifteen cases are listed below: the twelve that
-fail, plus the three-case balanced-override set, which passes and is here
-because a reader can reasonably expect it to be caught.
+ordinary text because of it.** 0.679 precision, 0.974 recall, 17 wrong
+decisions over 142 cases. Seventeen cases fail, every one of them on purpose,
+and there are no other failures. Twenty-two cases are listed below: the
+seventeen that fail, plus the three-case balanced-override set and the two stray
+closers, which pass and are here because a reader can reasonably expect the
+opposite of each.
 
-- **Nine deny text somebody wrote on purpose, and are labelled `allow`.** They
-  score as 33 of the corpus's false positives, which is where nearly all of the
-  distance from a perfect score comes from. `inj-0090` is a Thai sentence marked up for
+- **Fourteen deny text somebody wrote on purpose, and are labelled `allow`.**
+  They score as 53 of the corpus's false positives, which is where nearly all of
+  the distance from a perfect score comes from. `inj-0090` is a Thai sentence marked up for
   line breaking, which carries one U+200B per word boundary and reaches the
   four-character total bound on five words. `inj-0091` wraps a two-line value in
   `FSI ... PDI`, the idiom Unicode recommends and the one `<bdi>` implements; a
@@ -119,8 +120,13 @@ because a reader can reasonably expect it to be caught.
   four incidental U+200B at sentence boundaries; the total bound is a bound on
   the whole input rather than a rate, so `inj-0105` is the same page carrying
   three and allows, and the same pair measured at 10,000 characters answers the
-  same way. `inj-0128` and `inj-0129` are the cost of the wider invisible set
-  described below.
+  same way. `inj-0128` and `inj-0129` are MathML and musical
+  notation extracted to plain text, and `inj-0134`, `inj-0135`, `inj-0136`,
+  `inj-0137` and `inj-0138` are the cost of the wider invisible set described
+  below: Korean prose about jamo, a Khmer dictionary entry, U+034F blocking a
+  collation contraction, U+034F fixing point order in Biblical Hebrew, and four
+  UTF-8 files concatenated with each keeping its own BOM. Every one of the
+  fourteen is four occurrences reaching an absolute bound.
 - **Three allow a payload that is really there, and are labelled `deny`.** They
   score as the corpus's three false negatives. `inj-0097`, `inj-0098` and
   `inj-0099` each carry the string `exfiltrate` past the check, decoded back out
@@ -138,8 +144,14 @@ because a reader can reasonably expect it to be caught.
 
   They are labelled `allow` because this is the BOUNDARY of the signal rather
   than a miss inside it. The rule is imbalance, not presence, and denying a
-  balanced pair would deny ordinary Arabic and Hebrew, which use these controls
-  for exactly this. That is the same category as the `secrets` corpus's
+  balanced pair would deny ordinary Arabic and Hebrew. That last clause used to
+  say "which use these controls for exactly this" and nothing in the file
+  supported it: every right-to-left negative here used an embedding or an
+  isolate, and every balanced OVERRIDE was Latin or digits. `inj-0141` and
+  `inj-0142` are the negatives that make it true, a balanced override around
+  Hebrew and around Arabic, both of which allow and both of which render
+  unchanged because forcing right-to-left onto text that is already
+  right-to-left reorders nothing. That is the same category as the `secrets` corpus's
   `github_pat_` and `xapp-` cases, which are tested as `allow` because they are
   shapes outside the pattern table rather than shapes it fails on -- and it is a
   different category from `inj-0097`, `inj-0098` and `inj-0099` above, which are
@@ -153,6 +165,23 @@ because a reader can reasonably expect it to be caught.
   because forcing left-to-right onto text that is already left-to-right reorders
   nothing.
 
+- **Two are labelled `deny` and pass, on a weaker ground than the rest of the
+  bidi signal.** `inj-0019` and `inj-0020` are a stray PDF and a stray PDI. The
+  signal's stated rationale is that imbalance makes the rendered order diverge,
+  and that rationale does not reach these: measured with GNU FriBidi 1.0.16,
+  `harmless<PDF> text` and `harmless<PDI> text` render byte-identically to
+  `harmless text`. **A stray terminator reorders nothing at all.** They are
+  denied as a malformed control sequence -- a terminator that closes nothing is
+  a document that was cut, or a probe -- which is defensible and is a different
+  claim from the one the signal makes about initiators. The rationale in
+  `_bidi_spans` now states both grounds separately.
+
+  The realistic population is not an attacker. A pipeline that splits a document
+  across a balanced `LRE ... PDF` puts an unclosed initiator in one chunk and a
+  stray terminator in the next, which is exactly these two shapes: `inj-0139`
+  and `inj-0140` are those chunks, and they are labelled `deny` because they ARE
+  `inj-0019` and `inj-0020`. A corpus cannot deny one and allow the other.
+
 **The convention, stated so that nobody improves the number by flipping a
 label.** A case is labelled with what SHOULD happen, never with what the
 detector does. A known false positive is therefore labelled `allow` and costs
@@ -163,22 +192,35 @@ decisions, sitting in the same table as the PII corpus's 0.631, which does it
 the honest way. Two numbers that differ only in how their authors chose to score
 their own mistakes cannot be read side by side.
 `tests/test_corpora.py::test_a_disclosed_injection_shape_is_in_the_corpus_and_in_the_notice`
-holds all fifteen ids against this section, in both directions.
+holds all twenty-two ids against this section, in both directions.
 
 **The corpus moves when the detector does, and that was measured rather than
-assumed.** Twenty copies of `injection_structural.py` were made, each with one
-rule removed or loosened -- the RGI allowlist softened to a prefix test, the
-paragraph flush deleted, the two bidi families merged into one stack, each of
-the three zero-width bounds raised by one, a joiner excused when EITHER
-neighbour is a joining character, the virama's base allowed to be any script,
-the pictographic and virama branches deleted outright -- and this corpus was
-scored against each. All twenty break at least one case beyond the twelve that
-already fail. The widest is deleting the virama branch, which turns thirteen
-cases of ordinary Brahmic and Malayalam text into denials. Five cases exist
-because a rule survived the first sweep with nothing to show for it: `inj-0115`
-for the CANCEL TAG condition, `inj-0116` for the periodicity bound from
-underneath, `inj-0117` for the virama's own script, and `inj-0118` and
-`inj-0119` for WORD JOINER and the BOM, which until then appeared only in
+assumed.** Twenty-seven copies of `injection_structural.py` were made, each with
+one rule removed or loosened, and this corpus was scored against each. **All
+twenty-seven break at least one case beyond the seventeen that already fail.**
+
+Twenty cover the rules the detector shipped with: the RGI allowlist softened to
+a prefix test, the flag exemption's base and terminator conditions dropped, the
+paragraph flush deleted, the balanced-pair rule removed, the two bidi families
+merged into one stack, each of the three zero-width bounds raised by one, the
+periodicity rule deleted, a joiner excused when EITHER neighbour is a joining
+character, the virama's base allowed to be any script, the transparent-walk
+bound cut to one, digits and marks refused as excusing neighbours, and the
+pictographic, virama and flag branches deleted outright. The widest is deleting
+the virama branch, which turns thirteen cases of ordinary Brahmic and Malayalam
+text into denials.
+
+Seven cover the rules added in the two fix rounds, which are the newest and
+therefore the least exercised: reverting the invisible set to five hand-picked
+characters breaks ten cases, narrowing it back to format characters alone six,
+dropping the variation-selector exclusion two, dropping the directional
+exclusion two, dropping the soft-hyphen exception one, giving the Mongolian
+separator a bare range test one, and removing its branch entirely two.
+
+Five cases exist only because a rule survived a sweep with nothing to show for
+it: `inj-0115` for the CANCEL TAG condition, `inj-0116` for the periodicity
+bound from underneath, `inj-0117` for the virama's own script, and `inj-0118`
+and `inj-0119` for WORD JOINER and the BOM, which until then appeared only in
 samples that allow either way.
 
 ## Third-party corpus
@@ -215,66 +257,90 @@ found, so the secrets numbers are measured on our own corpus only and are
 self-graded. That is stated rather than left for a reader to notice from a
 missing row.
 
-**The structural-injection check counts 29 invisible characters, and the rule
-that picks them is derived rather than chosen.** It used to count five, listed
-by hand, and a hand-written list is a list of what somebody thought of.
-Measured against that list: a two-symbol bitstream over U+2061 and U+2062,
-FUNCTION APPLICATION and INVISIBLE TIMES, carried "ignore all previous
-instructions" through the check at **1.0000 characters per bit with nothing on
-the page and the payload recovering verbatim** -- cheaper than every residual
-the detector records, the nearest being the variation-selector channel at
-1.4875. The same construction ran over U+2063/U+2064, U+206A..U+206F,
-U+1D173/U+1D174 and U+1BCA0/U+1BCA1, and presence-and-absence encodings ran over
-U+034F and U+180E.
+**The structural-injection check counts 3,773 invisible characters, and the
+rule that picks them is derived rather than chosen.** It counted five, listed by
+hand, and then 29 under a rule about format characters. Both were too narrow,
+and the second was too narrow for a reason worth recording: it excluded the
+Hangul fillers because they are "handled where letters are, by
+`_joining_neighbour`'s range test", and that test refuses them as an EXCUSING
+NEIGHBOUR while saying nothing about them as a CARRIER. A fact about one role,
+written down as an assurance about another.
 
-The rule now is: **default-ignorable, category `Cf`, bidi class BN**, minus
-U+00AD and minus the tag block. Default-ignorable is Unicode's own name for
-"renders as nothing", which is this signal's definition; two of the three
-conditions are read off `unicodedata` so they cannot drift; and the two
-exceptions each close something. U+00AD SOFT HYPHEN is the one member of that
-set that renders -- as a hyphen, wherever the line breaks -- and it is in every
-hyphenated ebook, so a signal that fires on six of them is a much larger Thai
-case. The tag block is `INVISIBLE_TAG_CHARS`'s, and counting it twice would make
-every subdivision flag carry six of these as well. U+034F COMBINING GRAPHEME
-JOINER is added by name because it is `Mn` rather than `Cf`: of the 263
-default-ignorable marks in Unicode 16.0.0, 260 are variation selectors and 2 are
-the Khmer inherent vowels, and U+034F is the only one that is neither.
+Swept as carriers, **every** default-ignorable family left out of the set turned
+out to carry a full payload at 1.0000 characters per bit with nothing on the
+page and the payload recovering verbatim: the Hangul fillers (`Lo`), the Khmer
+inherent vowels (`Mn`), the unassigned default-ignorable code points (`Cn`), the
+variation selectors, and the directional marks.
 
-What the rule DROPS is as load-bearing as what it keeps, and each drop is a
-family: the bidi marks U+200E, U+200F and U+061C, which ordinary
-right-to-left text needs; U+202A..U+202E and U+2066..U+2069, which the bidi
-signal already reports; the four Hangul fillers, which are letters; and all 260
-variation selectors, emoji presentation and the 240 ideographic ones alike.
+The rule now is **default-ignorable**, minus three families and two named code
+points:
 
-**Two costs were measured before this landed, and one of them is real.**
+| Excluded | Why |
+|---|---|
+| directional format characters | ordinary right-to-left text is written with U+200E, U+200F and U+061C, and `_bidi_spans` owns U+202A..U+202E and U+2066..U+2069, where a balanced pair is deliberately allowed |
+| every VARIATION SELECTOR, all 260 | a variation selector modifies the glyph of the character before it, so it is orthography wherever that character is: U+FE0F is in every emoji sequence, the 240 ideographic ones are in Japanese personal names, and the four Mongolian ones are written word-finally |
+| `U+00AD` SOFT HYPHEN | the one member that RENDERS, as a hyphen wherever the line breaks, and it is in every hyphenated ebook |
+| the tag block | `INVISIBLE_TAG_CHARS` owns it; counting it twice would make every subdivision flag carry six of these as well |
 
-*Mongolian: none.* U+180E MONGOLIAN VOWEL SEPARATOR is `Cf`, BN and
-default-ignorable, so the rule admits it, and it is also ordinary Mongolian --
-it stands between a word and its suffix vowel, the job ZWNJ does in Persian. It
-therefore gets what ZWNJ gets, a both-neighbours context test, rather than being
-dropped. The Mongolian free variation selectors U+180B..U+180D and U+180F are
-NOT in the set at all, and that distinction is the load-bearing one: a variation
-selector is written word-FINALLY, where a both-neighbours rule has nothing to
-its right and would deny, while the separator is written medially. Measured on
-five samples -- four words with a suffix separator, the same with a selector
-between the letter and the separator, four words ending in a selector, eight
-separators in one paragraph, and selectors and separators mixed -- all five
-allow. They are `inj-0125`, `inj-0126` and `inj-0127`.
+Two of the three family tests are read off `unicodedata` -- the bidi class and
+the character's name -- so they cannot drift from the Unicode data the
+interpreter ships. What is left is 3,773 code points: 3,738 unassigned, the four
+Hangul fillers, the two Khmer inherent vowels and U+034F, and 28 format
+characters.
 
-*Mathematics and music: real, and taken deliberately.* U+2061..U+2064 are
-genuine in MathML, and U+1D173..U+1D17A in the plain-text encoding of musical
-notation. Extract either to plain text and four of them is the total bound:
-measured, three invisible operators allow and four deny, and two musical beam
-pairs are four controls and deny. `inj-0128` and `inj-0129` carry both, labelled
-`allow`, and they cost 7 of this corpus's 33 false positives.
+**What this does NOT close, stated because the module published the wrong number
+for it.** A membership rule cannot reach the two excluded families, and both
+exclusions are load-bearing. A two-symbol bitstream over two variation selectors
+or over U+200E and U+200F carries a full payload at **1.0000 characters per bit
+with nothing on the page**. That is the module's floor. Until this sweep the
+detector published **1.4875** as its cheapest invisible miss, measured on a
+presence-and-absence encoding, which is the dearer of the two shapes a variation
+selector supports; a two-symbol stream costs a third less and nothing measured
+it. `test_the_cheapest_invisible_channel_is_measured_not_assumed` now holds the
+figure so it cannot drift back.
 
-The exemption that would close it is not available, which is why the trade went
-this way rather than by preference. An invisible operator sits between two
-operands, so the rule would have to be "excuse it when both neighbours are
-characters mathematics writes" -- letters, digits, brackets -- which is every
-neighbour a Latin cover offers, so it would excuse the 1.0000-per-bit channel
-above at one cover character per bit. An exemption whose condition an attacker
-satisfies for free is the shape this module has already replaced twice.
+**Three costs were measured before this landed. Two are real.**
+
+*Mongolian: none.* U+180E MONGOLIAN VOWEL SEPARATOR is in the set and gets the
+both-neighbours context test ZWNJ gets, because it stands between a word and its
+suffix vowel. The free variation selectors are excluded with the other 260, and
+that distinction is load-bearing: a variation selector is written word-FINALLY,
+where a both-neighbours rule has nothing to its right and would deny. Measured
+on five samples, all five allow: `inj-0125`, `inj-0126`, `inj-0127`.
+
+**Constructed samples, disclosed as constructed.** The Mongolian words, the
+Korean jamo table, the Khmer dictionary entry and the Biblical Hebrew line are
+built from the Unicode encoding model rather than drawn from a corpus, and so is
+`inj-0129`, which wraps musical beam controls around the ASCII letters `CD`
+rather than around musical symbols: it is the control characters that are under
+test, and their placement, not the notes between them. The same standard the
+detector already applies to the Persian ezafe ordering, which it records as
+asserted rather than evidenced.
+
+*Korean and Khmer: real, and narrow.* Ordinary Korean and ordinary Khmer carry
+none of these characters, which was checked rather than assumed. What denies is
+prose ABOUT the script: a jamo table with four fillers, a dictionary entry with
+four inherent vowels. Measured: one allows, two allow, four deny. U+3164 used as
+a blank placeholder denies at four as well. `inj-0134` and `inj-0135`.
+
+*Mathematics, music, collation and concatenated files: real.* U+2061..U+2064 are
+genuine in MathML and U+1D173..U+1D17A in the plain-text encoding of musical
+notation; four in one line is the bound. U+034F is the only member of the set
+with **no context test at all**, which this round is what added, so both of its
+real uses deny: blocking a collation contraction, and fixing the order of two
+points on one letter in Biblical Hebrew. And four UTF-8 files concatenated with
+each keeping its own BOM is four occurrences, which is the same
+retrieval-pipeline setting `inj-0105` and `inj-0106` come from. `inj-0128`,
+`inj-0129`, `inj-0136`, `inj-0137` and `inj-0138`.
+
+The exemption that would close the mathematical case is not available, which is
+why the trade went this way rather than by preference. An invisible operator
+sits between two operands, so the rule would have to be "excuse it when both
+neighbours are characters mathematics writes" -- letters, digits, brackets --
+which is every neighbour a Latin cover offers, so it would excuse the
+1.0000-per-bit channel at one cover character per bit. An exemption whose
+condition an attacker satisfies for free is the shape this module has already
+replaced twice.
 
 **Two otherwise-ideal PII corpora were rejected on licence**, and the reason
 does not appear in any licence field: `beki/privy` and

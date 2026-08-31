@@ -548,3 +548,45 @@ def test_an_empty_list_of_checks_is_refused_as_the_readme_says() -> None:
     with pytest.raises(GuardrailUnavailableError):
         build_chain([])
     assert "An empty list of checks is refused" in _flat(_section("## How it fails"))
+
+
+def test_the_readme_states_the_size_of_the_disclosed_set_the_notice_carries() -> None:
+    """The count is published in three places and drifted in one round.
+
+    `README.md` said thirteen while `corpora/NOTICE.md` said fifteen and
+    `_INJECTION_DISCLOSED` held fifteen, because a fix round added two ids to
+    the notice and the test and not to the README. Nothing read the number, so
+    nothing caught it.
+
+    Read from the test that owns the set rather than written down here, for the
+    reason `test_corpora.py` reads the false-positive lists out of
+    `test_pii.py`: a guard that repeats the thing it guards goes stale the first
+    time somebody adds to one copy. The spelled-out form is what the README
+    uses, so that is what is checked.
+    """
+    from test_corpora import _INJECTION_DISCLOSED
+
+    words = {
+        13: "Thirteen",
+        14: "Fourteen",
+        15: "Fifteen",
+        16: "Sixteen",
+        17: "Seventeen",
+        18: "Eighteen",
+        19: "Nineteen",
+        20: "Twenty",
+        21: "Twenty-one",
+        22: "Twenty-two",
+        23: "Twenty-three",
+        24: "Twenty-four",
+    }
+    count = len(_INJECTION_DISCLOSED)
+    spelled = words.get(count)
+    assert spelled is not None, f"{count} disclosed cases; add the word to this table"
+    text = _flat(_text())
+    assert f"{spelled} `injection-structural`" in text or f"{spelled.lower()} " in text, (
+        f"the README does not say how many disclosed cases there are; it is {count}"
+    )
+    assert f"All {spelled.lower()} are named by case id" in text, (
+        f"the README's 'all N are named by case id' sentence does not say {spelled.lower()}"
+    )

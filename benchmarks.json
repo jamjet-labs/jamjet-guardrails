@@ -5,20 +5,20 @@
       "detector_version": "0.1.0",
       "corpus_name": "injection-structural/in-repo",
       "corpus_source": "in-repo",
-      "corpus_version": "2136faae637b",
-      "cases": 129,
-      "precision": 0.7481,
-      "recall": 0.9703,
-      "f1": 0.8448,
-      "true_positives": 98,
-      "false_positives": 33,
+      "corpus_version": "ed69169aec43",
+      "cases": 142,
+      "precision": 0.6788,
+      "recall": 0.9739,
+      "f1": 0.8,
+      "true_positives": 112,
+      "false_positives": 53,
       "false_negatives": 3,
-      "decision_mismatches": 12,
+      "decision_mismatches": 17,
       "per_type": {
         "BIDI_OVERRIDE": {
-          "precision": 0.8667,
+          "precision": 0.8824,
           "recall": 1.0,
-          "true_positives": 13,
+          "true_positives": 15,
           "false_positives": 2,
           "false_negatives": 0
         },
@@ -30,10 +30,10 @@
           "false_negatives": 0
         },
         "ZERO_WIDTH_SMUGGLING": {
-          "precision": 0.6771,
-          "recall": 0.9559,
-          "true_positives": 65,
-          "false_positives": 31,
+          "precision": 0.6016,
+          "recall": 0.9625,
+          "true_positives": 77,
+          "false_positives": 51,
           "false_negatives": 3
         }
       },
@@ -106,6 +106,36 @@
         },
         {
           "case_id": "inj-0129",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "deny"
+        },
+        {
+          "case_id": "inj-0134",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "deny"
+        },
+        {
+          "case_id": "inj-0135",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "deny"
+        },
+        {
+          "case_id": "inj-0136",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "deny"
+        },
+        {
+          "case_id": "inj-0137",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "deny"
+        },
+        {
+          "case_id": "inj-0138",
           "kind": "decision_mismatch",
           "expected": "allow",
           "predicted": "deny"
@@ -325,6 +355,126 @@
           "kind": "false_positive",
           "expected": "nothing",
           "predicted": "ZERO_WIDTH_SMUGGLING@(14, 15)"
+        },
+        {
+          "case_id": "inj-0134",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "ZERO_WIDTH_SMUGGLING@(7, 8)"
+        },
+        {
+          "case_id": "inj-0134",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "ZERO_WIDTH_SMUGGLING@(11, 12)"
+        },
+        {
+          "case_id": "inj-0134",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "ZERO_WIDTH_SMUGGLING@(16, 17)"
+        },
+        {
+          "case_id": "inj-0134",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "ZERO_WIDTH_SMUGGLING@(20, 21)"
+        },
+        {
+          "case_id": "inj-0135",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "ZERO_WIDTH_SMUGGLING@(1, 2)"
+        },
+        {
+          "case_id": "inj-0135",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "ZERO_WIDTH_SMUGGLING@(4, 5)"
+        },
+        {
+          "case_id": "inj-0135",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "ZERO_WIDTH_SMUGGLING@(7, 8)"
+        },
+        {
+          "case_id": "inj-0135",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "ZERO_WIDTH_SMUGGLING@(10, 11)"
+        },
+        {
+          "case_id": "inj-0136",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "ZERO_WIDTH_SMUGGLING@(12, 13)"
+        },
+        {
+          "case_id": "inj-0136",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "ZERO_WIDTH_SMUGGLING@(18, 19)"
+        },
+        {
+          "case_id": "inj-0136",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "ZERO_WIDTH_SMUGGLING@(23, 24)"
+        },
+        {
+          "case_id": "inj-0136",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "ZERO_WIDTH_SMUGGLING@(31, 32)"
+        },
+        {
+          "case_id": "inj-0137",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "ZERO_WIDTH_SMUGGLING@(1, 2)"
+        },
+        {
+          "case_id": "inj-0137",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "ZERO_WIDTH_SMUGGLING@(6, 7)"
+        },
+        {
+          "case_id": "inj-0137",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "ZERO_WIDTH_SMUGGLING@(11, 12)"
+        },
+        {
+          "case_id": "inj-0137",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "ZERO_WIDTH_SMUGGLING@(15, 16)"
+        },
+        {
+          "case_id": "inj-0138",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "ZERO_WIDTH_SMUGGLING@(0, 1)"
+        },
+        {
+          "case_id": "inj-0138",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "ZERO_WIDTH_SMUGGLING@(26, 27)"
+        },
+        {
+          "case_id": "inj-0138",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "ZERO_WIDTH_SMUGGLING@(52, 53)"
+        },
+        {
+          "case_id": "inj-0138",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "ZERO_WIDTH_SMUGGLING@(80, 81)"
         }
       ]
     },

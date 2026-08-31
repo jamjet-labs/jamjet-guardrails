@@ -137,9 +137,28 @@ def _bidi_spans(content: str) -> list[tuple[int, int]]:
     Balanced controls are ordinary formatting and are NOT reported: real Arabic
     and Hebrew text uses them, and a check that denies a language is not a
     security control, it is a check that gets switched off. What is reported is
-    imbalance, because that is what makes the rendered order diverge from the
-    logical order a parser -- or a model -- actually reads for the whole rest of
-    the paragraph, rather than for a stretch the author closed.
+    imbalance -- and imbalance comes in two shapes, which are reported on
+    DIFFERENT grounds. An earlier version of this paragraph gave one ground for
+    both, and it was false of half of them.
+
+      - An unbalanced INITIATOR leaves a scope open with no end, so whatever
+        divergence it causes runs to the end of the paragraph rather than to a
+        point the author chose. The claim is that the divergence is UNBOUNDED,
+        not that it is always present: measured with GNU FriBidi 1.0.16, an
+        unclosed LRE in front of left-to-right text renders that text unchanged,
+        because an embedding onto the direction the text already has reorders
+        nothing. What cannot happen is for the author to bound it.
+      - An unbalanced TERMINATOR reorders NOTHING AT ALL. Measured the same way,
+        `harmless<PDF> text` and `harmless<PDI> text` render byte-identically to
+        `harmless text`. They are reported as a malformed control sequence
+        rather than as a reordering: a terminator that closes nothing is a
+        document that was cut, or a probe. That is a weaker ground than the one
+        above and it is stated separately rather than borrowed from it.
+        `inj-0019` and `inj-0020` are the pair, and `corpora/NOTICE.md`
+        discloses them, because the realistic population is not an attacker: it
+        is a pipeline that splits a document across a balanced `LRE ... PDF`,
+        which puts an unclosed initiator in one chunk and a stray terminator in
+        the next. `inj-0132` and `inj-0133` are those two chunks.
 
     Two counters, one per family, are not enough on their own, because a pairing
     this function accepts has to be a pairing a RENDERER accepts. Both rules
@@ -246,7 +265,8 @@ def _bidi_spans(content: str) -> list[tuple[int, int]]:
 # default-ignorable, invisible -- carried "ignore all previous instructions"
 # through this detector at 1.0000 characters per bit with nothing on the page.
 # That is cheaper than every residual this module records, the nearest being the
-# variation-selector channel at 1.4875, and the same construction ran over
+# variation-selector channel at 1.4875 -- itself since corrected, see
+# `_invisible` -- and the same construction ran over
 # U+2063/U+2064, U+206A/U+206B, U+1D173/U+1D174 and U+1BCA0/U+1BCA1.
 _DEFAULT_IGNORABLE: tuple[tuple[int, int], ...] = (
     (0x00AD, 0x00AD),
@@ -268,60 +288,93 @@ _DEFAULT_IGNORABLE: tuple[tuple[int, int], ...] = (
     (0xE0000, 0xE0FFF),
 )
 
-# U+00AD SOFT HYPHEN is default-ignorable, `Cf` and bidi class BN, so it passes
-# every condition below and is refused by name. It is the one member of that set
-# that RENDERS: a hyphen, wherever the line happens to break. It is in every
-# hyphenated ebook, and a signal that fires on six of them is the Thai case
-# again for a much larger population. `inj-0108` is the sample that holds it.
+# U+00AD SOFT HYPHEN is default-ignorable and passes every property test below,
+# and is refused by name. It is the one member of the set that RENDERS: a
+# hyphen, wherever the line happens to break. It is in every hyphenated ebook,
+# and a signal that fires on six of them is the Thai case for a much larger
+# population. `inj-0108` is the sample that holds it.
 _SOFT_HYPHEN = 0x00AD
-# U+034F COMBINING GRAPHEME JOINER, the one addition the two property tests
-# below cannot make. It is `Mn` rather than `Cf`, and it renders nothing.
-# Admitting `Mn` wholesale is not an option and the sweep says why: of the 263
-# default-ignorable marks in Unicode 16.0.0, 260 are VARIATION SELECTORS -- the
-# emoji presentation selectors, the 240 ideographic ones, and the Mongolian free
-# variation selectors, all of them orthography for the character in front of
-# them -- and 2 are the Khmer inherent vowels. U+034F is the only one that is
-# neither, which is why it is named rather than derived. Its legitimate use is
-# blocking a collation contraction, and no sample of ordinary prose carries one.
-_COMBINING_GRAPHEME_JOINER = 0x034F
+# Read off the character's NAME, so the 260 variation selectors are excluded as
+# a family rather than as four ranges somebody has to keep in step with Unicode.
+# It catches VARIATION SELECTOR-1..256 and the four MONGOLIAN FREE VARIATION
+# SELECTORs, which is exactly right: all 260 do the same job, modifying the
+# glyph of the character in front of them, and all 260 are orthography wherever
+# that character is.
+_VARIATION_SELECTOR = "VARIATION SELECTOR"
+
+
+def _is_directional(char: str) -> bool:
+    """Whether a format character's job is direction rather than nothing.
+
+    Bidi class BN, Boundary Neutral, is what every character with NO directional
+    meaning carries, so a `Cf` character that is not BN is one whose entire
+    purpose is directional: U+200E and U+200F, the LRM and RLM, class L and R;
+    U+061C, the ALM, class AL; and U+202A..U+202E and U+2066..U+2069, each
+    carrying its own. The first three are what ordinary right-to-left text is
+    written with and the rest are `_bidi_spans`'s, where an imbalance is
+    reported and a balanced pair is deliberately not.
+    """
+    return unicodedata.category(char) == "Cf" and unicodedata.bidirectional(char) != "BN"
 
 
 def _invisible() -> frozenset[str]:
-    """Every default-ignorable code point that renders nothing and no other signal owns.
+    """Every default-ignorable code point that renders nothing and no other rule owns.
 
-    Three conditions, and two of the three are read off `unicodedata` rather
-    than written down, for the reason `_script` and `_VIRAMA` are:
+    Default-ignorable is Unicode's own name for "a conforming renderer draws
+    this as nothing", which is this signal's definition, so the property is the
+    rule rather than a starting point somebody then edits. Three exclusions, and
+    each one is a family with a reason rather than a code point somebody
+    remembered:
 
-      - category `Cf`. This drops the four Hangul fillers, which are `Lo` --
-        letters, and handled where letters are, by `_joining_neighbour`'s range
-        test -- and the 263 marks, which the constant above accounts for.
-      - bidi class BN, Boundary Neutral. This is the condition that separates a
-        character with NO directional meaning from one whose whole job is
-        directional, and it drops exactly the characters the bidi signal above
-        already reports or that real right-to-left text needs: U+200E and
-        U+200F, the LRM and RLM, class L and R; U+061C, the ALM, class AL; and
-        U+202A..U+202E and U+2066..U+2069, each of which carries its own class.
-        Reporting those here would double-report an imbalance and deny a
-        balanced pair the bidi signal deliberately allows.
-      - not a tag character, which `_tag_spans` owns. Without this every
-        subdivision flag would carry six of these AND a tag finding.
+      - the DIRECTIONAL format characters, which `_is_directional` names. Real
+        right-to-left text is written with the marks and `_bidi_spans` owns the
+        controls, where a balanced pair is deliberately allowed; counting them
+        here would deny both.
+      - every VARIATION SELECTOR, all 260 of them. A variation selector modifies
+        the glyph of the character before it, so it is orthography wherever that
+        character is: U+FE0F is in every emoji sequence, the 240 ideographic
+        ones are in Japanese personal names, and the four Mongolian ones are
+        written word-finally in ordinary Mongolian.
+      - U+00AD and the tag block, for the reasons beside them.
 
-    What is left is 28 characters: the five this module started with, plus
-    U+2061..U+2064, U+206A..U+206F, U+1BCA0..U+1BCA3, U+1D173..U+1D17A and
-    U+180E. `test_every_invisible_character_is_format_or_a_named_exception`
-    re-derives the whole set and fails if the interpreter's Unicode data moves
-    under it.
+    What is left is 3,773 code points: 3,738 unassigned, which no text can
+    contain by accident; the four Hangul fillers, which are `Lo`; the two Khmer
+    inherent vowels and U+034F COMBINING GRAPHEME JOINER, which are `Mn`; and 28
+    `Cf`.
+
+    THE PROPERTY THIS RULE HAS AND ITS PREDECESSOR DID NOT. The rule here was
+    "`Cf` and bidi class BN", which admitted 29 characters and left every other
+    family out with an argument attached. Two of those arguments were wrong in
+    the same way and a sweep found them: the Hangul fillers were excluded
+    because they are "handled where letters are, by `_joining_neighbour`'s range
+    test", and that test refuses them as an EXCUSING NEIGHBOUR while saying
+    nothing about them as a CARRIER. Measured against that version, a two-symbol
+    bitstream over U+115F/U+1160 and one over U+17B4/U+17B5 each carried "ignore
+    all previous instructions" through this detector at 1.0000 characters per
+    bit with nothing on the page, and so did one over any two unassigned
+    default-ignorable code points. A fact about one role stated as an assurance
+    about another is this module's oldest defect, and it is why the rule is now
+    a property of the character rather than a claim about what some other
+    function does with it.
+
+    WHAT IS STILL OPEN, because a membership rule cannot close it: the 260
+    variation selectors and the 12 directional format characters are each a
+    1.0000-per-bit invisible channel, and both exclusions are load-bearing --
+    counting variation selectors denies every emoji, and counting the marks
+    denies ordinary Arabic and Hebrew. `corpora/NOTICE.md` publishes that
+    residual and `test_the_cheapest_invisible_channel_is_measured_not_assumed`
+    holds the rate, because until this sweep the module published 1.4875 as its
+    cheapest invisible miss and 1.0000 was available.
     """
-    found = {
+    return frozenset(
         chr(point)
         for low, high in _DEFAULT_IGNORABLE
         for point in range(low, high + 1)
-        if unicodedata.category(chr(point)) == "Cf"
-        and unicodedata.bidirectional(chr(point)) == "BN"
+        if not _is_directional(chr(point))
+        and _VARIATION_SELECTOR not in unicodedata.name(chr(point), "")
         and point != _SOFT_HYPHEN
         and not _TAG_START <= point <= _TAG_END
-    }
-    return frozenset(found | {chr(_COMBINING_GRAPHEME_JOINER)})
+    )
 
 
 _ZERO_WIDTH = _invisible()
@@ -466,10 +519,15 @@ _MAX_TRANSPARENT = 4
 # one under it. Next is two, the WORD JOINERs at the thousands boundaries of
 # `1<WJ>000<WJ>000`. The longest run in any allowing sample is one.
 #
-# That is the allow-set and it is not the whole file. The Thai sample carries
-# four, one at each of four word boundaries, and denies: `_MIN_TOTAL` owns this
-# signal's one acknowledged false positive, which is why it is worth knowing
-# from both sides.
+# That is the allow-set and it is not the whole file. `_MIN_TOTAL` owns most of
+# this signal's acknowledged false positives, which is why it is worth knowing
+# from both sides, and there are now several rather than the one this comment
+# used to claim: the Thai sentence marked up for line breaking, which carries
+# four hints; Persian and Urdu written with ASCII digits; a retrieved page
+# carrying four incidental U+200B; MathML and musical notation extracted to
+# plain text; and prose about Korean jamo or Khmer inherent vowels. Every one is
+# four occurrences reaching an absolute bound, and `corpora/NOTICE.md` lists
+# them by case id.
 _MIN_RUN = 2
 _MIN_TOTAL = 4
 
@@ -846,10 +904,19 @@ def _is_contextually_legitimate(content: str, index: int) -> bool:
     quoted 2.3373 for the virama row, which is 596 characters over the 255 bits
     a 3-bit block size actually carried rather than over the payload.
 
-    Neither number bounds the module. The pictographic branch below excuses a
-    presence-and-absence payload at 1.4875 characters per bit with NOTHING
-    visible, over any of 503 code points;
-    `test_a_variation_selector_bitstream_is_a_known_miss` is that measurement.
+    Neither number bounds the module, and neither does anything else in this
+    function. The pictographic branch below excuses a presence-and-absence
+    payload at 1.4875 characters per bit with NOTHING visible, over any of 503
+    code points, and `test_a_variation_selector_bitstream_is_a_known_miss` is
+    that measurement -- but the cheapest invisible channel is not here at all
+    and is not 1.4875. `_invisible` excludes the 260 variation selectors and the
+    12 directional format characters because counting them would deny every
+    emoji sequence and all ordinary right-to-left text, and a two-symbol
+    bitstream over any two of them costs **1.0000 characters per bit** with
+    nothing on the page. That is the module's floor.
+    `test_the_cheapest_invisible_channel_is_measured_not_assumed` holds it, and
+    an earlier version of this paragraph named 1.4875 as the floor, which was a
+    rate measured on the dearer of the two shapes a variation selector supports.
     """
     char = content[index]
     if char not in _CONTEXTUAL:
