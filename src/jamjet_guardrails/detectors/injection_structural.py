@@ -315,6 +315,23 @@ _FORMAT = "Cf"
 # fractions, Bengali currency numerators and script-specific number signs.
 # Nothing measured here writes a joiner against one, and admitting a character
 # no sample needs is how the exemptions in this module have gone wrong before.
+#
+# THIS CLOSES HALF OF THAT FALSE POSITIVE AND THE OTHER HALF IS STILL OPEN. The
+# digit has to be inside `_JOINING_SCRIPTS` like every other neighbour, so an
+# ASCII digit is not one, and Persian and Urdu web text uses ASCII digits
+# constantly. Measured, four joiners each:
+#
+#   کودک ۵<ZWNJ>ساله ...     allow      کودک 5<ZWNJ>ساله ...   DENY
+#   ۱۹۴۷<ZWNJ>ء میں ...      allow      1947<ZWNJ>ء میں ...    DENY
+#                                       CD<ZWNJ>ها و DVD<ZWNJ>ها  DENY
+#
+# The last row is the same shape with a Latin acronym, which Persian and Urdu
+# attach the same suffixes to. `test_an_ascii_numeral_before_a_joiner_is_a_known_
+# false_positive` holds all three. The candidate rule is to excuse a digit or a
+# Latin letter when the OTHER neighbour is in a joining script, which is a
+# different rule from this one -- it makes a neighbour's admissibility depend on
+# its partner -- and it is written here as a candidate rather than shipped
+# unmeasured.
 _DECIMAL_DIGIT = "Nd"
 # How far back that walk may go, and it is a bound on COST, not on orthography.
 # Unbounded it is QUADRATIC, and the input that shows it is one an attacker can
@@ -476,6 +493,20 @@ def _mark_base(content: str, index: int) -> str:
     `_base_before` asks where a virama's base is, so it crosses NON-STARTERS and
     stops on the first starter.
 
+    WHICH letter is not decided here. `_base_before` requires the virama's own
+    script because a virama is script-specific orthography; the caller of this
+    function requires only `_JOINING_SCRIPTS` membership, and that weaker test
+    is load-bearing rather than lax. Any letter at all admits a base that
+    renders nothing: U+115F and U+1160 HANGUL CHOOSEONG and JUNGSEONG FILLER,
+    U+3164 HANGUL FILLER and U+FFA0 HALFWIDTH HANGUL FILLER are category `Lo`
+    AND default-ignorable, so `<filler><fatha><joiner><fatha>` repeated carried
+    a 256-bit payload at 4.0000 characters per bit with nothing on the page --
+    measured on all four. Inside `_JOINING_SCRIPTS` the only default-ignorable
+    code points are U+061C and U+FEFF, both `Cf`, which the caller's category
+    test already refuses; so range membership is what makes "a letter" mean "a
+    letter somebody can see" here.
+    `test_a_mark_on_an_invisible_letter_is_not_an_excusing_neighbour` holds it.
+
     The two definitions are incomparable, not nested, and the numbers are in
     `test_the_walk_to_a_base_crosses_non_starters_and_format_characters`: 1,126
     marks in Unicode 16.0.0 are `Mn` or `Me` with combining class 0, and this
@@ -563,7 +594,7 @@ def _joining_neighbour(content: str, index: int) -> bool:
     category = unicodedata.category(char)
     if category[0] == "L" or category == _DECIMAL_DIGIT:
         return True
-    return category[0] == "M" and bool(_mark_base(content, index))
+    return category[0] == "M" and _in_ranges(_mark_base(content, index), _JOINING_SCRIPTS)
 
 
 def _base_before(content: str, index: int) -> str:
@@ -676,20 +707,37 @@ def _is_contextually_legitimate(content: str, index: int) -> bool:
 
     What is left is any base whose script matches its virama's, and separately
     any pair of neighbours the rule below excuses, which is letters, decimal
-    digits, and marks that are written on a letter. Neither residual is free of
-    visible cover any more: `_is_contextually_legitimate` answers False for
-    `<ALM><ZWNJ><ALM>` and for a run of unattached marks, and
-    `_joining_neighbour` carries the sweep that closed both.
+    digits, and marks written on a letter of a joining script. Neither of those
+    two branches now excuses a joiner with nothing visible around it:
+    `_is_contextually_legitimate` answers False for `<ALM><ZWNJ><ALM>`, for a
+    run of unattached marks, and for a mark on a Hangul filler, and
+    `_joining_neighbour` carries the sweeps that closed all three. That is a
+    statement about THESE branches and not about the module -- the pictographic
+    branch below still excuses a wholly invisible payload, and the last
+    paragraph here says at what rate.
 
-    Visible is not the same as bounded, and the rates belong in one place. On a
-    256-bit payload the cheapest same-script cover measured is
-    `<letter>(<joiner><virama>)*3`: 2.3373 characters per bit and 86 visible
-    letters, where four joiners to one letter denies. The deperiodised
-    neighbour-rule miss beside it runs at almost exactly the same 2.3359 and
-    costs 342 visible characters, four times as many. And a fully invisible miss
-    remains in this module that neither of these branches touches:
-    `test_a_variation_selector_bitstream_is_a_known_miss` runs at 1.5000
-    characters per bit with nothing on the page, in the pictographic branch.
+    THE CONVENTION for every rate in this module, because three of them have
+    been wrong for want of one: a message carries the WHOLE payload, and the
+    character count includes the one trailing cover character the last joiner
+    needs as a right neighbour. Measured that way on a 256-bit payload:
+
+        <letter><virama><joiner>              769 chars  3.0039/bit  257 visible
+        <letter>(<virama><joiner>)*2          641        2.5039      129
+        <letter>(<joiner><virama>)*3          599        2.3398       87
+        <letter>(<joiner><virama>)*4          577        2.2539       65   DENY
+        deperiodised, letter or digit cover   598        2.3359      342
+
+    So the cheapest thing either branch still allows is the deperiodised cover
+    at 2.3359, and the virama cover is a hair dearer per bit while costing a
+    QUARTER of the visible text -- 87 characters against 342. Visible cost, not
+    rate, is what separates them, and an earlier version of this paragraph
+    quoted 2.3373 for the virama row, which is 596 characters over the 255 bits
+    a 3-bit block size actually carried rather than over the payload.
+
+    Neither number bounds the module. The pictographic branch below excuses a
+    presence-and-absence payload at 1.4875 characters per bit with NOTHING
+    visible, over any of 503 code points;
+    `test_a_variation_selector_bitstream_is_a_known_miss` is that measurement.
     """
     char = content[index]
     if char not in _CONTEXTUAL:
