@@ -316,9 +316,9 @@ the cost of THAT ENCODING and is not a bound on anything.
 | C1 controls | 32 | base 32: **0.1992** |
 | C0 controls, tab, LF and CR excluded | 29 | base 29: **0.2070** |
 | Egyptian hieroglyph format controls | 16 | base 16: **0.2500** |
-| Arabic and Kaithi prepended concatenation marks | 13 | base 13: **0.2695** |
+| `Prepended_Concatenation_Mark` characters | 13 | base 13: **0.2695** |
 | interlinear annotation characters | 3 | base 3: **0.6289** |
-| directional marks alone | 3 | two of the three: **1.0000** |
+| directional marks alone | 3 | one character per bit, two of the three: **1.0000** |
 
 Every row was measured against the committed detector, returns **zero
 findings**, and decodes back to "ignore all previous instructions" verbatim. Two
@@ -327,18 +327,27 @@ because those encoders used 16 of the 29 C0 controls and 2 of the 3 annotation
 characters: the same one-bit-per-character assumption, four lines under a
 sentence rejecting it.
 
-**And a cost per bit is itself one accounting.** The total bound lets three
-unexplained characters through unconditionally, so an attacker already sending a
-document pays for three characters and nothing else. Measured: three counted
-characters placed in a 2,496-character cover choose among C(2496,3) positions
-and 259 symbols each, which is 55.3 bits carried by 3 added characters, and the
-document allows with zero findings. Whether that is "0.05 characters per bit" or
-"free" depends on what the cover is charged to, which is another reason a single
-number cannot carry this claim.
+**And a cost per bit is itself one accounting.** An attacker already sending a
+document pays only for the characters they ADD, and the total bound lets three
+counted characters through **provided no two are adjacent** -- two adjacent are
+a run, and the run bound is 2. Measured: two adjacent deny, two scattered allow,
+three scattered allow, four scattered deny.
 
-**Nothing here is closed this round.** The Arabic and Kaithi prepended
-concatenation marks are `Cf` and are NOT default-ignorable, so the rule never
-reached them; the control families render in a renderer-dependent way; and the
+Priced over the alphabet that bound actually governs, which is the **counted**
+set: the three counted characters in `inj-0105`, a 2,502-character retrieved
+page that allows with zero findings, choose among C(2500, 3) pairwise
+non-adjacent positions and 3,773 symbols each, which is **66.9 bits carried by 3
+added characters**. An earlier version of this passage said 55.3, having charged
+three characters against a bound only counted characters consume and then priced
+them over the 259 symbols that bound does not count -- understating the leak of
+the very bound it names by 11.6 bits, in the fourth rewrite of this paragraph.
+Whether 66.9 bits for three characters reads as "cheap" or "free" depends on
+what the cover is charged to, which is a second reason no single number carries
+this claim.
+
+**Nothing here is closed.** The `Prepended_Concatenation_Mark` characters --
+ten Arabic, two Kaithi and U+070F SYRIAC ABBREVIATION MARK -- are `Cf` and are
+NOT default-ignorable, so the rule never reached them; the control families render in a renderer-dependent way; and the
 positional channel is a property of the bound rather than of the character set.
 They are listed because a family nobody has written down is a family nobody can
 close.

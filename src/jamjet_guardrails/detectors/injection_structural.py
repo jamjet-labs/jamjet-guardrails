@@ -263,11 +263,13 @@ def _bidi_spans(content: str) -> list[tuple[int, int]]:
 # list of what somebody thought of. Measured against that list, a bitstream over
 # U+2061 and U+2062 -- FUNCTION APPLICATION and INVISIBLE TIMES, `Cf`,
 # default-ignorable, invisible -- carried "ignore all previous instructions"
-# through this detector at 1.0000 characters per bit with nothing on the page.
-# That is cheaper than every residual this module records, the nearest being the
-# variation-selector channel at 1.4875 -- itself since corrected, see
-# `_invisible` -- and the same construction ran over
-# U+2063/U+2064, U+206A/U+206B, U+1D173/U+1D174 and U+1BCA0/U+1BCA1.
+# through this detector at 1.0000 characters per bit with nothing on the page,
+# and the same construction ran over U+2063/U+2064, U+206A/U+206B,
+# U+1D173/U+1D174 and U+1BCA0/U+1BCA1. That 1.0000 is the cost of THAT encoding.
+# It is not a ranking: an earlier version of this comment called it cheaper than
+# every residual the module records, which is false against the module's own
+# list -- `_invisible` publishes encoders at 0.1250, 0.1992, 0.2070, 0.2500,
+# 0.2695 and 0.6289, and the variation-selector row is 0.1250, not 1.4875.
 _DEFAULT_IGNORABLE: tuple[tuple[int, int], ...] = (
     (0x00AD, 0x00AD),
     (0x034F, 0x034F),
@@ -376,17 +378,28 @@ def _invisible() -> frozenset[str]:
       32 C1 controls, base 32                           0.1992
       29 C0 controls, base 29                           0.2070
       16 Egyptian hieroglyph format controls, base 16   0.2500
-      13 Arabic and Kaithi prepended concatenation
-        marks, base 13                                  0.2695
+      13 Prepended_Concatenation_Mark characters,
+        base 13                                         0.2695
       3 interlinear annotation characters, base 3       0.6289
       3 directional marks, two of them                  1.0000
 
-    And a cost per bit is itself one accounting. `_MIN_TOTAL` lets three
-    unexplained characters through unconditionally, so an attacker who is
-    already sending a document pays for three characters and nothing else:
-    measured, three counted characters placed in a 2,496-character cover choose
-    among C(2496,3) positions and 259 symbols each, which is 55.3 bits for 3
-    added characters, and the cover allows.
+    And a cost per bit is itself one accounting. An attacker already sending a
+    document pays for the characters they ADD and nothing else, and `_MIN_TOTAL`
+    lets three counted characters through PROVIDED NO TWO ARE ADJACENT, since
+    two adjacent ones are a run and `_MIN_RUN` is 2. Measured: two adjacent
+    deny, two scattered allow, three scattered allow, four scattered deny.
+
+    Priced over the alphabet the bound actually governs, which is the counted
+    set and not the excluded families -- an excluded character consumes no part
+    of `_MIN_TOTAL` at all, so "three" is not a limit on those -- three counted
+    characters in `inj-0105`, a 2,502-character retrieved page that allows,
+    choose among C(2500, 3) pairwise-non-adjacent positions and 3,773 symbols
+    each: **66.9 bits carried by 3 added characters**. An earlier version of
+    this paragraph said 55.3, having charged three characters against
+    `_MIN_TOTAL` and then priced them over the 259 symbols `_MIN_TOTAL` does not
+    count, which understates the leak of the bound it names by 11.6 bits.
+    `test_the_bound_passes_three_non_adjacent_characters_and_what_they_carry`
+    holds both halves.
 
     The families are the claim. The numbers are illustrations of it.
 
@@ -943,12 +956,18 @@ def _is_contextually_legitimate(content: str, index: int) -> bool:
         <letter>(<joiner><virama>)*4          577        2.2539       65   DENY
         deperiodised, letter or digit cover   598        2.3359      342
 
-    So the least costly thing either branch still allows is the deperiodised cover
-    at 2.3359, and the virama cover is a hair dearer per bit while costing a
-    QUARTER of the visible text -- 87 characters against 342. Visible cost, not
-    rate, is what separates them, and an earlier version of this paragraph
-    quoted 2.3373 for the virama row, which is 596 characters over the 255 bits
-    a 3-bit block size actually carried rather than over the payload.
+    The rows are five measurements and the table is the whole of what they say.
+    An earlier version of this paragraph ranked them -- "the cheapest thing
+    either branch still allows", then "the least costly thing", which is the
+    same claim with a new adjective -- and a superlative over everything a
+    branch allows is unbounded quantification inferred from five rows. It also
+    contradicted the paragraph four lines below it. What the rows do support:
+    the deperiodised cover and the virama cover differ by a hair per bit while
+    the virama cover costs a QUARTER of the visible text, 87 characters against
+    342, so visible cost rather than rate is what separates those two. An
+    earlier version also quoted 2.3373 for the virama row, which is 596
+    characters over the 255 bits a 3-bit block size actually carried rather than
+    over the payload.
 
     Neither number bounds this function and NOTHING here bounds the module. The
     pictographic branch below excuses a presence-and-absence payload at 1.4875
