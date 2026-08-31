@@ -62,7 +62,23 @@ class InjectionStructuralGuardrail:
         self._on_match: Decision = on_match
 
     def _matches(self, content: str) -> list[tuple[str, tuple[int, int]]]:
-        """Every span every signal claims, in text order. Nothing is dropped."""
+        """Every span every signal claims, sorted by span. Nothing is dropped.
+
+        Sorted BY SPAN is a precondition of what consumes this list, not a
+        formatting preference. `_merge` tests each span against the running end
+        of the region it is extending and looks no further back, so a list in
+        any other order makes it emit regions that are wrong rather than merely
+        untidy, and `_rewrite` writes those out. A tie on the start offset puts
+        the shorter span first, and `sorted` is stable, so equal spans keep the
+        order the signals produced them in.
+
+        Holding that falls to whoever adds a signal here, because each signal
+        scans the whole input independently: their results concatenate in signal
+        order, which is not span order, and the combined list has to be re-sorted
+        before it is returned. Nothing local catches a miss. `deny` is the
+        default and a deny never reaches `_rewrite`, so an unsorted return stays
+        invisible until a caller configures `redact`.
+        """
         return []
 
     def check(self, content: str, context: Context) -> Verdict:

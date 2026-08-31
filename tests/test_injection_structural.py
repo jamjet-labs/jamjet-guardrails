@@ -58,8 +58,15 @@ def test_it_runs_on_retrieved_input_not_only_typed_input() -> None:
 def test_a_chain_skips_it_on_output() -> None:
     """Pins the declared direction as behaviour rather than as an attribute.
 
-    See the open question at the foot of this plan: if output-side detection is
-    wanted, THIS is the test that changes, and it changes a published contract.
+    Output-side detection was considered and deliberately deferred, not
+    overlooked. The case for it is real: a model that emits tag characters into
+    its own output is smuggling to whatever consumes that output next. The check
+    is input-only regardless, for now.
+
+    If it is ever wanted, THIS is the test that changes, which is the point of
+    pinning it. Adding "output" to `directions` widens a published contract
+    rather than extending it -- every caller already running this check on input
+    would begin running it on output too, and the default is deny.
     """
     result = GuardrailChain([InjectionStructuralGuardrail()]).run("anything", OUT)
     assert result.verdicts == ()
