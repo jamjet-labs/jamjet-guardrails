@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from jamjet_guardrails.detectors import build
+from jamjet_guardrails.detectors import AVAILABLE, build
 from jamjet_guardrails.detectors.pii import PII_TYPES
 from jamjet_guardrails.detectors.secrets import SECRET_TYPES
 from jamjet_guardrails.eval.corpus import Corpus, load_corpus
@@ -32,7 +32,12 @@ from test_pii import _KNOWN_FALSE_POSITIVES, _NEW_FALSE_POSITIVES
 ROOT = Path(__file__).resolve().parent.parent
 CORPORA = ROOT / "corpora"
 
-EXPECTED = [("pii", "in-repo"), ("pii", "third-party"), ("secrets", "in-repo")]
+EXPECTED = [
+    ("injection-structural", "in-repo"),
+    ("pii", "in-repo"),
+    ("pii", "third-party"),
+    ("secrets", "in-repo"),
+]
 
 
 MINIMUM_CASES = {"in-repo": 30, "third-party": 20}
@@ -45,6 +50,27 @@ def test_corpus_exists_and_loads(check: str, source: str) -> None:
     assert len(corpus.cases) >= floor, (
         f"{check}/{source} has {len(corpus.cases)} cases; a corpus under {floor} "
         "cannot support a published number"
+    )
+
+
+def test_every_registered_check_has_a_corpus() -> None:
+    """The symmetric half of the README's checks table, which IS enforced.
+
+    `tests/test_readme.py` asserts that table equals `AVAILABLE`, so a check
+    cannot be registered without appearing there. Nothing said the same about
+    the evidence: `eval.cli.discover` globs `corpora/<check>/<source>.jsonl` and
+    never consults `AVAILABLE`, so a registered check with no corpus directory
+    is scored on nothing, publishes no row, and fails no gate. In a project
+    whose headline is "measured, not asserted", an unmeasured check is the one
+    absence that has to be loud.
+
+    The directory, not a file: a check's corpora may be named anything, and the
+    loader and the case floor above answer for what is in them.
+    """
+    missing = sorted(name for name in AVAILABLE if not (CORPORA / name).is_dir())
+    assert missing == [], (
+        f"{missing} are registered in AVAILABLE with no corpora/<check>/ directory, so "
+        "nothing measures them and no published row would show they are missing"
     )
 
 
@@ -428,3 +454,52 @@ def test_the_notice_qualifies_the_two_numbers_that_need_qualifying() -> None:
     notice = NOTICE.read_text(encoding="utf-8")
     assert "stress set" in notice
     assert "2033-05-18" in notice
+
+
+# The injection-structural corpus labels these eleven cases with what the design
+# says, and what the design says is not what a reader would call right. Six deny
+# text a person wrote on purpose; four allow a payload that is really in there;
+# one is a page whose only fault is being long. Each is a decision recorded in
+# `src/jamjet_guardrails/detectors/injection_structural.py` and in
+# `tests/test_injection_structural.py`, and each is what a precision of >0.999 on
+# this corpus does NOT cover.
+#
+# The label alone cannot say that, so `corpora/NOTICE.md` does, by case id, and
+# this test is what keeps the two together. Deleting a case moves no number here
+# -- every one of them passes -- so nothing else in the suite would notice it go.
+_INJECTION_DISCLOSED = {
+    "inj-0090": "deny",  # Thai line-break hints, four of them
+    "inj-0091": "deny",  # FSI around a multi-line value, the idiom Unicode recommends
+    "inj-0092": "deny",  # Persian ages written with ASCII digits
+    "inj-0093": "deny",  # Urdu years written with ASCII digits
+    "inj-0094": "deny",  # Persian suffixes on Latin acronyms
+    "inj-0095": "deny",  # Persian decades written with ASCII digits
+    "inj-0096": "allow",  # a balanced override reorders and is allowed anyway
+    "inj-0097": "allow",  # presence-and-absence encoding
+    "inj-0098": "allow",  # the variation-selector channel
+    "inj-0099": "allow",  # the deperiodised cover
+    "inj-0106": "deny",  # a 2,503-character page carrying four incidental ZWSPs
+}
+
+
+@pytest.mark.parametrize(("case_id", "decision"), sorted(_INJECTION_DISCLOSED.items()))
+def test_a_disclosed_injection_shape_is_in_the_corpus_and_in_the_notice(
+    case_id: str, decision: str
+) -> None:
+    """Present, labelled as the notice says, and named there by id.
+
+    Both halves, because either one alone is half a disclosure. A case dropped
+    from the file leaves the notice describing evidence that is not there; an id
+    dropped from the notice leaves a case whose label reads as an ordinary
+    expectation, which for these eleven it is not.
+    """
+    case = next(
+        (c for c in _load("injection-structural", "in-repo").cases if c.id == case_id), None
+    )
+    assert case is not None, f"{case_id} is disclosed in {NOTICE} and is not in the corpus"
+    assert case.expect_decision == decision, (
+        f"{case_id} is labelled {case.expect_decision!r} and {NOTICE} describes it as {decision!r}"
+    )
+    assert case_id in NOTICE.read_text(encoding="utf-8"), (
+        f"{case_id} carries a label a reader would disagree with and {NOTICE} does not name it"
+    )

@@ -1,6 +1,45 @@
 {
   "results": [
     {
+      "detector": "injection-structural",
+      "detector_version": "0.1.0",
+      "corpus_name": "injection-structural/in-repo",
+      "corpus_source": "in-repo",
+      "corpus_version": "25d0f964981a",
+      "cases": 119,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "true_positives": 113,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "decision_mismatches": 0,
+      "per_type": {
+        "BIDI_OVERRIDE": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "true_positives": 15,
+          "false_positives": 0,
+          "false_negatives": 0
+        },
+        "INVISIBLE_TAG_CHARS": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "true_positives": 20,
+          "false_positives": 0,
+          "false_negatives": 0
+        },
+        "ZERO_WIDTH_SMUGGLING": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "true_positives": 78,
+          "false_positives": 0,
+          "false_negatives": 0
+        }
+      },
+      "failures": []
+    },
+    {
       "detector": "pii",
       "detector_version": "0.1.0",
       "corpus_name": "pii/in-repo",

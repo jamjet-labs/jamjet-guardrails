@@ -1,4 +1,6 @@
+import json
 import unicodedata
+from pathlib import Path
 
 import pytest
 
@@ -1644,3 +1646,18 @@ def test_an_ascii_numeral_before_a_joiner_is_a_known_false_positive() -> None:
     for content in denied:
         assert sum(1 for char in content if char == ZWNJ) == 4
         assert check(content, IN).decision == "deny", content
+
+
+CORPUS = Path(__file__).parent.parent / "corpora" / "injection-structural" / "in-repo.jsonl"
+
+
+def test_the_corpus_exercises_every_declared_finding_type() -> None:
+    """A type the detector can emit but no case covers is an unmeasured claim.
+
+    This is the test that fails when a fourth signal is added to the detector and
+    the corpus is not extended, which is the moment a published recall number
+    quietly stops describing the whole detector.
+    """
+    cases = [json.loads(line) for line in CORPUS.read_text(encoding="utf-8").splitlines() if line]
+    covered = {finding["type"] for case in cases for finding in case["expect"]["findings"]}
+    assert covered == INJECTION_TYPES, f"uncovered: {INJECTION_TYPES - covered}"

@@ -1,4 +1,9 @@
 {
+  "injection-structural/in-repo/25d0f964981a": {
+    "decision_mismatches": 0,
+    "precision": 1.0,
+    "recall": 1.0
+  },
   "pii/in-repo/06fb3b601aba": {
     "decision_mismatches": 24,
     "precision": 0.63,

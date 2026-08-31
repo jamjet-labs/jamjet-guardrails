@@ -332,14 +332,38 @@ def test_the_row_count_the_readme_states_is_the_size_of_the_third_party_corpus()
     )
 
 
-def test_the_readme_says_the_secrets_numbers_are_self_graded_because_they_are() -> None:
+def test_the_readme_names_every_check_whose_numbers_are_self_graded() -> None:
     """The absent row is a claim too, and it is the one a reader will not
-    notice going stale in the direction that matters."""
+    notice going stale in the direction that matters.
+
+    EVERY registered check, derived, rather than `secrets` by name. This test
+    pinned one sentence about one check until `injection-structural` arrived
+    with no third-party corpus either, and that is how a hardcoded list fails:
+    the claim it guards stays true while it quietly stops covering the check
+    that needed it. The set is computed from `AVAILABLE` and the corpora, so
+    the next such check is covered the day it is registered.
+
+    One SENTENCE has to name them all, for the reason `tests/test_corpora.py`
+    requires a source and its licence on one row of the notice: "no third-party
+    corpus" in one paragraph and a check's name in another is two halves that
+    do not join up for a reader.
+    """
     third_party_checks = {path.parent.name for path in _third_party_corpora()}
-    assert "secrets" not in third_party_checks, (
-        "a third-party secrets corpus now exists; the README says there is none"
+    self_graded = sorted(set(AVAILABLE) - third_party_checks)
+    assert self_graded, "every check has a third-party corpus; this check would prove nothing"
+
+    sentences = [s for s in _flat(_text()).split(". ") if "no third-party corpus" in s.lower()]
+    assert sentences, "the README never says that any check has no third-party corpus"
+    naming = [s for s in sentences if all(f"`{name}`" in s for name in self_graded)]
+    assert naming, (
+        f"no single sentence of the README says that {self_graded} have no third-party "
+        "corpus, so at least one check is published as self-graded without saying so"
     )
-    assert "There is no third-party secrets corpus." in _flat(_text())
+    # The other direction, which is the one that goes stale silently: a check
+    # that GAINS a third-party corpus must stop being listed as self-graded.
+    for sentence in naming:
+        stale = [name for name in third_party_checks & set(AVAILABLE) if f"`{name}`" in sentence]
+        assert stale == [], f"{stale} now have a third-party corpus and the README denies it"
 
 
 # ==========================================================================
