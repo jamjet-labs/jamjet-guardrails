@@ -42,6 +42,7 @@ from jamjet_guardrails import (
     combine,
     saw,
 )
+from jamjet_guardrails.detectors.injection_structural import INJECTION_TYPES
 from jamjet_guardrails.eval.corpus import Case, Corpus, ExpectedFinding, load_corpus
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -55,6 +56,7 @@ REQUIRED_SECTIONS = [
     "## Single-pass rewriting",
     "## The saw hash",
     "## Corpus schema",
+    "## The injection-structural constraint",
     "## Third-party corpora",
     "## What is deliberately unspecified",
 ]
@@ -495,3 +497,94 @@ def test_the_third_party_section_points_at_the_notice_it_does_not_replace() -> N
     """CC BY 4.0 attribution lives in one file, so the two cannot fall out of step."""
     section = _section("## Third-party corpora")
     assert "corpora/NOTICE.md" in section
+
+
+# ==========================================================================
+# The injection-structural section: its types and its span vector, recomputed.
+# ==========================================================================
+
+INJECTION = "## The injection-structural constraint"
+INJECTION_CORPUS = ROOT / "corpora" / "injection-structural" / "in-repo.jsonl"
+# The case the document works its span vector out of.
+SPAN_VECTOR_CASE = "inj-0001"
+
+
+def _subsection(heading: str, sub: str) -> str:
+    """The body of one H3, up to the next H3 or the end of its H2."""
+    section = _section(heading)
+    assert sub in section, f"{heading} has no {sub!r} subsection"
+    return section.split(sub, 1)[1].split("\n### ", 1)[0]
+
+
+def test_the_document_lists_every_type_this_check_can_produce() -> None:
+    """Derived from `INJECTION_TYPES`, so a fourth signal is a red test here.
+
+    A type is contract by the rule this document already states: a finding
+    `type` has to match the label the corpus uses, because that is what a
+    prediction is matched against. A type added to the check and left out of
+    here is a piece of that a porter never learns, and both directions matter --
+    a type listed here and not produced makes the document overstate the check.
+    """
+    documented = set(
+        re.findall(r"`([A-Z][A-Z_]+)`", _subsection(INJECTION, "### Three finding types"))
+    )
+    assert documented == set(INJECTION_TYPES), (
+        f"the document lists {sorted(documented)}; the check produces {sorted(INJECTION_TYPES)}"
+    )
+
+
+def test_the_span_vector_the_document_publishes_is_the_case_it_names() -> None:
+    """All three renderings of one corpus span, recomputed from the case itself.
+
+    The document tells a porter that spans count CODE POINTS, and backs it with
+    one case rendered three ways. The numbers are the whole of the claim: quoted
+    wrongly, a porter checks their UTF-16 implementation against a UTF-16 figure
+    that was never measured and concludes it agrees.
+
+    The three renderings are asserted to DIFFER as well. If they ever coincide
+    the vector demonstrates nothing, and it would still be quotable.
+    """
+    corpus = load_corpus(INJECTION_CORPUS, name="injection-structural")
+    case = next((c for c in corpus.cases if c.id == SPAN_VECTOR_CASE), None)
+    assert case is not None, (
+        f"{SPAN_VECTOR_CASE} is the document's span vector and is not in the corpus"
+    )
+    (finding,) = case.expect_findings
+    assert finding.span is not None
+    start, end = finding.span
+
+    def utf8(index: int) -> int:
+        return len(case.text[:index].encode("utf-8"))
+
+    def utf16(index: int) -> int:
+        return len(case.text[:index].encode("utf-16-le")) // 2
+
+    spans = {
+        "code points": (start, end),
+        "UTF-8 bytes": (utf8(start), utf8(end)),
+        "UTF-16 code units": (utf16(start), utf16(end)),
+    }
+    assert len(set(spans.values())) == 3, (
+        f"the three renderings of {SPAN_VECTOR_CASE} coincide ({spans}), so the "
+        "document's worked vector distinguishes nothing"
+    )
+    section = _section(INJECTION)
+    for unit, (low, high) in spans.items():
+        assert f"`[{low}, {high}]`" in section, (
+            f"the document does not publish {SPAN_VECTOR_CASE} in {unit}, which is [{low}, {high}]"
+        )
+
+
+def test_every_case_in_the_injection_corpus_carries_the_direction_the_document_claims() -> None:
+    """The document says this check's direction is specified here and measured nowhere.
+
+    That rests on one fact about the corpus: every case is `input`, so a port
+    declaring `output` as well scores identically and the corpus cannot object.
+    Add one output case and the sentence becomes false, with nothing else in the
+    repository disagreeing.
+    """
+    corpus = load_corpus(INJECTION_CORPUS, name="injection-structural")
+    assert corpus.cases, "the injection corpus is empty; this check would prove nothing"
+    directions = {case.direction for case in corpus.cases}
+    assert directions == {"input"}, f"the corpus carries directions {sorted(directions)}"
+    assert "`direction: input`" in _section(INJECTION)

@@ -553,12 +553,20 @@ def test_a_disclosed_injection_shape_is_in_the_corpus_and_in_the_notice(
 
 
 # Every file that cites a case id in prose. The detector and its tests cite ids
-# to say "this input is that case"; the notice cites them to disclose.
+# to say "this input is that case"; the notice cites them to disclose;
+# `docs/conformance.md` cites them to say which cases an exemption is holding up,
+# which is the claim a porter is meant to check for themselves.
+#
+# Adding a file here is not optional bookkeeping. Every guard below reads this
+# tuple and nothing else, so a document that cites ids and is absent from it is
+# a document nothing checks -- which is how the README came to be added, one
+# round after the guards were written for the two files in hand.
 _CITING = (
     ROOT / "src" / "jamjet_guardrails" / "detectors" / "injection_structural.py",
     ROOT / "tests" / "test_injection_structural.py",
     NOTICE,
     ROOT / "README.md",
+    ROOT / "docs" / "conformance.md",
 )
 _CASE_ID = re.compile(r"inj-\d{4}")
 
