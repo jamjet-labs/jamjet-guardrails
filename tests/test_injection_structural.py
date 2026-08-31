@@ -358,8 +358,18 @@ def test_balanced_and_plain_bidi_text_is_not_an_attack(content: str) -> None:
 
 
 def test_nesting_is_tracked_per_family() -> None:
-    """PDF closes an embedding; PDI closes an isolate. They are not interchangeable."""
-    assert InjectionStructuralGuardrail().check(f"a{LRE}b{PDI}c", IN).decision == "deny"
+    """PDF closes an embedding; PDI closes an isolate. They are not interchangeable.
+
+    BOTH controls are named, not just the verdict. A deny here is satisfied by the
+    unclosed LRE on its own, so a version that reports the embedding and stays
+    silent about the PDI that closed nothing still passes a decision-only
+    assertion. That is the mutation `test_every_closer_is_reported_when_it_closes_nothing`
+    was added for, and naming the spans here makes this test confirm it rather
+    than depend on it.
+    """
+    content = f"a{LRE}b{PDI}c"
+    assert InjectionStructuralGuardrail().check(content, IN).decision == "deny"
+    assert _flagged(content) == [LRE, PDI]
 
 
 def test_a_pdf_inside_an_isolate_does_not_close_an_override_outside_it() -> None:
@@ -468,6 +478,34 @@ def test_a_balanced_override_still_reorders_and_is_allowed_anyway() -> None:
     assert (
         InjectionStructuralGuardrail().check(f"transfer {RLO}001{PDF} USD", IN).decision == "allow"
     )
+
+
+def test_an_isolate_around_a_multi_line_value_denies_and_that_is_deliberate() -> None:
+    """What the paragraph flush costs, on the record beside the balancing residual.
+
+    `FSI ... PDI` around an interpolated value is the idiom Unicode recommends and
+    the one `<bdi>` implements, and interpolated values run to more than one line
+    all the time. The flush ends the isolate's scope at the newline, so the PDI on
+    the next line closes nothing and BOTH controls are reported. Measured with GNU
+    FriBidi 1.0.16, this content renders byte-identically to the same text with
+    the FSI and PDI deleted: the wrapper changes nothing here and is denied anyway.
+    This is a false positive on real text, which is the failure this whole check is
+    written to avoid, and it is the likeliest source of a first bug report.
+
+    It is kept, and narrowing the flush for isolates was considered and rejected.
+    Measured the same way, an isolate left open over a paragraph break DOES reorder
+    when its content is right-to-left: `X ` + FSI + `<hebrew> abcdef mnopqr` renders
+    as `X abcdef mnopqr <hebrew>`, moving the Hebrew word to the end, where the same
+    text without the FSI leaves it in place. Pairing isolates across a break would
+    buy this case's precision at that case's recall, on a deny-by-default check.
+
+    Whoever scores the corpus should count this shape as a known false positive
+    rather than a bug, and whoever fields the report should find a decision here
+    rather than an accident. This is the test that changes if the trade is ever
+    re-taken.
+    """
+    content = f"user said: {FSI}שלום עולם\nline two{PDI} end"
+    assert _flagged(content) == [FSI, PDI]
 
 
 def test_findings_from_both_signals_come_back_in_span_order() -> None:

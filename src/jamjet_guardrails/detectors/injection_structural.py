@@ -193,6 +193,16 @@ def _bidi_spans(content: str) -> list[tuple[int, int]]:
             # cannot drift from the Unicode data the interpreter ships;
             # `test_controls_do_not_pair_across_a_paragraph_break` carries the
             # seven characters that answered "B" in Unicode 16.0.0.
+            #
+            # It is not free, and the cost is a false positive on real text:
+            # `FSI ... PDI` wrapped around a multi-line interpolated value, the
+            # idiom Unicode recommends, is denied here while rendering exactly as
+            # the unwrapped text does. Narrowing the flush for isolates was
+            # measured and rejected, because an isolate left open across a break
+            # reorders for real when its content is right-to-left.
+            # `test_an_isolate_around_a_multi_line_value_denies_and_that_is_deliberate`
+            # holds both measurements and is the test that changes if the trade
+            # is re-taken.
             unbalanced += embeds
             unbalanced += isolates
             embeds.clear()
