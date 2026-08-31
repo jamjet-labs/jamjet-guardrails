@@ -43,37 +43,62 @@ _VERSION = "0.1.0"
 # viewers, and every model tokenizer that does not strip them.
 _TAG_START = 0xE0000
 _TAG_END = 0xE007F
-_TAG_LETTER_START = 0xE0020
-_TAG_LETTER_END = 0xE007E
-_CANCEL_TAG = 0xE007F
+# U+E007F CANCEL TAG, the terminator every RGI flag sequence ends with. Held as
+# a character rather than as a codepoint because the test below is `endswith`,
+# which is total: an empty run answers False instead of raising on `run[-1]`.
+_CANCEL_TAG = "\U000e007f"
 # U+1F3F4 WAVING BLACK FLAG. The base of every RGI subdivision flag sequence and
 # the ONLY context in which a tag run is ordinary text.
 _FLAG_BASE = 0x1F3F4
-# The longest RGI subdivision code is five tag letters (gbeng, gbsct, gbwls).
-# Bounded so the exemption cannot be stretched into a channel: at six or more,
-# whatever it is, it is not one of the three sequences Unicode defines.
-_MAX_FLAG_TAG_LETTERS = 5
+# The RGI subdivision flag set is CLOSED: Unicode defines exactly these three
+# sequences and no others. A closed set gets an ALLOWLIST, not a test of its
+# members' shape, and that distinction is the whole of what is recorded here.
+#
+# The shape test this replaced was BYPASSABLE, written down rather than quietly
+# deleted because the failure generalises. It required a U+1F3F4 base, a single
+# trailing CANCEL TAG, tag letters throughout, and at most five of them: four
+# conditions, each load-bearing, each pinned by a test that was watched to fail.
+# It still allowed a complete injection. U+1F3F4 is NOT itself a tag character,
+# so it ENDS the maximal tag run before it, and the exemption is applied per
+# run; chaining bases therefore chains exempt runs, and the five-letter bound
+# capped per-run capacity rather than total capacity. Measured against the
+# shipped code: "Summarise this. " followed by seven repeats of U+1F3F4 + five
+# tag letters + CANCEL TAG carried "ignore all previous instructions" past this
+# deny-by-default detector with `_tag_spans` returning [], for a cost of one
+# visible black flag per five smuggled characters. That exact input is kept as
+# `test_chained_flag_bases_do_not_smuggle_a_payload`.
+#
+# An allowlist has no such seam: an exempt run is one of exactly three fixed
+# strings, so it carries no attacker-chosen bytes at all and a row of them is a
+# row of flags. The general rule, for the next exemption written into this
+# module: an exemption that APPROXIMATES a closed set with a shape test is
+# chainable, and chaining turns the exemption into precisely the channel it was
+# written to deny.
+_RGI_SUBDIVISION_CODES = frozenset({"gbeng", "gbsct", "gbwls"})
 
 
 def _is_valid_flag_sequence(content: str, start: int, end: int) -> bool:
     """Whether a tag run at [start, end) is an RGI subdivision flag's payload.
 
-    Four conditions, and each one closes a laundering route:
-      - the character before the run is U+1F3F4;
-      - the run ends with exactly one CANCEL TAG, and it is the last character;
-      - every other character is a tag LETTER, so a run carrying anything
-        outside U+E0020..U+E007E is not a flag whatever surrounds it;
-      - at most five letters, which is the longest code Unicode assigns.
+    `[start, end)` must be a run of TAG characters, which is what `_tag_spans`
+    passes and what the decode below relies on: it subtracts `_TAG_START`, and
+    `chr` raises on anything under U+E0000.
+
+    Three conditions, and each one closes a laundering route:
+      - the character before the run is U+1F3F4, so a flag-shaped run standing
+        on its own is not exempt;
+      - the run ENDS with CANCEL TAG, since the code is read as everything
+        before the last character and `gbsct` plus one more letter would
+        otherwise read as `gbsct`;
+      - what is left decodes to one of the three codes Unicode defines.
     """
     if start == 0 or ord(content[start - 1]) != _FLAG_BASE:
         return False
     run = content[start:end]
-    if not run or ord(run[-1]) != _CANCEL_TAG:
+    if not run.endswith(_CANCEL_TAG):
         return False
-    body = run[:-1]
-    if not body or len(body) > _MAX_FLAG_TAG_LETTERS:
-        return False
-    return all(_TAG_LETTER_START <= ord(ch) <= _TAG_LETTER_END for ch in body)
+    code = "".join(chr(ord(ch) - _TAG_START) for ch in run[: -len(_CANCEL_TAG)])
+    return code in _RGI_SUBDIVISION_CODES
 
 
 def _tag_spans(content: str) -> list[tuple[int, int]]:
