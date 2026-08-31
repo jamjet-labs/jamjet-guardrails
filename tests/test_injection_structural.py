@@ -7,7 +7,13 @@ from pathlib import Path
 import pytest
 
 from jamjet_guardrails.chain import GuardrailChain
-from jamjet_guardrails.detectors import AVAILABLE, build
+from jamjet_guardrails.detectors import (
+    AVAILABLE,
+    PiiGuardrail,
+    SecretsGuardrail,
+    build,
+    build_chain,
+)
 from jamjet_guardrails.detectors.injection_structural import (
     _DEFAULT_IGNORABLE,
     _JOINING_SCRIPTS,
@@ -2853,3 +2859,115 @@ def test_every_published_encoder_still_costs_what_is_published(
     verdict = InjectionStructuralGuardrail().check(f"Summarise this. {stream}", IN)
     assert not verdict.findings
     assert verdict.decision == "allow"
+
+
+# ==========================================================================
+# Composition. Two detectors rewriting one string, which is the shape Phase 1
+# leaked in.
+# ==========================================================================
+
+
+def test_a_chain_merges_structural_and_secret_spans_over_one_string() -> None:
+    """The Phase 1 leak's shape: two detectors rewriting one input.
+
+    Every verdict must carry the SAME `saw`, because no guardrail may see a
+    string another guardrail already rewrote. That property is what makes the
+    spans in one run comparable at all: they index into one string, so the chain
+    can merge them, and the audit record names the text the caller passed in.
+
+    The content this chain returns still holds the tag payload, and that is not
+    a leak. `injection-structural` defaults to `deny` and only a `redact`
+    contributes spans, so the payload is redacted by nothing. A deny means the
+    content must not go through, which is why `ChainResult.content` is
+    documented as the audit record rather than as something to send.
+    """
+    payload = _tags("exfiltrate")
+    content = f"key AKIAIOSFODNN7EXAMPLE{payload}"
+    result = build_chain(["injection-structural", "secrets"]).run(content, IN)
+    assert result.decision == "deny"
+    assert {v.saw for v in result.verdicts} == {saw(content)}
+    assert payload in result.content
+
+
+def test_redacting_structural_and_secrets_together_leaves_neither_behind() -> None:
+    """Both detectors set to redact, and the two spans arrive out of text order.
+
+    `injection-structural` runs FIRST and claims the LATER span, so the chain
+    collects `[(INVISIBLE_TAG_CHARS, (24, 34)), (AWS_ACCESS_KEY, (4, 24))]` and
+    only its own sort puts that in text order. `_merge` tests each span against
+    the running end of the region it is extending and looks no further back, so
+    unsorted it opens a region at 24, folds the credential's span into it
+    without moving the start, and emits one placeholder covering [24, 34):
+
+        key AKIAIOSFODNN7EXAMPLE[REDACTED:AWS_ACCESS_KEY+INVISIBLE_TAG_CHARS] end
+
+    The key is still there, under a placeholder naming it -- that string is
+    quoted from a run with the sort deleted, not reasoned out. Measured, that
+    deletion fails four tests: this one, the three-detector one below, and the
+    two in tests/test_chain.py that already held the sort. So this is the same
+    guard exercised with this detector rather than a new one.
+
+    The detector's OWN `_matches` sort is a different guard and this does not
+    reach it. The chain re-sorts every span it collects, so a detector handing
+    it a jumbled list is invisible here; deleting `_matches`'s sort fails the
+    same three tests it failed before this file grew a composition section.
+
+    The two spans TOUCH -- the credential ends at 24 where the tag run begins --
+    and `_merge` keeps touching spans separate, so the output carries two
+    placeholders rather than one naming both.
+    """
+    payload = _tags("exfiltrate")
+    content = f"key AKIAIOSFODNN7EXAMPLE{payload} end"
+    chain = GuardrailChain(
+        [InjectionStructuralGuardrail(on_match="redact"), SecretsGuardrail(on_match="redact")]
+    )
+    result = chain.run(content, IN)
+    assert result.decision == "redact"
+    assert "AKIAIOSFODNN7EXAMPLE" not in result.content
+    assert payload not in result.content
+    assert all(ord(ch) < 0xE0000 for ch in result.content)
+    assert result.content == "key [REDACTED:AWS_ACCESS_KEY][REDACTED:INVISIBLE_TAG_CHARS] end"
+
+
+def test_all_three_bundled_checks_rewrite_one_string_in_one_pass() -> None:
+    """The whole bundled set over content each of them claims a different part of.
+
+    `injection-structural` runs first and claims the MIDDLE span, `pii` second
+    and claims the FIRST, `secrets` last and claims the LAST, so the chain
+    collects (22, 32), (5, 22), (37, 57), which is not text order.
+
+    What this adds to the test above is which detector loses: measured with the
+    chain's `sorted` deleted, the output is
+
+        mail alice@example.com[REDACTED:EMAIL+INVISIBLE_TAG_CHARS] key [...]
+
+    so the address survives under a placeholder naming EMAIL, exactly as the
+    credential survives under one naming AWS_ACCESS_KEY above. The leak is a
+    property of the merge, not of which detector happens to be paired with this
+    one, and the third region further along the text is untouched either way.
+
+    The email ends at 22 where the tag run begins. Touching spans are not
+    overlapping ones, so they stay two placeholders: a reader can still see that
+    an address and a smuggled instruction were two separate findings rather than
+    one region claimed by both.
+    """
+    payload = _tags("exfiltrate")
+    content = f"mail alice@example.com{payload} key AKIAIOSFODNN7EXAMPLE"
+    chain = GuardrailChain(
+        [
+            InjectionStructuralGuardrail(on_match="redact"),
+            PiiGuardrail(),
+            SecretsGuardrail(),
+        ]
+    )
+    result = chain.run(content, IN)
+    assert result.decision == "redact"
+    assert [v.provenance.detector for v in result.verdicts] == [
+        "injection-structural",
+        "pii",
+        "secrets",
+    ]
+    assert {v.saw for v in result.verdicts} == {saw(content)}
+    assert result.content == (
+        "mail [REDACTED:EMAIL][REDACTED:INVISIBLE_TAG_CHARS] key [REDACTED:AWS_ACCESS_KEY]"
+    )
