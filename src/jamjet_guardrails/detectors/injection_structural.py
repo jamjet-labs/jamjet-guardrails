@@ -64,10 +64,12 @@ _FLAG_BASE = 0x1F3F4
 # so it ENDS the maximal tag run before it, and the exemption is applied per
 # run; chaining bases therefore chains exempt runs, and the five-letter bound
 # capped per-run capacity rather than total capacity. Measured against the
-# shipped code: "Summarise this. " followed by seven repeats of U+1F3F4 + five
-# tag letters + CANCEL TAG carried "ignore all previous instructions" past this
-# deny-by-default detector with `_tag_spans` returning [], for a cost of one
-# visible black flag per five smuggled characters. That exact input is kept as
+# shipped code: "Summarise this. " followed by seven repeats of U+1F3F4 + up to
+# five tag letters + CANCEL TAG carried "ignore all previous instructions" past
+# this deny-by-default detector with `_tag_spans` returning []. The payload is
+# 32 characters, so six of the seven flags carry five each and the seventh
+# carries the remaining two: seven visible black flags for 32 smuggled
+# characters, and NOT a flat five per flag. That exact input is kept as
 # `test_chained_flag_bases_do_not_smuggle_a_payload`.
 #
 # An allowlist has no such seam: an exempt run is one of exactly three fixed
@@ -226,10 +228,16 @@ def _bidi_spans(content: str) -> list[tuple[int, int]]:
             #
             # It is not free, and the cost is a false positive on real text:
             # `FSI ... PDI` wrapped around a multi-line interpolated value, the
-            # idiom Unicode recommends, is denied here while rendering exactly as
-            # the unwrapped text does. Narrowing the flush for isolates was
-            # measured and rejected, because an isolate left open across a break
-            # reorders for real when its content is right-to-left.
+            # idiom Unicode recommends, is denied here. The rendering claim is
+            # one MEASUREMENT and is scoped to the shape measured, not to the
+            # idiom: on a value whose first line ends in a right-to-left run
+            # with no left-to-right text after it, the wrapper changes the
+            # visible order not at all, so the denial buys nothing on that
+            # input. Narrowing the flush for isolates was measured and rejected
+            # anyway, and the reason is NOT that the content is right-to-left --
+            # the false positive's content is. It is that an isolate left open
+            # across a break reorders for real when LEFT-TO-RIGHT text follows
+            # the right-to-left run inside the still-open scope.
             # `test_an_isolate_around_a_multi_line_value_denies_and_that_is_deliberate`
             # holds both measurements and is the test that changes if the trade
             # is re-taken.
@@ -280,7 +288,8 @@ def _bidi_spans(content: str) -> list[tuple[int, int]]:
 # It is not a ranking: an earlier version of this comment called it cheaper than
 # every residual the module records, which is false against the module's own
 # list -- `_invisible` publishes encoders at 0.1250, 0.1992, 0.2070, 0.2500,
-# 0.2695 and 0.6289, and the variation-selector row is 0.1250, not 1.4875.
+# 0.2695 and 0.6289, and the variation-selector row is 0.1250, not the 1.5000
+# that the presence-and-absence encoding over ONE selector costs.
 #
 # FOUR OF THE SEVENTEEN ROWS CONTRIBUTE NOTHING TO THE SET, and that is the
 # table doing its job rather than dead weight. U+00AD, U+061C, U+202A..U+202E
@@ -415,16 +424,20 @@ def _invisible() -> frozenset[str]:
 
     Priced over the alphabet the bound actually governs, which is the counted
     set and not the excluded families -- an excluded character consumes no part
-    of `_MIN_TOTAL` at all, so "four" is not a limit on those -- four counted
-    characters placed in a page the LENGTH of `inj-0105`, which is 2,502, choose
-    among C(2499, 4) pairwise-non-adjacent positions and 3,773 symbols each:
-    **88.1 bits carried by 4 added characters**. The length is the corpus case
-    and the four are not: `inj-0105` carries three, and `inj-0106` is the same
-    page carrying four at 2,503 characters. The test places four into
-    `inj-0105`'s text with its zero-width characters stripped, which is the model
-    this figure describes. Priced over the 259
-    symbols `_MIN_TOTAL` does NOT count it comes to 72.6, which is an accounting
-    of two different things and understates the leak of the bound it names.
+    of `_MIN_TOTAL` at all, so "four" is not a limit on those -- take
+    `inj-0105`'s text with its own zero-width characters stripped, 2,499
+    characters, and ADD four counted ones: a 2,503-character page, which is
+    `inj-0106`'s length, in which the four choose among C(2500, 4)
+    pairwise-non-adjacent positions and 3,773 symbols each:
+    **88.1 bits carried by 4 added characters**. The page the four are added to
+    is the corpus case and the four are not: `inj-0105` carries three of its own
+    at 2,502 characters, and `inj-0106` is the same page carrying four at 2,503.
+    The slot count is the page AFTER the additions, which is what the test
+    builds; pricing 2,502 slots for a construction that makes 2,503 moves the
+    figure by 0.0023 bits and rounds to the same 88.1, which is why it stood.
+    Priced over the 259 symbols `_MIN_TOTAL` does NOT count it comes to 72.6,
+    which is an accounting of two different things and understates the leak of
+    the bound it names.
 
     THE RAISE FROM FOUR TO FIVE WIDENED THIS BY 21.2 BITS on this document, from
     three characters and 66.9 bits to four and 88.1. That is the standing cost
@@ -870,8 +883,13 @@ def _mark_base(content: str, index: int) -> str:
     renders nothing: U+115F and U+1160 HANGUL CHOOSEONG and JUNGSEONG FILLER,
     U+3164 HANGUL FILLER and U+FFA0 HALFWIDTH HANGUL FILLER are category `Lo`
     AND default-ignorable, so `<filler><fatha><joiner><fatha>` repeated carried
-    a 256-bit payload at 4.0000 characters per bit with nothing on the page --
-    measured on all four. Inside `_JOINING_SCRIPTS` the only default-ignorable
+    a 256-bit payload at 4.0000 characters per bit with NO READABLE COVER --
+    measured on all four. Not "nothing on the page", which this said and which
+    is false of the construction: U+064E ARABIC FATHA is `Mn` with combining
+    class 30 and DRAWS, so what a reader sees is a row of orphaned diacritics
+    with no letter under them. The security claim is the one that survives --
+    there is no text there for a reader to read -- and it does not need the
+    stronger one. Inside `_JOINING_SCRIPTS` the only default-ignorable
     code points are U+061C and U+FEFF, both `Cf`, which the caller's category
     test already refuses; so range membership is what makes "a letter" mean "a
     letter somebody can see" here.
@@ -883,9 +901,13 @@ def _mark_base(content: str, index: int) -> str:
     existed, returning whatever the walk stops on changed no test and no corpus
     case, because every input then reached either a letter or nothing. What it opens is the
     third case: 440 of the code points inside `_JOINING_SCRIPTS` are unassigned,
-    a walk stops on them and a font draws nothing, so a cover of unassigned code
-    point, fatha, joiner, fatha carried a 256-bit payload at 4.0039 characters
-    per bit with not one letter in the input. That is the same hole
+    a walk stops on them and a font has no glyph for them, so a cover of
+    unassigned code point, fatha, joiner, fatha carried a 256-bit payload at
+    4.0039 characters per bit with not one letter in the input. "Draws nothing"
+    is what this said and it is the wrong claim about an unassigned code point:
+    a font draws `.notdef` for one, the tofu box, which is visible. What is true
+    and is what matters here is that none of it is READABLE, and that a walk
+    looking for a letter stops on something that is not one. That is the same hole
     `test_an_unwritten_code_point_in_a_joining_script_range_is_not_a_neighbour`
     closed for the code point standing directly beside a joiner, one
     construction later with a mark on top of it, and it is now
@@ -1153,7 +1175,7 @@ def _is_contextually_legitimate(content: str, index: int) -> bool:
     over the payload.
 
     Neither number bounds this function and NOTHING here bounds the module. The
-    pictographic branch below excuses a presence-and-absence payload at 1.4875
+    pictographic branch below excuses a presence-and-absence payload at 1.5000
     characters per bit with nothing visible, over any of 503 code points, and
     `test_a_variation_selector_bitstream_is_a_known_miss` is that measurement.
     It is the cost of that encoding and not a minimum: `_invisible` records the
@@ -1344,6 +1366,23 @@ class InjectionStructuralGuardrail:
         bidi span into the later tag region and emits one region that starts
         after the control, so the redacted output keeps the override while the
         placeholder claims to have removed it.
+
+        WHY ONE SORT IS ENOUGH, which is an invariant of the three signals and
+        was nowhere written down. THEIR CHARACTER SETS ARE PAIRWISE DISJOINT.
+        `_tag_spans` reports only U+E0000..U+E007F; `_bidi_spans` reports only
+        the nine controls in `_EMBED_OPEN`, `_ISOLATE_OPEN`, `_EMBED_CLOSE` and
+        `_ISOLATE_CLOSE`; `_zero_width_spans` reports only members of
+        `_ZERO_WIDTH`. The two overlaps that could exist are closed on purpose
+        in `_invisible`: the tag range is excluded by
+        `not _TAG_START <= point <= _TAG_END`, and every one of the nine bidi
+        controls is removed by `_is_directional`. So no two signals can ever
+        claim the same code point, no two spans from different signals can be
+        equal, and `sorted` therefore puts this list in an order `_merge` can
+        consume in one pass -- provably sufficient rather than merely adequate
+        on the inputs anybody has tried. Widening one of the three ranges into
+        another's territory is what would break it, silently, so
+        `test_the_three_signals_claim_pairwise_disjoint_character_sets` asserts
+        the disjointness rather than leaving it to this paragraph.
         """
         found = [("INVISIBLE_TAG_CHARS", span) for span in _tag_spans(content)]
         found += [("BIDI_OVERRIDE", span) for span in _bidi_spans(content)]

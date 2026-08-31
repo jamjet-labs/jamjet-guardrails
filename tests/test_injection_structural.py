@@ -16,12 +16,18 @@ from jamjet_guardrails.detectors import (
 )
 from jamjet_guardrails.detectors.injection_structural import (
     _DEFAULT_IGNORABLE,
+    _EMBED_CLOSE,
+    _EMBED_OPEN,
+    _ISOLATE_CLOSE,
+    _ISOLATE_OPEN,
     _JOINING_SCRIPTS,
     _MIN_PERIODIC,
     _MIN_RUN,
     _MIN_TOTAL,
     _MONGOLIAN,
     _RGI_SUBDIVISION_CODES,
+    _TAG_END,
+    _TAG_START,
     _ZERO_WIDTH,
     INJECTION_TYPES,
     InjectionStructuralGuardrail,
@@ -159,7 +165,7 @@ def test_a_flag_base_does_not_launder_a_payload() -> None:
 
     Prefixing a payload with U+1F3F4 and appending CANCEL TAG must not buy
     silence, or the exemption becomes the bypass. The payload decodes to a
-    31-character string that is not one of the three RGI subdivision codes, so
+    32-character string that is not one of the three RGI subdivision codes, so
     membership rejects it, and this case dies to the allowlist being widened to
     accept anything standing behind a flag base.
 
@@ -280,9 +286,11 @@ def test_chained_flag_bases_do_not_smuggle_a_payload() -> None:
     U+1F3F4 is NOT a tag character, so it ENDS the maximal tag run before it,
     and the exemption is applied per run. Under a shape test that meant chaining
     bases chained exempt runs: a five-letter cap bounded per-run capacity, never
-    total capacity, so a complete instruction went through at a cost of one
-    visible black flag per five characters. Reproduced against the shipped shape
-    test, which returned `_tag_spans == []` and allowed this content.
+    total capacity, so a complete instruction went through at a cost of seven
+    visible black flags. Five per flag is the cap and not the arithmetic of this
+    input: the payload is 32 characters, so six flags carry five each and the
+    seventh carries two. Reproduced against the shipped shape test, which
+    returned `_tag_spans == []` and allowed this content.
 
     A row of black flags is decoration to a reader and an instruction to a model
     reading the raw text, which is the whole threat model of this detector.
@@ -545,17 +553,22 @@ def test_an_isolate_around_a_multi_line_value_denies_and_that_is_deliberate() ->
     the one `<bdi>` implements, and interpolated values run to more than one line
     all the time. The flush ends the isolate's scope at the newline, so the PDI on
     the next line closes nothing and BOTH controls are reported. Measured with GNU
-    FriBidi 1.0.16, this content renders byte-identically to the same text with
-    the FSI and PDI deleted: the wrapper changes nothing here and is denied anyway.
+    FriBidi 1.0.16, THIS content reorders to exactly what the same text with the
+    FSI and PDI deleted reorders to: the wrapper changes nothing here and is denied
+    anyway. That is one input's measurement and it is not a claim about the idiom.
     This is a false positive on real text, which is the failure this whole check is
     written to avoid, and it is the likeliest source of a first bug report.
 
     It is kept, and narrowing the flush for isolates was considered and rejected.
-    Measured the same way, an isolate left open over a paragraph break DOES reorder
-    when its content is right-to-left: `X ` + FSI + `<hebrew> abcdef mnopqr` renders
-    as `X abcdef mnopqr <hebrew>`, moving the Hebrew word to the end, where the same
-    text without the FSI leaves it in place. Pairing isolates across a break would
-    buy this case's precision at that case's recall, on a deny-by-default check.
+    RIGHT-TO-LEFT CONTENT IS NOT THE DISCRIMINATOR, and this docstring said it was:
+    the fixture below is right-to-left and does not move. What decides it is whether
+    LEFT-TO-RIGHT text FOLLOWS the right-to-left run inside the still-open scope.
+    Measured the same way, `X ` + FSI + `<hebrew> abcdef mnopqr` renders as
+    `X abcdef mnopqr <hebrew>`, moving the Hebrew word to the end, where the same
+    text without the FSI leaves it in place; put the Hebrew last instead, as
+    `X ` + FSI + `abcdef <hebrew>`, and the isolate changes nothing, which is the
+    shape this fixture's first line has. Pairing isolates across a break would buy
+    this case's precision at that case's recall, on a deny-by-default check.
 
     Whoever scores the corpus should count this shape as a known false positive
     rather than a bug, and whoever fields the report should find a decision here
@@ -628,6 +641,25 @@ def _covered(cover: str, text: str) -> str:
     # never excused and never joins a chain; an attacker writing a message ends
     # it with text rather than with the last bit of a payload.
     return "".join(cover + (ZWJ if b == "1" else ZWNJ) for b in bits) + cover
+
+
+def _presence(cover: str, text: str) -> str:
+    """The same payload again, a joiner for a one bit and NOTHING for a zero.
+
+    ONE FUNCTION, TWO FIXTURES, and that is the point of it existing. Both
+    presence-and-absence misses below are built here rather than each inlining
+    its own comprehension, because when they were separate they disagreed about
+    the trailing cover -- one appended it and one did not -- and the two
+    docstrings then published two different rates for what is one encoding.
+    A convention that lives in a helper cannot drift between two call sites.
+
+    The trailing cover is the same one `_covered` appends and it is there for
+    the same reason: a joiner at the very end of the input has no right
+    neighbour, so the count that omits it is a count of an incomplete message.
+    `_is_contextually_legitimate` states the convention for the whole module.
+    """
+    bits = "".join(f"{ord(c):08b}" for c in text)
+    return "".join(cover + (ZWJ if bit == "1" else "") for bit in bits) + cover
 
 
 def _decode(content: str) -> str:
@@ -1021,10 +1053,12 @@ def test_a_presence_and_absence_encoding_is_a_known_miss() -> None:
     choice is in the SPACING, not the symbol.
 
     It is CHEAPER than the covered bitstream this check denies, not dearer.
-    Measured on this fixture against `_covered("क", "exfiltrate")`: 119
-    characters against 161 for the same 80 bits, 0.672 bits per character
-    against 0.497, which is 1.35x the rate. The visible cost is identical, one
-    cover character per bit in both. So the periodicity rule removes the naive
+    Measured on this fixture against `_covered("क", "exfiltrate")`, both under
+    the convention `_is_contextually_legitimate` states -- whole payload,
+    trailing cover counted -- 120 characters against 161 for the same 80 bits,
+    0.6667 bits per character against 0.4969, which is 1.34x the rate. The
+    visible cost is identical, one cover character per bit plus the trailing one
+    in both. So the periodicity rule removes the naive
     two-symbol shape and does not raise the cost of THIS encoding at all. Whether
     anything raises an attacker's minimum is not a question this file answers:
     see `test_an_encoder_over_the_uncounted_families_is_measured_as_one_encoding`.
@@ -1042,9 +1076,44 @@ def test_a_presence_and_absence_encoding_is_a_known_miss() -> None:
     clean text, and this test fails the day a later signal closes it, which is
     when this note has to be rewritten.
     """
-    bits = "".join(f"{ord(c):08b}" for c in "exfiltrate")
-    content = "".join("क" + (ZWJ if bit == "1" else "") for bit in bits)
+    content = _presence("क", "exfiltrate")
+    assert len(content) == 120, "the rate above is measured on this exact fixture"
     assert InjectionStructuralGuardrail().check(content, IN).decision == "allow"
+
+
+def test_the_three_signals_claim_pairwise_disjoint_character_sets() -> None:
+    """The invariant that makes one `sorted` in `_matches` sufficient, not lucky.
+
+    Each of the three signals scans the whole input on its own and reports spans
+    over its OWN alphabet: `_tag_spans` over U+E0000..U+E007F, `_bidi_spans`
+    over the nine embedding and isolate controls, `_zero_width_spans` over
+    `_ZERO_WIDTH`. Because those three sets share no code point, no two signals
+    can claim the same offset, no two spans from different signals can be equal,
+    and the single sort puts the concatenation into an order `_merge` consumes
+    in one pass. That is a proof rather than a run of inputs that happened to
+    work, and nothing in the module stated it until now.
+
+    Two of the three pairs are disjoint only because `_invisible` was written to
+    make them so, which is exactly why this is asserted and not assumed. The tag
+    range is excluded there by `not _TAG_START <= point <= _TAG_END`, and the
+    nine bidi controls are removed by `_is_directional`. Widen one range into
+    another's territory -- add a family to `_DEFAULT_IGNORABLE` that reaches the
+    tag plane, drop either exclusion -- and the module keeps working on every
+    input anybody has tried while the argument above stops holding. This test is
+    what fails on that day.
+    """
+    tags = {chr(point) for point in range(_TAG_START, _TAG_END + 1)}
+    bidi = set(_EMBED_OPEN) | set(_ISOLATE_OPEN) | {_EMBED_CLOSE, _ISOLATE_CLOSE}
+    zero_width = set(_ZERO_WIDTH)
+
+    # The sizes, so a set that silently empties cannot pass by being disjoint
+    # from everything: an empty signal is disjoint and useless.
+    assert (len(tags), len(bidi)) == (128, 9)
+    assert len(zero_width) == len(_ZERO_WIDTH) > 3000
+
+    assert not tags & bidi, "tag characters are not bidi controls"
+    assert not tags & zero_width, "`_invisible` excludes the tag range"
+    assert not bidi & zero_width, "`_invisible` excludes the directional controls"
 
 
 def test_findings_from_all_three_signals_come_back_in_span_order() -> None:
@@ -1162,11 +1231,14 @@ def test_a_variation_selector_bitstream_is_a_known_miss() -> None:
 
     Measured under the convention `_is_contextually_legitimate` states -- whole
     payload, trailing cover counted -- this fixture and
-    `test_a_presence_and_absence_encoding_is_a_known_miss` are BOTH 119
-    characters for these 80 bits, 1.4875 per bit. Not fractionally dearer, not
-    "one character more": identical. Earlier notes said otherwise because one
-    fixture appended a trailing cover and the other did not, which is a
-    difference between two fixtures and not between two channels. What differs
+    `test_a_presence_and_absence_encoding_is_a_known_miss` are BOTH 120
+    characters for these 80 bits, 1.5000 per bit. Not fractionally dearer, not
+    "one character more": identical. Both are built by `_presence`, which is the
+    only reason that is now guaranteed rather than checked: the earlier notes
+    said 119 and 1.4875 because both fixtures inlined their own comprehension
+    and neither appended the trailing cover the convention names, which is a
+    difference between two fixtures and their own module and not between two
+    channels. What differs
     is the only thing that matters here -- the letter cover puts 80 Devanagari
     characters on the page and this puts NONE, which the assertion below holds
     by category rather than by eye.
@@ -1178,19 +1250,20 @@ def test_a_variation_selector_bitstream_is_a_known_miss() -> None:
     IT IS NOT THE CHEAPEST, and this docstring said it was until a sweep in fix
     round 2 measured the alternative. Presence-and-absence is the DEARER of the
     two shapes a variation selector supports: a two-symbol bitstream over two
-    DIFFERENT selectors costs 1.0000 per bit rather than 1.4875, a third less,
-    and nothing in this file measured it.
+    DIFFERENT selectors costs 1.0000 per bit rather than 1.5000, exactly a third
+    less, and nothing in this file measured it.
     `test_an_encoder_over_the_uncounted_families_is_measured_as_one_encoding`
     does now. The lesson is the module's usual one, and it took four rounds to
-    learn: 1.4875 was a figure measured on one encoding and written down as a
-    property of a channel. So were the three figures that replaced it. No
+    learn: 1.4875 -- this same encoding measured a trailing cover short -- was a
+    figure taken off one encoding and written down as a property of a channel.
+    So were the three figures that replaced it. No
     minimum is published anywhere now, because a minimum quantifies over every
     encoding and a measurement exhibits one.
 
     Two code points is not the size of it. `_PICTOGRAPHIC` spans 5,490 code
     points and 503 of them render nothing -- 501 unassigned plus these two
     variation selectors -- and every one of the 503 carries this payload at the
-    same 119 characters with nothing visible. VS16 is the parameter here because
+    same 120 characters with nothing visible. VS16 is the parameter here because
     it is the one an ordinary emoji sequence already contains, so a filter on
     "unassigned" alone would not reach it.
 
@@ -1204,9 +1277,8 @@ def test_a_variation_selector_bitstream_is_a_known_miss() -> None:
     This test fails the day that branch is reworked, which is when this note has
     to be rewritten.
     """
-    bits = "".join(f"{ord(c):08b}" for c in "exfiltrate")
-    content = "".join(VS16 + (ZWJ if bit == "1" else "") for bit in bits)
-    assert len(content) == 119, "the rate above is measured on this exact fixture"
+    content = _presence(VS16, "exfiltrate")
+    assert len(content) == 120, "the rate above is measured on this exact fixture"
     assert not [c for c in content if unicodedata.category(c) not in {"Mn", "Cf"}], (
         "the point of this miss is that nothing in it renders"
     )
@@ -1389,7 +1461,8 @@ def test_stray_characters_below_the_total_bound_allow_in_ordinary_prose() -> Non
     reader recognises, not because three is a boundary any more.
 
     What passes is not free. The positions and identities of four stray
-    characters carry 88.1 bits between them in a 2,502-character message, which
+    characters carry 88.1 bits between them in the 2,503-character message that
+    adding four to `inj-0105`'s stripped text makes, which
     `test_the_bound_passes_four_non_adjacent_characters_and_what_they_carry`
     measures. It is a bounded residual rather than a channel: it does not grow
     with the number of times an attacker repeats anything, only with the length
@@ -1929,7 +2002,9 @@ def test_a_mark_on_a_letter_outside_the_joining_ranges_is_not_a_neighbour(base: 
     and four code points are exactly that: category `Lo` and default-ignorable.
     Measured before the range condition, `<filler><fatha><joiner><fatha>`
     repeated carried a 256-bit payload at 4.0000 characters per bit with not one
-    thing on the page, on all four fillers.
+    READABLE thing on the page, on all four fillers. Not "not one thing": the
+    fillers draw nothing, but U+064E ARABIC FATHA is `Mn` and draws, so the page
+    shows a row of diacritics standing on no letters.
 
     The Latin parameter is the same condition doing its other job. It is not
     invisible, but nothing writes an Arabic fatha on a Latin `a`, and before the
@@ -2034,7 +2109,10 @@ def test_a_mark_over_an_unwritten_code_point_is_not_an_excusing_neighbour() -> N
     mark that reaches NOTHING, where the walk runs off the input or off the
     bound. It does not cover the mark that reaches something which is not a
     letter, and 440 of the code points inside `_JOINING_SCRIPTS` are exactly
-    that: unassigned, so a walk stops on them and a font draws nothing.
+    that: unassigned, so a walk stops on them and no font has a glyph for them.
+    A font draws `.notdef` for an unassigned code point -- the tofu box, which
+    is visible -- so what the cover buys is the absence of anything READABLE,
+    not the absence of ink.
 
     Measured before this test existed: dropping `_is_letter` from `_mark_base`,
     so the walk returns whatever it stops on, changed no test in this file and
@@ -2163,7 +2241,9 @@ def test_a_bitstream_over_any_invisible_format_character_is_detected(zero: str, 
     docstring called it cheaper than every residual the module records, which is
     false against the module's own published list, where the encoders sit at
     0.1250, 0.1992, 0.2070, 0.2500, 0.2695 and 0.6289 and the variation-selector
-    row is 0.1250 rather than the 1.4875 named here.
+    row is 0.1250 rather than the 1.5000 that
+    `test_a_variation_selector_bitstream_is_a_known_miss` measures for the
+    presence-and-absence encoding over one selector.
 
     The payload is decoded back out, so this asserts a channel rather than a
     verdict on arbitrary bytes.
@@ -2684,8 +2764,10 @@ def test_the_bound_passes_four_non_adjacent_characters_and_what_they_carry() -> 
 
     The document is `inj-0105`, so the length in the published prose is a corpus
     case rather than a number in two paragraphs. It carries three counted
-    characters and allows; `inj-0106` is the same page carrying four and now
-    allows as well.
+    characters at 2,502 and allows; `inj-0106` is the same page carrying four at
+    2,503 and now allows as well. Both figures are slot counts of a page WITH
+    its counted characters in it, and 2,503 is the one the four-character
+    arithmetic prices, because that is the page the construction below builds.
     """
     corpus = [json.loads(line) for line in CORPUS.read_text(encoding="utf-8").splitlines() if line]
     page = next(row for row in corpus if row["id"] == "inj-0105")["text"]
@@ -2716,12 +2798,18 @@ def test_the_bound_passes_four_non_adjacent_characters_and_what_they_carry() -> 
     assert guardrail.check(scattered(_MIN_TOTAL - 1), IN).decision == "allow", "one under"
     assert guardrail.check(scattered(_MIN_TOTAL), IN).decision == "deny", "at the bound"
 
-    # `_MIN_TOTAL - 1` pairwise non-adjacent positions among len(page) slots, and
-    # a free choice of counted symbol at each.
+    # `_MIN_TOTAL - 1` pairwise non-adjacent positions among the slots of the
+    # page `placed` actually builds -- the stripped text plus the characters
+    # added to it -- and a free choice of counted symbol at each. Pricing
+    # `len(page)` instead prices 2,502 slots for a 2,503-slot construction; the
+    # difference is 0.0023 bits and rounds to the same 88.1, which is exactly
+    # why it survived. `len(bare) + count` cannot drift from what is built.
     passes = _MIN_TOTAL - 1
 
     def carried(count: int, alphabet: int) -> float:
-        return math.log2(math.comb(len(page) - count + 1, count)) + count * math.log2(alphabet)
+        slots = len(bare) + count
+        assert len(placed([300 + 400 * step for step in range(count)])) == slots
+        return math.log2(math.comb(slots - count + 1, count)) + count * math.log2(alphabet)
 
     bits = carried(passes, len(_ZERO_WIDTH))
     assert round(bits, 1) == 88.1
@@ -2836,12 +2924,23 @@ def test_every_published_encoder_still_costs_what_is_published(
 ) -> None:
     """Each row of the published family table, re-measured.
 
-    Five of these rows had nothing holding them: they were correct when written
-    and nothing would have noticed them stopping being correct, which is the
-    same gap the corpus closes one level up. The rate and the verdict are both
-    asserted, so a row that becomes wrong -- because the family was closed, or
-    because the arithmetic was mis-copied -- fails here rather than staying in a
-    published table.
+    TWO COUNTS, because one number here can be read against either of two
+    denominators and the sentence that gave only one was misread. The published
+    table has EIGHT rows; this parametrization has SEVEN, because the
+    263-symbol row states no encoder of its own -- it points at the byte encoder
+    in the row above it. Measured against the commit before this test existed,
+    exactly two of the eight rows had a test asserting their rate: the 0.1250
+    byte encoder, held by
+    `test_an_encoder_over_the_uncounted_families_is_measured_as_one_encoding`,
+    and the 1.0000 per-bit encoder, held by the `bidi-marks` case of
+    `test_the_excluded_families_carry_a_payload_two_symbols_at_a_time_as_well`.
+    So SIX of the eight published rows had nothing holding them, which is FIVE
+    of the seven parametrized here. They were correct when written and nothing
+    would have noticed them stopping being correct, which is the same gap the
+    corpus closes one level up. The rate and the verdict are both asserted, so a
+    row that becomes wrong -- because the family was closed, or because the
+    arithmetic was mis-copied -- fails here rather than staying in a published
+    table.
 
     A row going from `allow` to `deny` is the GOOD direction and it still fails,
     which is intended: closing a family means rewriting its row, not leaving a

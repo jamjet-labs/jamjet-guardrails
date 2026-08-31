@@ -43,7 +43,10 @@ another platform keeps.
 
 3.14 was the version the earlier brief expected to be missing. It is not.
 cp314 wheels first appear in **1.24.1** (2026-02-05) and have shipped in every
-release since, on both platforms, alongside a free-threaded `cp314t` build.
+release since, on both platforms. A free-threaded `cp314t` build ships alongside
+them, but on **manylinux only** -- x86_64 and aarch64, and nothing else. "Both
+platforms" is true of cp314 and false of cp314t, and this sentence used to hand
+the reader one scope for both.
 
 ### Where cp310 stops, exactly
 
@@ -95,8 +98,11 @@ worse outcome than a hard failure, because nothing surfaces it.
 itself:
 
 1. Ten consecutive releases ship zero cp310 wheels, spanning 2026-02-05 to
-   2026-08-17 (193 days). The last release that shipped one is 313 days old at
-   the read date.
+   2026-08-17 (193 days). The last release that shipped one, 1.23.2 uploaded
+   `2025-10-22T03:46:21Z`, is 313 days old measured to the UTC read instant in
+   the header, `2026-08-31T21:24:20Z`. Measured instead from the LOCAL date this
+   document is filed under, 2026-09-01, the same subtraction gives 314; the
+   figure is anchored to the UTC instant, which is the only one the data has.
 2. From 1.24.4 the drop is stated in metadata, not merely implied by the absence
    of a file. A build-infrastructure lag does not get written into
    `Requires-Python`.
@@ -192,18 +198,24 @@ Two things that make the result trustworthy rather than merely produced:
   exact interpreter, so "has a wheel for cp310" needs no forward-compatibility
   reasoning. Checked, not assumed.
 - The query was run against negative controls before its output was believed:
-  `cp399` on manylinux, cp310 on a fabricated platform tag, and cp314 on
-  `musllinux` all return nothing, and `cp312` on `win_amd64` returns 1.29.0.
-  A filter that silently matched nothing would have produced the same empty
-  cells as a real absence.
+  `cp399` on manylinux and cp310 on a fabricated platform tag both return
+  nothing, and `cp312` on `win_amd64` returns 1.29.0. A filter that silently
+  matched nothing would have produced the same empty cells as a real absence.
+  A fourth control, cp314 on `musllinux`, is recorded here as NOT carrying any
+  weight: onnxruntime publishes zero musllinux wheels for any interpreter, so
+  that query returns nothing whether the filter works or not and cannot tell the
+  two apart. It is degenerate as a control. The three above are what the claim
+  rests on.
 
 Free-threaded builds were counted separately and excluded from the table above.
-`cp313t` and `cp314t` wheels do exist and track the same 1.29.0, but they are a
-distinct ABI and are not what the default interpreter of a CI leg resolves.
+`cp313t` and `cp314t` wheels do exist and track the same 1.29.0, but on
+**manylinux only** -- x86_64 and aarch64, with no macOS or Windows free-threaded
+wheel at any version -- and they are a distinct ABI, not what the default
+interpreter of a CI leg resolves.
 
 ## The other three measurements, and why they are moot
 
-This document was scoped from a brief that asked for four measurements. Only the
+This document was scoped from a brief that asked for five measurements. Only the
 one above still gates anything.
 
 The other three (feasibility of a TurboQuant-style quantizer over the model
@@ -219,5 +231,6 @@ and no custom runtime operator to build, so no compiled wheel matrix and no ABI
 range to pin. The three questions are not deferred or unresolved. They stopped
 being questions.
 
-The fourth brief item, choosing a third-party injection corpus disjoint from the
-model's training data, is unaffected by the redesign and is not addressed here.
+The remaining brief item, choosing a third-party injection corpus disjoint from
+the model's training data, is unaffected by the redesign and is not addressed
+here. One gating, three moot, one untouched: five.

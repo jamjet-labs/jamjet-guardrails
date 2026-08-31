@@ -748,7 +748,15 @@ def test_the_count_of_allow_cases_riding_on_an_exemption_is_the_measured_union()
     `inj-0037` is held up by two of the five, so adding the bullet lists gives
     30 where the union is 29. The sentence this guards replaced one that said
     "most", which was true only if "turns on an exemption" is read as "contains
-    a character some exemption is about" -- 73 cases do that and 29 depend on it.
+    a character some exemption is about". Measured, that reading gives 68 of the
+    94 `allow` cases against 29 that depend on one, and NAMING THE SET IS THE
+    WHOLE OF IT: 68 is the union of the five exemptions' own character sets --
+    the nine bidi controls, the tag characters with U+1F3F4, the three
+    contextual joiners, the variation selectors, and the characters
+    `_is_directional` answers True for. A looser reading gives a different
+    number and neither is wrong on its own: every `Cf` character, which is not
+    what any exemption is about, gives 74. This note carried 73, which is
+    neither set.
     """
     cases = _allow_cases()
     union: set[str] = set()

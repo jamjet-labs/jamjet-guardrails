@@ -362,11 +362,16 @@ a run, and the run bound is 2. Measured: two adjacent deny, two scattered allow,
 four scattered allow, five scattered deny.
 
 Priced over the alphabet that bound actually governs, which is the **counted**
-set: four counted characters placed in a page the LENGTH of `inj-0105`, which is
-2,502, choose among C(2499, 4) pairwise non-adjacent positions and 3,773 symbols
-each, which is **88.1 bits carried by 4 added characters**. The length is the
-corpus case and the four are not -- `inj-0105` carries three and allows with zero
-findings, and `inj-0106` is the same page carrying four at 2,503 characters. Priced instead over the 259 symbols that bound does not count it
+set: take `inj-0105`'s text with its own zero-width characters stripped, 2,499
+characters, and ADD four counted ones. That is a 2,503-character page -- the
+length of `inj-0106` -- in which the four choose among C(2500, 4) pairwise
+non-adjacent positions and 3,773 symbols each, which is **88.1 bits carried by 4
+added characters**. The page is the corpus case and the four are not --
+`inj-0105` carries three of its own at 2,502 characters and allows with zero
+findings, and `inj-0106` is the same page carrying four at 2,503. The slot count
+is the page AFTER the additions; pricing 2,502 slots for a construction that
+makes 2,503 moves the figure by 0.0023 bits and rounds to the same 88.1. Priced
+instead over the 259 symbols that bound does not count it
 comes to 72.6, which is an accounting of two different things and understates
 the leak of the very bound it names.
 
