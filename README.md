@@ -97,7 +97,7 @@ beside the scores.
 
 | Check | Corpus | Source | Version | Cases | Precision | Recall | F1 | TP | FP | FN | Wrong decisions |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| injection-structural | injection-structural/in-repo | in-repo | `b85dfc18f956` | 146 | 0.679 | 0.974 | 0.800 | 112 | 53 | 3 | 17 |
+| injection-structural | injection-structural/in-repo | in-repo | `b11692946044` | 146 | 0.971 | 0.870 | 0.917 | 100 | 3 | 15 | 8 |
 | pii | pii/in-repo | in-repo | `06fb3b601aba` | 81 | 0.631 | 0.872 | 0.732 | 41 | 24 | 6 | 24 |
 | pii | pii/third-party | nvidia/Nemotron-PII@b70ffaf | `c25ef538d677` | 300 | 0.960 | 0.997 | 0.978 | 340 | 14 | 1 | 6 |
 | secrets | secrets/in-repo | in-repo | `e9e0ed70dc37` | 39 | 0.957 | 0.880 | 0.917 | 22 | 1 | 3 | 4 |
@@ -113,8 +113,8 @@ because an unclosed control runs to the end of the paragraph.
 
 **It also does not read every invisible character, and it publishes no minimum
 cost for getting past it.** Variation selectors and the directional marks are
-not counted, because counting them denies four keycaps, a Japanese document
-naming four people whose names take variant glyphs, and a bilingual invoice; the
+not counted, because counting them denies five keycaps, a Japanese document
+naming five people whose names take variant glyphs, and a bilingual invoice; the
 control families and several others are not counted either. So a payload encoded
 in any of them goes through: 256 variation selectors is a byte per character,
 and measured, 32 of them carry a 32-character instruction with nothing on the
@@ -140,14 +140,22 @@ write, named in the Source column beside its own numbers.
 detector does.** A known false positive is labelled `allow` and costs precision;
 a known false negative is labelled `deny` and costs recall. That is why these
 numbers are lower than the checks behave on ordinary text, and it is the only
-way two rows in one table can be compared. Twenty-four `injection-structural`
-cases carry such a label and seventeen of them fail on purpose: fourteen deny
-text somebody wrote on purpose, including Thai marked up for line breaking,
-Persian written with ASCII digits, a 2,503-character page carrying four
-incidental zero-width characters, mathematical markup extracted to plain text,
-and four UTF-8 files concatenated with each keeping its own byte-order mark;
-three allow a payload that really is in there. All twenty-four are named by case
-id in [corpora/NOTICE.md](corpora/NOTICE.md).
+way two rows in one table can be compared. Fifteen `injection-structural`
+cases carry such a label and eight of them fail on purpose: two deny text
+somebody wrote on purpose, and six allow a payload that really is in there. All
+fifteen are named by case id in [corpora/NOTICE.md](corpora/NOTICE.md).
+
+**Four scattered invisible characters go through, and that is a deliberate
+trade.** This check reports an unexplained zero-width character when two are
+ADJACENT or when five appear anywhere in the input. Four, no two of them
+touching, is allowed, because four is what ordinary text reaches: Thai marked up
+for line breaking, Persian written with ASCII digits, a 2,503-character page
+with four incidental zero-width characters, mathematical markup extracted to
+plain text, and four UTF-8 files concatenated with each keeping its own
+byte-order mark are all four occurrences and all pass. The corpus carries three
+payloads of exactly four characters that this lets through, labelled `deny` so
+they cost recall. The residual is bounded rather than a channel: a fifth
+character denies whatever else the message contains.
 
 Numbers measured on a corpus we wrote are reported separately from numbers
 measured on a corpus we did not, and the two are never merged. There is no

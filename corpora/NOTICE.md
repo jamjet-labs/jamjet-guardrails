@@ -94,48 +94,63 @@ measured on these corpora is a statement about the detector as it behaves before
 that date.
 
 **`corpora/injection-structural/in-repo.jsonl` labels its own failures as
-failures, and its published numbers are lower than the check's behaviour on
-ordinary text because of it.** 0.679 precision, 0.974 recall, 17 wrong
-decisions over 146 cases. Seventeen cases fail, every one of them on purpose,
-and there are no other failures. Twenty-four cases are listed below: the
-seventeen that fail, plus the three-case balanced-override set and the four
+failures, and its published numbers describe a check that trades recall for
+precision at a bound that was raised deliberately.** 0.971 precision, 0.870
+recall, 8 wrong decisions over 146 cases. Eight cases fail, every one of them on
+purpose, and there are no other failures. Fifteen cases are listed below: the
+eight that fail, plus the three-case balanced-override set and the four
 imbalanced-control cases -- a stray PDF, a stray PDI, and the two halves of a
 document split across a balanced pair, of which `inj-0139` keeps the unclosed
 INITIATOR and only `inj-0140` is a stray terminator -- which pass and are here
 because a reader can reasonably expect the opposite of each.
 
-- **Fourteen deny text somebody wrote on purpose, and are labelled `allow`.**
-  They score as 53 of the corpus's false positives, which is where nearly all of
-  the distance from a perfect score comes from. `inj-0090` is a Thai sentence marked up for
-  line breaking, which carries one U+200B per word boundary and reaches the
-  four-character total bound on five words. `inj-0091` wraps a two-line value in
-  `FSI ... PDI`, the idiom Unicode recommends and the one `<bdi>` implements; a
-  control's scope ends at its paragraph, so the PDI on the second line closes
+**The list was twenty-four, and what changed it was one constant.** `_MIN_TOTAL`
+counts unexplained zero-width characters anywhere in the input and was 4; it is
+now 5. Twelve cases of ordinary text that used to be reported now pass: the Thai
+line-break hints, four Persian and Urdu numeral compounds written with ASCII
+digits, a retrieved page carrying four incidental U+200B, MathML extracted to
+plain text, and five samples of prose about Korean jamo, Khmer inherent vowels,
+U+034F and concatenated BOMs. **They stay in the corpus.** They are the evidence
+that the check allows that text, and deleting them would leave the raise
+unjustified. They are no longer disclosed because nothing about them is
+surprising any more.
+
+Three cases went the other way, and they are the price. Every one is four
+zero-width characters with no two adjacent, which is one under the volume bound
+and carries no adjacent pair for the run bound to see.
+
+Two things did NOT change with the bound, and both are worth reading as a pair.
+`_MIN_RUN` is still 2: two adjacent counted characters are what a
+bit-per-character encoder emits and what ordinary prose does not, so it is a
+signal about shape rather than volume, and the sweep that offered 0.980
+precision for raising it too was refused because 0.009 precision is not worth
+it. And `inj-0129` is still a false positive for exactly that reason -- musical
+notation where an END BEAM abuts the next BEGIN BEAM is four controls containing
+an adjacent pair, so the run bound reports it and the volume bound never did.
+
+- **Two deny text somebody wrote on purpose, and are labelled `allow`.** They
+  score as the corpus's three false positives. `inj-0091` wraps a two-line value
+  in `FSI ... PDI`, the idiom Unicode recommends and the one `<bdi>` implements;
+  a control's scope ends at its paragraph, so the PDI on the second line closes
   nothing and both controls are reported, while the text renders byte-identically
   to the same string with the wrapper deleted -- measured with GNU FriBidi
-  1.0.16. `inj-0092`, `inj-0093` and `inj-0095` are Persian and Urdu numeral
-  compounds written with ASCII digits and `inj-0094` is the Persian plural
-  suffix on Latin acronyms; an excusing neighbour has to sit inside the
-  joining-script ranges and an ASCII digit does not, so the same sentences with
-  Arabic-Indic digits allow and are in the file as `inj-0079`, `inj-0080` and
-  `inj-0082`. `inj-0106` is a 2,503-character retrieved page whose only fault is
-  four incidental U+200B at sentence boundaries; the total bound is a bound on
-  the whole input rather than a rate, so `inj-0105` is the same page carrying
-  three and allows, and the same pair measured at 10,000 characters answers the
-  same way. `inj-0128` and `inj-0129` are MathML and musical
-  notation extracted to plain text, and `inj-0134`, `inj-0135`, `inj-0136`,
-  `inj-0137` and `inj-0138` are the cost of the wider invisible set described
-  below: Korean prose about jamo, a Khmer dictionary entry, U+034F blocking a
-  collation contraction, U+034F fixing point order in Biblical Hebrew, and four
-  UTF-8 files concatenated with each keeping its own BOM. Every one of the
-  fourteen is four occurrences reaching an absolute bound.
-- **Three allow a payload that is really there, and are labelled `deny`.** They
-  score as the corpus's three false negatives. `inj-0097`, `inj-0098` and
-  `inj-0099` each carry the string `exfiltrate` past the check, decoded back out
-  to check that: presence-and-absence spacing of a joiner behind a Devanagari
-  cover, the same encoding between variation selectors at 119 characters with
-  nothing on the page at all, and a bitstream deperiodised with one spare cover
-  character every three bits.
+  1.0.16. `inj-0129` is musical notation extracted to plain text, denied on the
+  RUN bound as described above.
+- **Six allow a payload that is really there, and are labelled `deny`.** They
+  score as the corpus's fifteen false negatives. Three are the cost of raising
+  `_MIN_TOTAL`: `inj-0051` is a ZWNJ between emoji four times over, `inj-0052`
+  puts a ZWJ with one pictographic neighbour four times over, and `inj-0053`
+  begins with a ZWNJ and carries three ZWSPs through Arabic text. Each is four
+  characters carrying four bits, each decodes back out, and none of them can be
+  extended: a fifth character denies whatever else the message contains, so this
+  is a bounded residual rather than a channel.
+
+  The other three pre-date the raise. `inj-0097`, `inj-0098` and `inj-0099` each
+  carry the string `exfiltrate` past the check, decoded back out to check that:
+  presence-and-absence spacing of a joiner behind a Devanagari cover, the same
+  encoding between variation selectors at 119 characters with nothing on the
+  page at all, and a bitstream deperiodised with one spare cover character every
+  three bits.
 - **Three are labelled `allow` and pass, and they are one construct rather
   than three cases.** `inj-0030`, `inj-0038` and `inj-0096` are each a BALANCED
   override whose scope contains characters whose order it reverses. Measured
@@ -194,39 +209,48 @@ decisions, sitting in the same table as the PII corpus's 0.631, which does it
 the honest way. Two numbers that differ only in how their authors chose to score
 their own mistakes cannot be read side by side.
 `tests/test_corpora.py::test_a_disclosed_injection_shape_is_in_the_corpus_and_in_the_notice`
-holds all twenty-four ids against this section, in both directions.
+holds all fifteen ids against this section, in both directions.
 
 **The corpus moves when the detector does, and that was measured rather than
-assumed.** Twenty-seven copies of `injection_structural.py` were made, each with
-one rule removed or loosened, and this corpus was scored against each. **All
-twenty-seven break at least one case beyond the seventeen that already fail.**
+assumed.** One hundred and twenty-two copies of `injection_structural.py` were
+made, each with a single constant, range-table row or guard condition broken on
+its own, and this corpus was scored against every one. **Seventy-two of the 122
+break at least one case beyond the eight that already fail.** The other fifty
+are invisible to the corpus and are caught by the test suite instead, which is
+the honest shape of the answer: a corpus is one of two gates and not the only
+one.
 
-Twenty cover the rules the detector shipped with, and they are, one per mutant:
-the RGI allowlist softened to a prefix test; the flag exemption's CANCEL TAG
-condition dropped; its flag-base condition dropped; the flag exemption removed
-entirely; the paragraph flush deleted; the balanced-pair rule removed; the two
-bidi families merged into one stack; `_MIN_TOTAL` raised by one; `_MIN_RUN`
-raised by one; `_MIN_PERIODIC` raised by one; the periodicity rule deleted; a
-joiner excused when EITHER neighbour is a joining character; the virama's base
-allowed to be any script; the virama branch deleted; the pictographic branch
-deleted; `_MAX_TRANSPARENT` cut to one; decimal digits refused as excusing
-neighbours; marks refused as excusing neighbours; a mark neighbour no longer
-required to reach a letter; and WORD JOINER and the BOM dropped from the set.
-The widest is deleting the virama branch, which turns thirteen cases of ordinary
-Brahmic and Malayalam text into denials.
+Two mutants survive the whole suite, and neither is a gap. Loosening `_chains`
+from "exactly `step` apart" to "at most" cannot change any result, for the
+reason its docstring argues and a sweep confirms; and narrowing the walk in
+`_mark_base` to `Mn`, `Me` and `Cf` leaves every verdict where it is, which is
+what the comment beside it already claims. One further mutant does not
+terminate: the two range tests in `_tag_spans` are one constant used twice, and
+making them disagree leaves the scanner unable to advance past a CANCEL TAG.
 
-Seven cover the rules added in the two fix rounds, which are the newest and
-therefore the least exercised: reverting the invisible set to five hand-picked
-characters breaks ten cases, narrowing it back to format characters alone six,
-dropping the variation-selector exclusion five, dropping the directional
-exclusion two, dropping the soft-hyphen exception one, giving the Mongolian
-separator a bare range test one, and removing its branch entirely two.
+No superlative is offered for which mutant does the most damage, and the reason
+is instructive. Deleting the virama branch used to turn thirteen cases of
+ordinary Brahmic and Malayalam text into denials; measured after `_MIN_TOTAL`
+was raised to 5 it moves **no case at all**, because the denials it caused were
+four-occurrence ones. That rule is now held by the test suite alone. Dropping
+the soft-hyphen exception, at the other end, still moves exactly one case,
+`inj-0108`. A ranking of mutants is a property of the corpus and the bounds
+together, and it does not survive either of them changing.
 
-Five cases exist only because a rule survived a sweep with nothing to show for
+Cases that exist only because a rule survived a sweep with nothing to show for
 it: `inj-0115` for the CANCEL TAG condition, `inj-0116` for the periodicity
 bound from underneath, `inj-0117` for the virama's own script, and `inj-0118`
 and `inj-0119` for WORD JOINER and the BOM, which until then appeared only in
 samples that allow either way.
+
+**Raising `_MIN_TOTAL` disarmed three tests that nothing else was holding, and
+that is a hazard worth naming.** Each of the three pinned its rule with an input
+carrying exactly four unexplained characters, which stopped denying the moment
+the bound became five: the ASCII-digit Persian and Urdu samples, which alone
+pinned decimal digits as excusing neighbours, and the Kaithi cluster, which
+alone pinned format characters as transparent in the walk to a virama's base.
+All three inputs carry five occurrences now. A volume bound that moves silently
+disarms every test that reached it exactly.
 
 ## Third-party corpus
 
@@ -355,28 +379,34 @@ close.
 **Why the two swept families stay out, evidenced rather than asserted.** This
 notice said "counting variation selectors denies every emoji sequence" and that
 is false: with them counted, a single heart with U+FE0F, three keycaps and a
-four-person family sequence all still allow, because one or three unexplained
-characters is under the total bound. What is true is narrower and still
-decisive, and the corpus carries every one of these rather than leaving the
-claim on this file's word:
+four-person family sequence all still allow, because one, three or four
+unexplained characters is under the total bound. What is true is narrower and
+still decisive, and the corpus carries every one of these rather than leaving
+the claim on this file's word:
 
 | Sample | Case | With the family counted |
 |---|---|---|
-| four keycaps | `inj-0143` | denies |
-| four text-default emoji, each needing U+FE0F | `inj-0144` | denies |
-| four Japanese surnames written with ideographic variation sequences | `inj-0145` | denies |
-| a bilingual invoice carrying four directional marks | `inj-0146` | denies |
+| five keycaps | `inj-0143` | denies |
+| five text-default emoji, each needing U+FE0F | `inj-0144` | denies |
+| five Japanese surnames written with ideographic variation sequences | `inj-0145` | denies |
+| a bilingual invoice carrying five directional marks | `inj-0146` | denies |
+
+Five rather than four because `_MIN_TOTAL` was raised from 4 to 5, and the four
+negatives were widened by one occurrence when it moved. At four occurrences they
+allow whether the families are counted or not, so they would have justified
+nothing while still reading as evidence. A justification measured against a
+bound has to be re-measured when the bound moves.
 
 A RAINBOW FLAG stood at the head of that table, argued to deny on the RUN bound
 because U+FE0F sits immediately before U+200D. Running the mutation refutes it:
 U+FE0F is inside the pictographic ranges, so with selectors counted it EXPLAINS
 the joiner and one flag is one suspicious character. One, two and three rainbow
-flags allow; four deny on the total bound, exactly like the keycaps. It was
-reasoned about rather than run, and it is recorded here because it was published
-as the decisive case in the round before this one.
+flags allow; up to four allow and five deny on the total bound, exactly like
+the keycaps. It was reasoned about rather than run, and it is recorded here
+because it was published as the decisive case in the round before this one.
 
-Four of anything from either family reaches the total bound, and that is enough:
-a check that denies four keycaps or a bilingual invoice is one that gets
+Five of anything from either family reaches the total bound, and that is enough:
+a check that denies five keycaps or a bilingual invoice is one that gets
 switched off. Both families stay out, and the table above is the price.
 
 **Three costs were measured before this landed. Two are real.**
@@ -402,11 +432,12 @@ them. The same standard the
 detector already applies to the Persian ezafe ordering, which it records as
 asserted rather than evidenced.
 
-*Korean and Khmer: real, and narrow.* Ordinary Korean and ordinary Khmer carry
-none of these characters, which was checked rather than assumed. What denies is
-prose ABOUT the script: a jamo table with four fillers, a dictionary entry with
-four inherent vowels. Measured: one allows, two allow, four deny. U+3164 used as
-a blank placeholder denies at four as well. `inj-0134` and `inj-0135`.
+*Korean and Khmer: real, and narrower since the bound moved.* Ordinary Korean
+and ordinary Khmer carry none of these characters, which was checked rather than
+assumed. What can still deny is prose ABOUT the script: a jamo table or a
+dictionary entry, once five of them reach the total bound. Measured: four allow
+and five deny. `inj-0134` and `inj-0135` carry four each and now pass, so this
+cost is one entry further out than it was, not gone.
 
 *Mathematics, music, collation and concatenated files: real.* U+2061..U+2064 are
 genuine in MathML and U+1D173..U+1D17A in the plain-text encoding of musical
@@ -419,10 +450,16 @@ two letters rather than one, and fixing the order of two points on one letter in
 Biblical Hebrew. U+034F was added to the set BY NAME in fix round 1, as the one
 default-ignorable mark that is neither a variation selector nor Khmer
 orthography; fix round 3 replaced that named addition with a general rule it
-falls out of, and measured what it costs. And four UTF-8 files concatenated with
-each keeping its own BOM is four occurrences, which is the same
-retrieval-pipeline setting `inj-0105` and `inj-0106` come from. `inj-0128`,
-`inj-0129`, `inj-0136`, `inj-0137` and `inj-0138`.
+falls out of, and measured what it costs. And UTF-8 files concatenated with each
+keeping its own BOM is one occurrence per file, which is the same
+retrieval-pipeline setting `inj-0105` and `inj-0106` come from.
+
+Raising `_MIN_TOTAL` to 5 bought back every one of these but the music.
+`inj-0128`, `inj-0136`, `inj-0137` and `inj-0138` carry four occurrences each
+and now pass; a fifth in any of them denies, so what moved is the boundary and
+not the trade. `inj-0129` is the exception and the reason the two bounds are
+separate signals: an END BEAM immediately followed by the next BEGIN BEAM is an
+adjacent PAIR, which `_MIN_RUN` reports at two whatever the total is.
 
 The exemption that would close the mathematical case is not available, which is
 why the trade went this way rather than by preference. An invisible operator

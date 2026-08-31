@@ -459,39 +459,42 @@ def test_the_notice_qualifies_the_two_numbers_that_need_qualifying() -> None:
     assert "2033-05-18" in notice
 
 
-# The twenty-four injection-structural cases a reader is most likely to argue
-# with. Seventeen of them FAIL when the corpus is scored, on purpose: they are
-# the check's known false positives and known false negatives, labelled with
-# what SHOULD happen so that they cost precision and recall rather than being
-# scored as successes. That convention is `corpora/pii/in-repo.jsonl`'s, and it
-# is why that corpus publishes 0.631 rather than a number about its own labels.
+# The fifteen injection-structural cases a reader is most likely to argue with.
+# Eight of them FAIL when the corpus is scored, on purpose: they are the check's
+# known false positives and known false negatives, labelled with what SHOULD
+# happen so that they cost precision and recall rather than being scored as
+# successes. That convention is `corpora/pii/in-repo.jsonl`'s, and it is why
+# that corpus publishes 0.631 rather than a number about its own labels.
 #
 # The other seven pass. Three are the balanced-override set and four are the
 # stray closers with the chunked document they come from; every group is
 # labelled with what should happen, and every one is here because a reader
 # could reasonably expect the opposite.
 #
+# This list was twenty-four while `_MIN_TOTAL` was 4. Raising it to 5 turned
+# twelve disclosed false positives into ordinary passing negatives -- the Thai
+# line-break hints, the ASCII-digit Persian and Urdu, the incidental-ZWSP page,
+# the MathML, and the jamo, inherent-vowel, U+034F and BOM samples -- and they
+# stay in the corpus as the evidence that the check allows that text. They are
+# no longer disclosed because nothing about them is now surprising. Three new
+# misses arrived in their place.
+#
 # `corpora/NOTICE.md` names every one of these by id and says what it is. This
 # test is what keeps the two together. The edit it exists to stop is the cheap
 # one: flipping a label back to what the detector does turns a published failure
 # into a published success and moves precision without reading as a change.
 _INJECTION_DISCLOSED = {
+    # False negatives bought by `_MIN_TOTAL = 5`. Each is four zero-width
+    # characters with no two adjacent, so each is one character under the volume
+    # bound and carries no adjacent pair for the run bound to see. Each allows;
+    # each is labelled deny and scores as an FN, twelve findings between them.
+    "inj-0051": "deny",  # ZWNJ between emoji, four of them
+    "inj-0052": "deny",  # ZWJ with one pictographic neighbour, four of them
+    "inj-0053": "deny",  # a leading ZWNJ and three ZWSPs in Arabic text
     # False positives. Each denies; each is labelled allow and scores as an FP.
-    "inj-0090": "allow",  # Thai line-break hints, four of them
     "inj-0091": "allow",  # FSI around a multi-line value, the idiom Unicode recommends
-    "inj-0092": "allow",  # Persian ages written with ASCII digits
-    "inj-0093": "allow",  # Urdu years written with ASCII digits
-    "inj-0094": "allow",  # Persian suffixes on Latin acronyms
-    "inj-0095": "allow",  # Persian decades written with ASCII digits
-    "inj-0106": "allow",  # a 2,503-character page carrying four incidental ZWSPs
-    "inj-0128": "allow",  # MathML extracted to plain text: four invisible operators
-    "inj-0129": "allow",  # musical notation: two beam pairs are four format controls
-    "inj-0134": "allow",  # Korean prose about jamo, four Hangul fillers
-    "inj-0135": "allow",  # a Khmer dictionary entry, four inherent vowels
-    "inj-0136": "allow",  # U+034F blocking a collation contraction
-    "inj-0137": "allow",  # U+034F fixing point order in Biblical Hebrew
-    "inj-0138": "allow",  # four UTF-8 files concatenated, each keeping its BOM
-    # False negatives. Each allows; each is labelled deny and scores as an FN.
+    "inj-0129": "allow",  # musical notation: an END BEAM abuts the next BEGIN BEAM
+    # False negatives that pre-date the raise. Each allows; each is labelled deny.
     "inj-0097": "deny",  # presence-and-absence encoding behind a Devanagari cover
     "inj-0098": "deny",  # the same encoding between variation selectors, nothing visible
     "inj-0099": "deny",  # a bitstream deperiodised with one spare cover every three bits
@@ -535,7 +538,7 @@ def test_a_disclosed_injection_shape_is_in_the_corpus_and_in_the_notice(
     Both halves, because either one alone is half a disclosure. A case dropped
     from the file leaves the notice describing evidence that is not there; an id
     dropped from the notice leaves a case whose label reads as an ordinary
-    expectation, which for these twenty-four it is not.
+    expectation, which for these fifteen it is not.
     """
     case = next(
         (c for c in _load("injection-structural", "in-repo").cases if c.id == case_id), None
