@@ -271,9 +271,14 @@ _VIRAMA = 9
 # time, out of a copy-paste from a rendered page; a payload does not, because one
 # bit per character means a payload is a sequence.
 #
-# Measured over the legitimate samples in tests/test_injection_structural.py: the
-# most unexplained zero-width characters any of them carries is two, a WORD
-# JOINER on each side of a thousands separator, and the longest run is one.
+# Measured over the samples tests/test_injection_structural.py ALLOWS: the most
+# unexplained zero-width characters any of them carries is two, the two WORD
+# JOINERs at the thousands boundaries of `1<WJ>000<WJ>000`, and the longest run
+# is one. That is the allow-set and it is not the whole file: the Thai sample
+# carries four, one at each of four word boundaries, and denies. `_MIN_TOTAL`
+# owns that false positive, which is the reason to know this bound from both
+# sides -- `test_three_unexplained_characters_are_below_the_total_bound` is the
+# one input in the file that pins it from underneath.
 _MIN_RUN = 2
 _MIN_TOTAL = 4
 
@@ -315,11 +320,25 @@ _MIN_TOTAL = 4
 # longer RGI sequences are the safer ones.
 #
 # The Arabic row is why length cannot be the whole test: it is longer than any
-# attack fragment worth catching, so no bound separates the two by length. It is
+# attack fragment worth catching, so no bound below it separates the two. It is
 # allowed because it carries NOTHING. One symbol repeated at every position is a
-# channel with no choice in it, and a bitstream needs a choice per bit. Asking
-# for the symbol to change costs the defender nothing for that same reason, and
-# it is what lets this bound sit at four instead of above thirty-five.
+# channel with no choice in it, and a bitstream needs a choice per bit.
+#
+# Asking for the symbol to change is what lets this bound sit at four instead of
+# above thirty-five, and it is a TRADE, not a free win. What it gives up is
+# measured and it is in this file: a presence-and-absence encoder, a joiner for
+# a one bit and nothing for a zero, leaves uniform chains as long as its longest
+# run of set bits, and `test_a_presence_and_absence_encoding_is_a_known_miss`
+# carries a payload whose longest run is exactly 4. Drop the changing-symbol
+# condition and that input denies. What that reaches is bounded and knowable:
+# ASCII bytes all have a zero top bit, so a set-bit run never crosses a byte,
+# and a 4-run happens exactly when the payload contains a character whose own
+# byte has one -- for lowercase text o, x, y and z. An attacker who avoids those
+# four letters, or packs the payload any other way, gives up nothing.
+#
+# The trade was taken in that direction because the true positive it buys is
+# evadable at no cost and the false positive it removes is not evadable at all
+# by the person writing the text.
 #
 # Four rather than three keeps the bound above the emoji maximum on its own,
 # without the changing-symbol condition helping. That is deliberate: whoever
@@ -374,24 +393,46 @@ def _is_contextually_legitimate(content: str, index: int) -> bool:
     of the two symbols a bitstream needs. Measured on the 256-bit payload above,
     it leaves 123 of the joiners unexcused and the total bound reports them.
 
-    A virama BEFORE the joiner is enough on its own, and that is not a softening.
-    It is where Indic scripts put these characters, and it is the one place a
-    both-neighbours rule cannot look: a Malayalam chillu is consonant, virama,
-    ZWJ, and it ENDS a word, so the character after the joiner is a space or a
-    full stop. Without it, four ordinary Malayalam words in a sentence are four
-    unexplained joiners, which is exactly the total bound.
+    A virama BEFORE the joiner excuses it whatever follows, because that is the
+    one place a both-neighbours rule cannot look: a Malayalam chillu is
+    consonant, virama, ZWJ, and it ENDS a word, so the character after the
+    joiner is a space or a full stop. Without this, four ordinary Malayalam words
+    in a sentence are four unexplained joiners, which is exactly the total bound.
     `test_a_joiner_at_the_end_of_a_word_is_still_orthography` is that sentence.
-    It hands the attacker nothing they did not already have: a Devanagari letter
-    on each side of a joiner is exempt either way, so a virama cover is the same
-    channel at three characters per bit rather than two.
+
+    The VIRAMA'S OWN BASE has to be in a joining script too, and that condition
+    is the repair of a bypass this branch shipped without it. Written as "any
+    character of combining class 9" it excused a joiner behind a virama sitting
+    on anything at all, which is a cover character wearing a mark: base, virama,
+    joiner carries a bit for three characters, both symbols stay available
+    because neither is excused by its neighbours, and the joiners are three apart
+    so the periodicity rule never sees them. Measured that way, an emoji base and
+    a LATIN base both carried a 256-bit payload past this detector at three
+    characters per bit. The emoji cover is the one the condition above had just
+    closed; the Latin cover was not available at any price before this branch
+    existed. `test_a_virama_does_not_excuse_a_joiner_standing_on_a_foreign_base`
+    holds both.
+
+    The base test is a VETO rather than one more way to pass, which is why this
+    branch returns instead of falling through. A virama is in the Devanagari
+    through Sinhala range itself, so a joiner behind one already satisfies half
+    of the both-neighbours rule below, and falling through would excuse
+    `<latin><virama><joiner><devanagari>` -- alternating bases, the same channel
+    one character wider. Measured: it denies.
+
+    What is left is a Devanagari base, which the both-neighbours rule excuses on
+    its own whatever this branch does, at three characters per bit against the
+    2.33 of `test_a_deperiodised_bitstream_is_a_known_miss`. This branch adds
+    nothing there, and that was the only case the first version of this note
+    examined.
     """
     char = content[index]
     if char not in _CONTEXTUAL:
         return False
     before = content[index - 1] if index > 0 else ""
     after = content[index + 1] if index + 1 < len(content) else ""
-    if before and unicodedata.combining(before) == _VIRAMA:
-        return True
+    if index >= 2 and unicodedata.combining(before) == _VIRAMA:
+        return _in_ranges(content[index - 2], _JOINING_SCRIPTS)
     if _in_ranges(before, _JOINING_SCRIPTS) and _in_ranges(after, _JOINING_SCRIPTS):
         return True
     return char == _ZWJ and _in_ranges(before, _PICTOGRAPHIC) and _in_ranges(after, _PICTOGRAPHIC)
