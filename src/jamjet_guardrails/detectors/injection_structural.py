@@ -266,28 +266,45 @@ _PICTOGRAPHIC: tuple[tuple[int, int], ...] = (
 # halanta, hasanta, al-lakuna, coeng, asat, pangkon, subjoiner, sakot.
 _VIRAMA = 9
 # What a virama may stand behind and still be found sitting on its own letter:
-# the marks that decorate a base (Mn, Me) and the format characters that are
-# invisible between them (Cf).
+# anything that is not a STARTER, plus the format characters, which are starters
+# by combining class but transparent to a reader.
+#
+# Non-starter rather than a category set, and the difference is not academic.
+# `Mn`, `Me` and `Cf` looks like the same rule and is not: a spacing mark is
+# `Mc`, and 15 of the 69 characters of combining class 9 are themselves `Mc`, so
+# under a category set a virama can stand in as the base of another virama.
+# Measured that way, 63 of the 69 admitted a LATIN base behind one same-script
+# spacing mark, at four characters per bit.
 #
 # The character immediately before a virama is not the character the virama sits
 # on, and the two shapes that exploit the difference both put a character of the
 # VIRAMA'S OWN SCRIPT in that position, where the script test below cannot see
 # anything wrong with it:
 #
-#   - U+093C DEVANAGARI SIGN NUKTA, category Mn, in front of a Devanagari virama
-#     that stands on a Latin letter. Read as the base it is Devanagari and it
-#     excuses the joiner. Measured: four characters per bit, and what shows on
-#     the page is Latin letters with a dot under each.
+#   - U+093C DEVANAGARI SIGN NUKTA, a non-starter mark, in front of a Devanagari
+#     virama that stands on a Latin letter. Read as the base it is Devanagari
+#     and it excuses the joiner. Measured: four characters per bit, and what
+#     shows on the page is Latin letters with a dot under each.
 #   - U+110BD KAITHI NUMBER SIGN, category Cf and invisible, in front of a
 #     Kaithi virama. Measured: three characters per bit and NO visible text at
 #     all. U+110BD and U+110CD are the only format characters in Unicode 16.0.0
 #     that share a first name word with any character of combining class 9,
-#     which is why this set carries Cf and not only the mark categories.
+#     which is why format characters are transparent here and not only marks.
+#   - U+1B44 BALINESE ADEG ADEG and the other 14 class 9 spacing marks, each
+#     standing in as the base of a second copy of itself. Four characters per
+#     bit with a Latin cover.
+#   - U+0903 DEVANAGARI SIGN VISARGA, U+0966 DEVANAGARI DIGIT ZERO and U+0964
+#     DEVANAGARI DANDA. These are STARTERS, so no walk of any definition passes
+#     them, and they are refused by the base having to be a letter instead.
 #
-# `test_an_invisible_character_does_not_stand_in_for_the_base` holds the first
-# and `test_a_format_character_of_the_virama_s_own_script_is_not_a_base` the
-# second.
-_TRANSPARENT = frozenset({"Mn", "Me", "Cf"})
+# That list is four shapes and it is not offered as exhaustive; what is offered
+# as exhaustive is the measurement over every character of every script that has
+# a class 9 mark, in `_base_before`.
+# `test_an_invisible_character_does_not_stand_in_for_the_base`,
+# `test_a_format_character_of_the_virama_s_own_script_is_not_a_base`,
+# `test_a_same_script_non_letter_is_not_a_base` and
+# `test_a_virama_with_nothing_before_it_has_no_base` hold them.
+_FORMAT = "Cf"
 # How far back that walk may go, and it is a bound on COST, not on orthography.
 # Unbounded it is QUADRATIC, and the input that shows it is one an attacker can
 # send: a letter followed by repeats of virama-plus-joiner is one unbroken run of
@@ -296,7 +313,8 @@ _TRANSPARENT = frozenset({"Mn", "Me", "Cf"})
 # 5.51 s at 8k joiners, 22.00 s at 16k, 88.53 s at 32k -- four times the work for
 # twice the input. Bounded at four: 0.010 s, 0.018 s, 0.035 s, which is linear.
 #
-# Four is above what orthography needs. Measured over the conjuncts in
+# Four characters are EXAMINED, so at most three transparent ones are crossed.
+# Four is above what orthography needs: measured over the conjuncts in
 # tests/test_injection_structural.py, every base is one character back except
 # behind a nukta, where it is two. Padding past the bound loses the exemption
 # rather than gaining anything, which is the safe direction for a bound to fail
@@ -432,12 +450,54 @@ def _script(char: str) -> str:
     return unicodedata.name(char, "").partition(" ")[0] if char else ""
 
 
+def _is_letter(char: str) -> bool:
+    """Whether `char` is a letter. The empty string, the edge of the input, is not."""
+    return bool(char) and unicodedata.category(char).startswith("L")
+
+
+def _joining_letter(char: str) -> bool:
+    """Whether `char` is a letter or a mark of a script that writes with these joiners.
+
+    A script is a set of CHARACTERS and this module holds one as a range, which
+    is not the same thing and the difference is a free cover character. Inside
+    these ranges are 10 format characters and 440 unassigned code points, and
+    every one of them sits between two joiners as happily as a letter does while
+    rendering as nothing at all: measured, a joiner between two copies of U+061C
+    ARABIC LETTER MARK, or of an unassigned code point, carried a 256-bit
+    payload at 2.336 characters per bit with ZERO visible characters.
+
+    Marks are accepted and not only letters, because Arabic and Persian write
+    harakat next to these joiners and `<letter><kasra><ZWNJ>` is ordinary
+    vocalised text.
+    """
+    return (
+        bool(char) and unicodedata.category(char)[0] in "LM" and _in_ranges(char, _JOINING_SCRIPTS)
+    )
+
+
 def _base_before(content: str, index: int) -> str:
-    """The character the mark at `index` sits on, past any marks and format chars."""
+    """The letter the mark at `index` sits on, or "" if it is not sitting on one.
+
+    Two questions, and separating them is what this function is for. Where the
+    base IS: the first character back that a reader would call the start of a
+    cluster, so anything that combines with what precedes it, and the format
+    characters, are passed over. Whether that character can BE a base: only a
+    letter can, which is the condition every starter that is not a letter dies
+    to -- a digit, a danda, a visarga, all of them named for a script that has a
+    virama and none of them something a virama sits on.
+
+    Measured over every character of every script that owns a character of
+    combining class 9, which is the only measurement here that is exhaustive
+    rather than a list somebody chose: of the same-script characters that are
+    not letters, none is accepted as a base; of the same-script characters that
+    are letters, all are. `test_a_same_script_non_letter_is_not_a_base` carries
+    four of the refused shapes.
+    """
     at = index - 1
     while at >= 0 and index - at <= _MAX_TRANSPARENT:
-        if unicodedata.category(content[at]) not in _TRANSPARENT:
-            return content[at]
+        char = content[at]
+        if unicodedata.combining(char) == 0 and unicodedata.category(char) != _FORMAT:
+            return char if _is_letter(char) else ""
         at -= 1
     return ""
 
@@ -497,13 +557,23 @@ def _is_contextually_legitimate(content: str, index: int) -> bool:
 
     THE TRADE, since a rule this tight makes one. What it refuses that Unicode
     would call a cluster is: a virama whose base is in a different script from
-    it, a virama with more than four characters of marks and format characters
-    between it and its base, and a virama with no base at all before it. None of
-    the three is orthography in any script -- checked across all 69 characters of
-    combining class 9 in Unicode 16.0.0, every one of them is excused above a
-    letter of its own script and none is excused above a Latin or pictographic
-    one. The one soft edge is recorded in `_script`: TAI LE, TAI THAM and TAI
-    VIET share a first name word, so this cannot tell them apart.
+    it, a virama with more than THREE characters of marks and format characters
+    between it and its base, a virama whose base is not a letter, and a virama
+    with no base at all.
+
+    None of those four is orthography in any script, and the evidence is a
+    measurement built from character properties rather than from a list of
+    inputs somebody chose, which is the only kind that can find what the author
+    did not think of. Over every character of every script that owns a character
+    of combining class 9 in Unicode 16.0.0: all 3,519 same-script LETTERS are
+    excused as bases, and all 10,668 covers built from the same-script
+    NON-letters -- behind a Latin base, behind a pictographic one, standing
+    alone, and doubled -- are refused. An earlier version of this paragraph said
+    none was excused above a Latin base while 63 of the 69 were, and it said so
+    on the strength of four covers picked by hand.
+
+    The one soft edge is recorded in `_script`: TAI LE, TAI THAM and TAI VIET
+    share a first name word, so this cannot tell them apart.
 
     The script test is a VETO rather than one more way to pass, which is why this
     branch returns instead of falling through. A virama is in the Devanagari
@@ -527,7 +597,7 @@ def _is_contextually_legitimate(content: str, index: int) -> bool:
     after = content[index + 1] if index + 1 < len(content) else ""
     if before and unicodedata.combining(before) == _VIRAMA:
         return _script(_base_before(content, index - 1)) == _script(before)
-    if _in_ranges(before, _JOINING_SCRIPTS) and _in_ranges(after, _JOINING_SCRIPTS):
+    if _joining_letter(before) and _joining_letter(after):
         return True
     return char == _ZWJ and _in_ranges(before, _PICTOGRAPHIC) and _in_ranges(after, _PICTOGRAPHIC)
 
