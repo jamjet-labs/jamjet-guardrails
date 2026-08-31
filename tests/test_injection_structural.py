@@ -1239,9 +1239,18 @@ def test_a_variation_selector_bitstream_is_a_known_miss() -> None:
     and neither appended the trailing cover the convention names, which is a
     difference between two fixtures and their own module and not between two
     channels. What differs
-    is the only thing that matters here -- the letter cover puts 80 Devanagari
+    is the only thing that matters here -- the letter cover puts 81 Devanagari
     characters on the page and this puts NONE, which the assertion below holds
-    by category rather than by eye.
+    by DEFAULT-IGNORABILITY rather than by eye. Not by category: the assertion
+    used to ask for `Mn` or `Cf` and call that "nothing renders", which is the
+    inference `_mark_base` records as false in this same file, since U+064E
+    ARABIC FATHA is `Mn` and draws. It was true of these two characters and it
+    was not a reason: measured over Unicode 16.0.0, 1,789 of the 2,190 `Mn`/`Cf`
+    code points are not default-ignorable. Default_Ignorable is Unicode's own
+    name for the property the sentence needs, and `_DEFAULT_IGNORABLE` is the
+    module's table of it. Inside `_PICTOGRAPHIC` the two tests agree on every
+    code point today, so this changes no verdict; it changes what the verdict
+    rests on, which is the only thing that would survive the branch moving.
 
     So the invisible channel is not a dearer alternative to the recorded misses,
     and it shows the reader nothing, which is why no comment here may claim the
@@ -1260,12 +1269,27 @@ def test_a_variation_selector_bitstream_is_a_known_miss() -> None:
     minimum is published anywhere now, because a minimum quantifies over every
     encoding and a measurement exhibits one.
 
-    Two code points is not the size of it. `_PICTOGRAPHIC` spans 5,490 code
-    points and 503 of them render nothing -- 501 unassigned plus these two
-    variation selectors -- and every one of the 503 carries this payload at the
-    same 120 characters with nothing visible. VS16 is the parameter here because
-    it is the one an ordinary emoji sequence already contains, so a filter on
-    "unassigned" alone would not reach it.
+    Two code points is not the size of the branch, and 503 is not the size of
+    the INVISIBLE channel, which is what this paragraph used to say.
+    `_PICTOGRAPHIC` spans 5,490 code points and 503 of them are ones no reader
+    would recognise as an emoji -- 501 unassigned plus these two variation
+    selectors -- and every one of the 503 carries this payload at the same 120
+    characters and the same `allow`. ONLY THE TWO CARRY IT INVISIBLY. Measured,
+    ZERO of the 501 unassigned code points are default-ignorable: they are
+    reserved space, 38 runs of it across U+242A..U+2B96 and U+1F02C..U+1FAFF, so
+    a font draws `.notdef` for every one. The same payload built over U+242A is
+    120 characters and allows, and it puts 81 TOFU BOXES on the page. That is
+    the argument `_mark_base` already records about a different range, and it
+    holds here too: unassigned is not invisible. The error ran in the safe
+    direction -- it made this residual sound worse than it is, since a cover
+    that draws tofu is not an invisible channel -- and a wrong claim in a
+    security description is still wrong.
+
+    So the invisible channel is two code points wide and the rest of the hole is
+    a visible one. VS16 is the parameter here because it is the one an ordinary
+    emoji sequence already contains, so a filter on "unassigned" alone would not
+    reach it -- which is the same reason it always was, and now the only one of
+    the three claims in this paragraph that the branch rests on.
 
     Closing it means reworking what `_PICTOGRAPHIC` is: a range that contains
     the variation selectors treats them as emoji when they are modifiers OF
@@ -1279,8 +1303,16 @@ def test_a_variation_selector_bitstream_is_a_known_miss() -> None:
     """
     content = _presence(VS16, "exfiltrate")
     assert len(content) == 120, "the rate above is measured on this exact fixture"
-    assert not [c for c in content if unicodedata.category(c) not in {"Mn", "Cf"}], (
-        "the point of this miss is that nothing in it renders"
+    # Default_Ignorable, not category, and this swap changes the REASON rather
+    # than the verdict. "Renders nothing" is what default-ignorability MEANS;
+    # `Mn` or `Cf` is a category two invisible characters happen to carry, and
+    # measured over Unicode 16.0.0 that inference is false for 1,789 of the
+    # 2,190 `Mn`/`Cf` code points -- U+064E ARABIC FATHA among them, which
+    # `_mark_base` records. Inside `_PICTOGRAPHIC` the two tests agree exactly
+    # today: 0 code points are `Mn`/`Cf` without being default-ignorable. So
+    # nothing here was broken; the justification under it was.
+    assert all(_in_ranges(char, _DEFAULT_IGNORABLE) for char in content), (
+        "the point of this miss is that a conforming renderer draws none of it"
     )
     assert InjectionStructuralGuardrail().check(content, IN).decision == "allow"
 

@@ -1176,7 +1176,11 @@ def _is_contextually_legitimate(content: str, index: int) -> bool:
 
     Neither number bounds this function and NOTHING here bounds the module. The
     pictographic branch below excuses a presence-and-absence payload at 1.5000
-    characters per bit with nothing visible, over any of 503 code points, and
+    characters per bit over any of 503 code points, and WITH NOTHING VISIBLE
+    over exactly two of them. This said "with nothing visible" of all 503, which
+    is false of the 501: not one of them is default-ignorable, so a font draws
+    `.notdef` for each and the cover is a row of tofu boxes. Only U+FE0E and
+    U+FE0F carry it invisibly.
     `test_a_variation_selector_bitstream_is_a_known_miss` is that measurement.
     It is the cost of that encoding and not a minimum: `_invisible` records the
     families this module does not count at all, with a measured encoder for
