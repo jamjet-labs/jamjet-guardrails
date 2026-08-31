@@ -15,6 +15,8 @@ prompt.
 
 from __future__ import annotations
 
+import unicodedata
+
 from jamjet_guardrails._spans import _rewrite
 from jamjet_guardrails.protocol import saw
 from jamjet_guardrails.types import (
@@ -118,6 +120,88 @@ def _tag_spans(content: str) -> list[tuple[int, int]]:
     return spans
 
 
+# Two families, and they do NOT pop each other. U+202A..U+202E are the legacy
+# embeddings and overrides, closed by PDF; U+2066..U+2068 are the isolates,
+# closed by PDI. Counting both in one stack lets `LRE ... PDI` balance, which is
+# the exact shape a Trojan Source payload uses to look tidy while the embedding
+# it opened is still open.
+_EMBED_OPEN = frozenset("\u202a\u202b\u202d\u202e")
+_EMBED_CLOSE = "\u202c"
+_ISOLATE_OPEN = frozenset("\u2066\u2067\u2068")
+_ISOLATE_CLOSE = "\u2069"
+
+
+def _bidi_spans(content: str) -> list[tuple[int, int]]:
+    """Every bidi control that no partner of its own family terminates.
+
+    Balanced controls are ordinary formatting and are NOT reported: real Arabic
+    and Hebrew text uses them, and a check that denies a language is not a
+    security control, it is a check that gets switched off. What is reported is
+    imbalance, because that is what makes the rendered order diverge from the
+    logical order a parser -- or a model -- actually reads for the whole rest of
+    the paragraph, rather than for a stretch the author closed.
+
+    Two counters, one per family, are not enough on their own, because a pairing
+    this function accepts has to be a pairing a RENDERER accepts. Both rules
+    below were measured against GNU FriBidi 1.0.16; the first closes a bypass,
+    the second removes a false positive:
+
+      - UAX #9 X7 ignores a PDF while the innermost open initiator is an
+        ISOLATE, so `RLO ... LRI ... PDF ... PDI` leaves the override in force
+        past the PDI. Per-family counters call that balanced. Measured: the text
+        AFTER the PDI still renders reversed, which it can only do while the
+        override is open. Pinned by
+        `test_a_pdf_inside_an_isolate_does_not_close_an_override_outside_it`.
+
+      - UAX #9 X6a pops down to the isolate initiator, so an embedding opened
+        inside an isolate is terminated by the PDI and is NOT reported. Measured:
+        the text after the PDI renders unchanged, so the effect cannot escape the
+        isolate, which is the containment a balanced pair also has. Pinned by
+        `test_an_isolate_terminates_an_embedding_opened_inside_it`.
+
+    One PDI can pop many embeddings, but every control is pushed once and popped
+    at most once, so the whole scan stays linear in the length of the input.
+    """
+    embeds: list[int] = []
+    isolates: list[int] = []
+    unbalanced: list[int] = []
+    for index, char in enumerate(content):
+        if char in _EMBED_OPEN:
+            embeds.append(index)
+        elif char in _ISOLATE_OPEN:
+            isolates.append(index)
+        elif char == _EMBED_CLOSE:
+            if embeds and (not isolates or isolates[-1] < embeds[-1]):
+                embeds.pop()
+            else:
+                unbalanced.append(index)
+        elif char == _ISOLATE_CLOSE:
+            if isolates:
+                opened = isolates.pop()
+                while embeds and embeds[-1] > opened:
+                    embeds.pop()
+            else:
+                unbalanced.append(index)
+        elif unicodedata.bidirectional(char) == "B":
+            # A control's scope ends at its paragraph (UAX #9 P1), so nothing
+            # open here is ever closed and a PDF after this point closes none of
+            # it. Without the split, an attacker balances the check by moving the
+            # PDF past a newline and nothing else changes: measured with GNU
+            # FriBidi 1.0.16, an unclosed RLO reverses its own line, the next
+            # line renders untouched, and a PDF on that next line does nothing.
+            # Class B is asked of `unicodedata` rather than listed here, so it
+            # cannot drift from the Unicode data the interpreter ships;
+            # `test_controls_do_not_pair_across_a_paragraph_break` carries the
+            # seven characters that answered "B" in Unicode 16.0.0.
+            unbalanced += embeds
+            unbalanced += isolates
+            embeds.clear()
+            isolates.clear()
+    unbalanced += embeds
+    unbalanced += isolates
+    return [(index, index + 1) for index in sorted(unbalanced)]
+
+
 class InjectionStructuralGuardrail:
     """Detects instruction smuggling in the encoding rather than in the words."""
 
@@ -159,13 +243,18 @@ class InjectionStructuralGuardrail:
         default and a deny never reaches `_rewrite`, so an unsorted return stays
         invisible until a caller configures `redact`.
 
-        Measured, not assumed: replacing the sort with `return found` leaves the
-        whole suite green today. `_tag_spans` walks left to right and is the only
-        signal, so its output is already in span order and the sort is currently
-        a no-op. It is the SECOND signal that makes this load-bearing, which is
-        why the sort goes in now rather than then.
+        Measured, not assumed, and no longer a no-op. Each signal walks left to
+        right, so each list is ordered on its own and it is the concatenation
+        that is not. Replacing the sort with `return found` now fails
+        `test_findings_from_both_signals_come_back_in_span_order` and
+        `test_redacting_both_signals_leaves_neither_control_standing`, and the
+        second of those is the one that shows the cost: `_merge` folds the
+        earlier bidi span into the later tag region and emits one region that
+        starts after the control, so the redacted output keeps the override
+        while the placeholder claims to have removed it.
         """
         found = [("INVISIBLE_TAG_CHARS", span) for span in _tag_spans(content)]
+        found += [("BIDI_OVERRIDE", span) for span in _bidi_spans(content)]
         return sorted(found, key=lambda pair: pair[1])
 
     def check(self, content: str, context: Context) -> Verdict:
