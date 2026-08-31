@@ -102,6 +102,15 @@ beside the scores.
 | pii | pii/third-party | nvidia/Nemotron-PII@b70ffaf | `c25ef538d677` | 300 | 0.960 | 0.997 | 0.978 | 340 | 14 | 1 | 6 |
 | secrets | secrets/in-repo | in-repo | `e9e0ed70dc37` | 39 | 0.957 | 0.880 | 0.917 | 22 | 1 | 3 | 4 |
 
+**A *balanced* override still reorders, and `injection-structural` allows it.**
+The signal is imbalance, not presence. `transfer <RLO>001<PDF> USD` renders as
+`transfer 100 USD`, measured with GNU FriBidi 1.0.16, and this check reports
+nothing, so Trojan Source written with a closed pair passes it. That is named
+here rather than left for you to find, and the reason it is allowed is that
+flagging balanced controls would deny ordinary Arabic and Hebrew, which use them
+for exactly this. What imbalance buys is a divergence the author cannot bound:
+an unclosed control runs to the end of the paragraph.
+
 See [BENCHMARKS.md](BENCHMARKS.md) for the per-type scores and the worst misses
 behind these numbers, and [corpora/NOTICE.md](corpora/NOTICE.md) for what each
 corpus is and where it came from.
