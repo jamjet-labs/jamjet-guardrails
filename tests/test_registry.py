@@ -32,8 +32,8 @@ from jamjet_guardrails.types import Context, Direction, Kind, Provenance, Verdic
 OUT = Context(direction="output", origin="model")
 
 
-def test_both_phase_one_detectors_are_registered() -> None:
-    assert set(AVAILABLE) == {"pii", "secrets"}
+def test_every_bundled_detector_is_registered() -> None:
+    assert set(AVAILABLE) == {"injection-structural", "pii", "secrets"}
 
 
 def test_build_returns_a_working_guardrail() -> None:
