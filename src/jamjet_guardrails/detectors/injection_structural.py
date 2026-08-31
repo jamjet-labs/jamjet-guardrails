@@ -276,10 +276,12 @@ _VIRAMA = 9
 # Measured that way, 63 of the 69 admitted a LATIN base behind one same-script
 # spacing mark, at four characters per bit.
 #
-# The character immediately before a virama is not the character the virama sits
-# on, and the two shapes that exploit the difference both put a character of the
-# VIRAMA'S OWN SCRIPT in that position, where the script test below cannot see
-# anything wrong with it:
+# The character immediately before a virama is not always the character the
+# virama sits on, and all four shapes below put a character of the VIRAMA'S OWN
+# SCRIPT in that position, where the script test cannot see anything wrong with
+# it. The first three are CROSSED by the walk, so the base is further back and
+# the shape turns on what the walk passes over; the fourth is a starter the walk
+# stops on, and what refuses it is the base having to be a LETTER.
 #
 #   - U+093C DEVANAGARI SIGN NUKTA, a non-starter mark, in front of a Devanagari
 #     virama that stands on a Latin letter. Read as the base it is Devanagari
@@ -305,6 +307,15 @@ _VIRAMA = 9
 # `test_a_same_script_non_letter_is_not_a_base` and
 # `test_a_virama_with_nothing_before_it_has_no_base` hold them.
 _FORMAT = "Cf"
+# Decimal digits, which `_joining_neighbour` admits and `_base_before` does not.
+# The two rules are asking different questions: a virama sits on a letter and
+# never on a numeral, while a Persian or Urdu ZWNJ after a year or an age sits
+# between a numeral and a suffix. `Nd` rather than `N`: the other 38 numbers in
+# these ranges are all `No`, and they are Malayalam, Telugu, Oriya and Tamil
+# fractions, Bengali currency numerators and script-specific number signs.
+# Nothing measured here writes a joiner against one, and admitting a character
+# no sample needs is how the exemptions in this module have gone wrong before.
+_DECIMAL_DIGIT = "Nd"
 # How far back that walk may go, and it is a bound on COST, not on orthography.
 # Unbounded it is QUADRATIC, and the input that shows it is one an attacker can
 # send: a letter followed by repeats of virama-plus-joiner is one unbroken run of
@@ -455,24 +466,104 @@ def _is_letter(char: str) -> bool:
     return bool(char) and unicodedata.category(char).startswith("L")
 
 
-def _joining_letter(char: str) -> bool:
-    """Whether `char` is a letter or a mark of a script that writes with these joiners.
+def _mark_base(content: str, index: int) -> str:
+    """The letter the mark at `index` is written on, or "" if it is written on nothing.
 
-    A script is a set of CHARACTERS and this module holds one as a range, which
-    is not the same thing and the difference is a free cover character. Inside
-    these ranges are 10 format characters and 440 unassigned code points, and
-    every one of them sits between two joiners as happily as a letter does while
-    rendering as nothing at all: measured, a joiner between two copies of U+061C
-    ARABIC LETTER MARK, or of an unassigned code point, carried a 256-bit
-    payload at 2.336 characters per bit with ZERO visible characters.
+    A DIFFERENT walk from `_base_before`, and the two are not interchangeable
+    even though both end on a letter. This one asks whether a mark is attached,
+    so it crosses what a renderer stacks onto the cluster before it -- every
+    mark, spacing or not, and the format characters, which draw nothing at all.
+    `_base_before` asks where a virama's base is, so it crosses NON-STARTERS and
+    stops on the first starter.
 
-    Marks are accepted and not only letters, because Arabic and Persian write
-    harakat next to these joiners and `<letter><kasra><ZWNJ>` is ordinary
-    vocalised text.
+    The two definitions are incomparable, not nested, and the numbers are in
+    `test_the_walk_to_a_base_crosses_non_starters_and_format_characters`: 1,126
+    marks in Unicode 16.0.0 are `Mn` or `Me` with combining class 0, and this
+    walk crosses every one of them while `_base_before` stops dead on it; 27
+    spacing marks have a non-zero class, and `_base_before` crosses those while
+    this walk stops on none of them because they are marks. Each function uses
+    the walk its own question needs.
+
+    Crossing SPACING marks is the half of that no input in
+    tests/test_injection_structural.py pins, and it is kept for what it costs
+    rather than for what it buys: measured, `<letter><Mc><Mn>` in front of a
+    joiner carries a payload at 4.0039 characters per bit against the 3.0039 of
+    a bare `<letter><virama><joiner>`, with the same one visible letter per bit,
+    so an attacker who uses it pays more for nothing. Narrowing to `Mn`, `Me`
+    and `Cf` would change no verdict in that file either. The reason to leave it
+    wide is that a spacing vowel sign under a further mark is ordinary Indic --
+    `<ka><vowel sign O><anusvara>` is `Lo Mc Mn`, and so is `<ka><vowel sign
+    AA><candrabindu>` -- and this module has no list of which such clusters take
+    a joiner after them.
+
+    Bounded by `_MAX_TRANSPARENT` for that constant's reason, on its own input
+    shape: a letter followed by repeats of mark-plus-joiner is one unbroken run
+    this walk crosses, so unbounded every joiner walks the whole of it.
+    Measured on `<letter>(<fatha><ZWNJ>)*n`, unbounded: 0.794 s at 2,000
+    joiners, 3.167 s at 4,000, 12.692 s at 8,000 -- four times the work for
+    twice the input. Bounded: 0.004 s, 0.009 s, 0.015 s.
     """
-    return (
-        bool(char) and unicodedata.category(char)[0] in "LM" and _in_ranges(char, _JOINING_SCRIPTS)
-    )
+    at = index - 1
+    while at >= 0 and index - at <= _MAX_TRANSPARENT:
+        char = content[at]
+        category = unicodedata.category(char)
+        if category[0] != "M" and category != _FORMAT:
+            return char if _is_letter(char) else ""
+        at -= 1
+    return ""
+
+
+def _joining_neighbour(content: str, index: int) -> bool:
+    """Whether the character at `index` is one a joining script writes beside a joiner.
+
+    A letter, a decimal digit, or a mark that is written on a letter. Each of
+    the three is a separate measured decision and the last is the security one.
+
+    A script is a set of CHARACTERS and this module holds one as a RANGE, which
+    is not the same thing, and the difference is a free cover character. Of the
+    2,800 code points inside `_JOINING_SCRIPTS`, 10 are format characters and
+    440 are unassigned; each sits between two joiners as happily as a letter
+    does while rendering as nothing, and each carried a 256-bit payload at 2.3359
+    characters per bit -- 598 characters, not one of them visible. Refusing them
+    is what the category test does.
+
+    Refusing them is NOT enough, because a mark on its own renders as nothing
+    either. Measured over every code point in these ranges, each used as the
+    sole cover of a deperiodised payload: 374 of them were excused with ZERO
+    letters anywhere in the input -- 243 `Mn` and 131 `Mc` -- at 2.3359
+    characters per bit, which is character for character the construction and
+    the rate of the format-character hole above. An unattached mark is not
+    orthography; a mark is orthography when there is something under it. So a
+    mark neighbour has to reach a letter through `_mark_base`, and after that
+    condition the same sweep leaves 1,808 covers excused and every one of them
+    is a letter or a digit, which is to say every one of them is visible.
+
+    Marks are admitted at all because Arabic and Persian write harakat next to
+    these joiners: `<letter><kasra><ZWNJ>` is ordinary vocalised text, and 389
+    of the 389 marks in these ranges that have a same-script letter are still
+    excused sitting on one.
+
+    Digits are admitted because Persian and Urdu put a ZWNJ after a NUMERAL
+    before a suffix -- decades (`۱۹۸۰<ZWNJ>ها`), ages and measures
+    (`۵<ZWNJ>ساله`, `۱۰<ZWNJ>متری`), and Urdu's `<ZWNJ>ء` after a year. There
+    are 150 `Nd` code points in these ranges and while they were not excusing
+    neighbours all four of those samples DENIED;
+    `test_a_joiner_after_a_numeral_is_ordinary_persian_and_urdu` holds them. A
+    digit grants an attacker nothing that is not already granted: it is visible,
+    so a digit cover costs exactly what the letter cover recorded in
+    `test_a_deperiodised_bitstream_is_a_known_miss` costs. Measured on a 256-bit
+    payload, the deperiodised construction behind a Persian digit and behind a
+    Devanagari letter are the same 598 characters, the same 2.3359 per bit and
+    the same 342 visible characters. It is another spelling of that residual,
+    not a new one.
+    """
+    char = content[index] if 0 <= index < len(content) else ""
+    if not _in_ranges(char, _JOINING_SCRIPTS):
+        return False
+    category = unicodedata.category(char)
+    if category[0] == "L" or category == _DECIMAL_DIGIT:
+        return True
+    return category[0] == "M" and bool(_mark_base(content, index))
 
 
 def _base_before(content: str, index: int) -> str:
@@ -584,11 +675,21 @@ def _is_contextually_legitimate(content: str, index: int) -> bool:
     Devanagari-only all measure 769 characters for 256 bits. Measured: it denies.
 
     What is left is any base whose script matches its virama's, and separately
-    any pair of neighbours inside `_JOINING_SCRIPTS`, which the rule below
-    excuses whatever this branch does. That residual is NOT visible-text-only:
-    U+061C ARABIC LETTER MARK is inside the Arabic range and renders as nothing,
-    so a joiner between two of them is excused at no cost in visible cover.
-    `test_a_deperiodised_bitstream_is_a_known_miss` records the rate.
+    any pair of neighbours the rule below excuses, which is letters, decimal
+    digits, and marks that are written on a letter. Neither residual is free of
+    visible cover any more: `_is_contextually_legitimate` answers False for
+    `<ALM><ZWNJ><ALM>` and for a run of unattached marks, and
+    `_joining_neighbour` carries the sweep that closed both.
+
+    Visible is not the same as bounded, and the rates belong in one place. On a
+    256-bit payload the cheapest same-script cover measured is
+    `<letter>(<joiner><virama>)*3`: 2.3373 characters per bit and 86 visible
+    letters, where four joiners to one letter denies. The deperiodised
+    neighbour-rule miss beside it runs at almost exactly the same 2.3359 and
+    costs 342 visible characters, four times as many. And a fully invisible miss
+    remains in this module that neither of these branches touches:
+    `test_a_variation_selector_bitstream_is_a_known_miss` runs at 1.5000
+    characters per bit with nothing on the page, in the pictographic branch.
     """
     char = content[index]
     if char not in _CONTEXTUAL:
@@ -597,7 +698,7 @@ def _is_contextually_legitimate(content: str, index: int) -> bool:
     after = content[index + 1] if index + 1 < len(content) else ""
     if before and unicodedata.combining(before) == _VIRAMA:
         return _script(_base_before(content, index - 1)) == _script(before)
-    if _joining_letter(before) and _joining_letter(after):
+    if _joining_neighbour(content, index - 1) and _joining_neighbour(content, index + 1):
         return True
     return char == _ZWJ and _in_ranges(before, _PICTOGRAPHIC) and _in_ranges(after, _PICTOGRAPHIC)
 
