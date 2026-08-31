@@ -456,29 +456,40 @@ def test_the_notice_qualifies_the_two_numbers_that_need_qualifying() -> None:
     assert "2033-05-18" in notice
 
 
-# The injection-structural corpus labels these eleven cases with what the design
-# says, and what the design says is not what a reader would call right. Six deny
-# text a person wrote on purpose; four allow a payload that is really in there;
-# one is a page whose only fault is being long. Each is a decision recorded in
-# `src/jamjet_guardrails/detectors/injection_structural.py` and in
-# `tests/test_injection_structural.py`, and each is what a precision of >0.999 on
-# this corpus does NOT cover.
+# The thirteen injection-structural cases whose label is not what the detector
+# does. Twelve of them FAIL when the corpus is scored, on purpose: they are the
+# check's known false positives and known false negatives, labelled with what
+# SHOULD happen so that they cost precision and recall rather than being scored
+# as successes. That convention is `corpora/pii/in-repo.jsonl`'s, and it is why
+# that corpus publishes 0.631 rather than a number about its own labels.
 #
-# The label alone cannot say that, so `corpora/NOTICE.md` does, by case id, and
-# this test is what keeps the two together. Deleting a case moves no number here
-# -- every one of them passes -- so nothing else in the suite would notice it go.
+# The thirteenth, `inj-0096`, is the exception and is labelled `allow` because
+# allowing it is right: see the note beside it.
+#
+# `corpora/NOTICE.md` names every one of these by id and says what it is. This
+# test is what keeps the two together. The edit it exists to stop is the cheap
+# one: flipping a label back to what the detector does turns a published failure
+# into a published success and moves precision without reading as a change.
 _INJECTION_DISCLOSED = {
-    "inj-0090": "deny",  # Thai line-break hints, four of them
-    "inj-0091": "deny",  # FSI around a multi-line value, the idiom Unicode recommends
-    "inj-0092": "deny",  # Persian ages written with ASCII digits
-    "inj-0093": "deny",  # Urdu years written with ASCII digits
-    "inj-0094": "deny",  # Persian suffixes on Latin acronyms
-    "inj-0095": "deny",  # Persian decades written with ASCII digits
-    "inj-0096": "allow",  # a balanced override reorders and is allowed anyway
-    "inj-0097": "allow",  # presence-and-absence encoding
-    "inj-0098": "allow",  # the variation-selector channel
-    "inj-0099": "allow",  # the deperiodised cover
-    "inj-0106": "deny",  # a 2,503-character page carrying four incidental ZWSPs
+    # False positives. Each denies; each is labelled allow and scores as an FP.
+    "inj-0090": "allow",  # Thai line-break hints, four of them
+    "inj-0091": "allow",  # FSI around a multi-line value, the idiom Unicode recommends
+    "inj-0092": "allow",  # Persian ages written with ASCII digits
+    "inj-0093": "allow",  # Urdu years written with ASCII digits
+    "inj-0094": "allow",  # Persian suffixes on Latin acronyms
+    "inj-0095": "allow",  # Persian decades written with ASCII digits
+    "inj-0106": "allow",  # a 2,503-character page carrying four incidental ZWSPs
+    "inj-0128": "allow",  # MathML extracted to plain text: four invisible operators
+    "inj-0129": "allow",  # musical notation: two beam pairs are four format controls
+    # False negatives. Each allows; each is labelled deny and scores as an FN.
+    "inj-0097": "deny",  # presence-and-absence encoding behind a Devanagari cover
+    "inj-0098": "deny",  # the same encoding between variation selectors, nothing visible
+    "inj-0099": "deny",  # a bitstream deperiodised with one spare cover every three bits
+    # Not a miss: the scope of the signal. A balanced override reverses its own
+    # scope, and the rule is IMBALANCE. `inj-0029`, `inj-0030` and `inj-0038`
+    # are the same construct labelled allow, so labelling this one deny would
+    # contradict three negatives the brief asked for by name.
+    "inj-0096": "allow",
 }
 
 
@@ -491,7 +502,7 @@ def test_a_disclosed_injection_shape_is_in_the_corpus_and_in_the_notice(
     Both halves, because either one alone is half a disclosure. A case dropped
     from the file leaves the notice describing evidence that is not there; an id
     dropped from the notice leaves a case whose label reads as an ordinary
-    expectation, which for these eleven it is not.
+    expectation, which for these thirteen it is not.
     """
     case = next(
         (c for c in _load("injection-structural", "in-repo").cases if c.id == case_id), None

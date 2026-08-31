@@ -1,8 +1,8 @@
 {
-  "injection-structural/in-repo/25d0f964981a": {
-    "decision_mismatches": 0,
-    "precision": 1.0,
-    "recall": 1.0
+  "injection-structural/in-repo/2136faae637b": {
+    "decision_mismatches": 12,
+    "precision": 0.748,
+    "recall": 0.97
   },
   "pii/in-repo/06fb3b601aba": {
     "decision_mismatches": 24,

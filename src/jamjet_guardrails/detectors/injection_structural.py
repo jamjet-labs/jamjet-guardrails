@@ -233,10 +233,115 @@ def _bidi_spans(content: str) -> list[tuple[int, int]]:
 # precision number defensible. On PUA there is no such number to publish: the
 # same code point is a developer's prompt and an attacker's private encoding,
 # and nothing in the bytes tells the two apart.
-_ZERO_WIDTH = frozenset("\u200b\u200c\u200d\u2060\ufeff")
-# The two that carry meaning, and only next to a script that uses them.
-_CONTEXTUAL = frozenset("\u200c\u200d")
+# Unicode's Default_Ignorable_Code_Point ranges, 16.0.0. This is the ONE table
+# in this module that cannot be asked of `unicodedata`, which publishes no such
+# property, so it is written out and the test below re-derives everything it can
+# from the interpreter's own data. Reproduce it from DerivedCoreProperties.txt.
+#
+# The set matters because the property's definition is the signal's definition:
+# a default-ignorable code point is one a conforming renderer draws as NOTHING.
+# Five characters used to be listed here by hand, and a hand-picked list is a
+# list of what somebody thought of. Measured against that list, a bitstream over
+# U+2061 and U+2062 -- FUNCTION APPLICATION and INVISIBLE TIMES, `Cf`,
+# default-ignorable, invisible -- carried "ignore all previous instructions"
+# through this detector at 1.0000 characters per bit with nothing on the page.
+# That is cheaper than every residual this module records, the nearest being the
+# variation-selector channel at 1.4875, and the same construction ran over
+# U+2063/U+2064, U+206A/U+206B, U+1D173/U+1D174 and U+1BCA0/U+1BCA1.
+_DEFAULT_IGNORABLE: tuple[tuple[int, int], ...] = (
+    (0x00AD, 0x00AD),
+    (0x034F, 0x034F),
+    (0x061C, 0x061C),
+    (0x115F, 0x1160),
+    (0x17B4, 0x17B5),
+    (0x180B, 0x180F),
+    (0x200B, 0x200F),
+    (0x202A, 0x202E),
+    (0x2060, 0x206F),
+    (0x3164, 0x3164),
+    (0xFE00, 0xFE0F),
+    (0xFEFF, 0xFEFF),
+    (0xFFA0, 0xFFA0),
+    (0xFFF0, 0xFFF8),
+    (0x1BCA0, 0x1BCA3),
+    (0x1D173, 0x1D17A),
+    (0xE0000, 0xE0FFF),
+)
+
+# U+00AD SOFT HYPHEN is default-ignorable, `Cf` and bidi class BN, so it passes
+# every condition below and is refused by name. It is the one member of that set
+# that RENDERS: a hyphen, wherever the line happens to break. It is in every
+# hyphenated ebook, and a signal that fires on six of them is the Thai case
+# again for a much larger population. `inj-0108` is the sample that holds it.
+_SOFT_HYPHEN = 0x00AD
+# U+034F COMBINING GRAPHEME JOINER, the one addition the two property tests
+# below cannot make. It is `Mn` rather than `Cf`, and it renders nothing.
+# Admitting `Mn` wholesale is not an option and the sweep says why: of the 263
+# default-ignorable marks in Unicode 16.0.0, 260 are VARIATION SELECTORS -- the
+# emoji presentation selectors, the 240 ideographic ones, and the Mongolian free
+# variation selectors, all of them orthography for the character in front of
+# them -- and 2 are the Khmer inherent vowels. U+034F is the only one that is
+# neither, which is why it is named rather than derived. Its legitimate use is
+# blocking a collation contraction, and no sample of ordinary prose carries one.
+_COMBINING_GRAPHEME_JOINER = 0x034F
+
+
+def _invisible() -> frozenset[str]:
+    """Every default-ignorable code point that renders nothing and no other signal owns.
+
+    Three conditions, and two of the three are read off `unicodedata` rather
+    than written down, for the reason `_script` and `_VIRAMA` are:
+
+      - category `Cf`. This drops the four Hangul fillers, which are `Lo` --
+        letters, and handled where letters are, by `_joining_neighbour`'s range
+        test -- and the 263 marks, which the constant above accounts for.
+      - bidi class BN, Boundary Neutral. This is the condition that separates a
+        character with NO directional meaning from one whose whole job is
+        directional, and it drops exactly the characters the bidi signal above
+        already reports or that real right-to-left text needs: U+200E and
+        U+200F, the LRM and RLM, class L and R; U+061C, the ALM, class AL; and
+        U+202A..U+202E and U+2066..U+2069, each of which carries its own class.
+        Reporting those here would double-report an imbalance and deny a
+        balanced pair the bidi signal deliberately allows.
+      - not a tag character, which `_tag_spans` owns. Without this every
+        subdivision flag would carry six of these AND a tag finding.
+
+    What is left is 28 characters: the five this module started with, plus
+    U+2061..U+2064, U+206A..U+206F, U+1BCA0..U+1BCA3, U+1D173..U+1D17A and
+    U+180E. `test_every_invisible_character_is_format_or_a_named_exception`
+    re-derives the whole set and fails if the interpreter's Unicode data moves
+    under it.
+    """
+    found = {
+        chr(point)
+        for low, high in _DEFAULT_IGNORABLE
+        for point in range(low, high + 1)
+        if unicodedata.category(chr(point)) == "Cf"
+        and unicodedata.bidirectional(chr(point)) == "BN"
+        and point != _SOFT_HYPHEN
+        and not _TAG_START <= point <= _TAG_END
+    }
+    return frozenset(found | {chr(_COMBINING_GRAPHEME_JOINER)})
+
+
+_ZERO_WIDTH = _invisible()
+# The three that carry meaning, and only next to a script that uses them.
+_CONTEXTUAL = frozenset("\u200c\u200d\u180e")
 _ZWJ = "\u200d"
+# U+180E MONGOLIAN VOWEL SEPARATOR. It is `Cf` and BN and default-ignorable, so
+# the rule above admits it, and it is ALSO ordinary Mongolian: it stands between
+# a word and the suffix vowel that follows it, which is the job ZWNJ does in
+# Persian. So it gets what ZWNJ gets, a context test, rather than being dropped
+# from the set the way the soft hyphen is.
+#
+# The Mongolian free variation selectors, U+180B..U+180D and U+180F, are NOT in
+# the set at all -- they are `Mn` variation selectors, excluded with the other
+# 260 -- so a Mongolian word that ends in one is untouched here. That matters
+# because a variation selector is written word-FINALLY, where a both-neighbours
+# rule has nothing to its right; the vowel separator is written medially, which
+# is why a both-neighbours rule fits it and not them.
+_MVS = "\u180e"
+_MONGOLIAN: tuple[tuple[int, int], ...] = ((0x1800, 0x18AF),)
 
 # Scripts in which ZWJ and ZWNJ are orthography rather than decoration. Indic
 # scripts use them to force or suppress conjunct forms; Arabic and its
@@ -544,8 +649,15 @@ def _mark_base(content: str, index: int) -> str:
     return ""
 
 
-def _joining_neighbour(content: str, index: int) -> bool:
+def _joining_neighbour(
+    content: str, index: int, ranges: tuple[tuple[int, int], ...] = _JOINING_SCRIPTS
+) -> bool:
     """Whether the character at `index` is one a joining script writes beside a joiner.
+
+    ``ranges`` is a parameter so that the Mongolian branch of
+    ``_is_contextually_legitimate`` can ask this same question about its own
+    block instead of repeating the three tests. Everything measured below is
+    measured on the default, which is the only value any other caller passes.
 
     A letter, a decimal digit, or a mark that is written on a letter. Each of
     the three is a separate measured decision and the last is the security one.
@@ -589,12 +701,12 @@ def _joining_neighbour(content: str, index: int) -> bool:
     not a new one.
     """
     char = content[index] if 0 <= index < len(content) else ""
-    if not _in_ranges(char, _JOINING_SCRIPTS):
+    if not _in_ranges(char, ranges):
         return False
     category = unicodedata.category(char)
     if category[0] == "L" or category == _DECIMAL_DIGIT:
         return True
-    return category[0] == "M" and _in_ranges(_mark_base(content, index), _JOINING_SCRIPTS)
+    return category[0] == "M" and _in_ranges(_mark_base(content, index), ranges)
 
 
 def _base_before(content: str, index: int) -> str:
@@ -744,6 +856,30 @@ def _is_contextually_legitimate(content: str, index: int) -> bool:
         return False
     before = content[index - 1] if index > 0 else ""
     after = content[index + 1] if index + 1 < len(content) else ""
+    if char == _MVS:
+        # Its own branch, and it returns rather than falling through, for the
+        # reason the virama branch does: the Mongolian block is not in
+        # `_JOINING_SCRIPTS`, so falling through would reach a rule that cannot
+        # answer for it and would answer False for every real occurrence.
+        #
+        # `_joining_neighbour` over the Mongolian block, and NOT a bare range
+        # test, which is what this branch shipped as for one measurement. U+180E
+        # is itself inside U+1800..U+18AF, so a bare range test makes a run of
+        # separators excuse ITSELF: measured, `note` followed by four U+180E and
+        # `end` allowed, which is the total bound defeated by the one character
+        # it was added to catch. Asking for a letter, a digit, or a mark written
+        # on one closes it, and it still admits the real sequence, where a free
+        # variation selector sits between the letter and the separator.
+        #
+        # The residual this leaves is the one this module already records rather
+        # than a new one: a Mongolian LETTER is visible, so presence-and-absence
+        # of a separator behind a Mongolian cover costs an attacker one visible
+        # character per bit, which is what
+        # `test_a_deperiodised_bitstream_is_a_known_miss` measures for a
+        # Devanagari cover.
+        return _joining_neighbour(content, index - 1, _MONGOLIAN) and _joining_neighbour(
+            content, index + 1, _MONGOLIAN
+        )
     if before and unicodedata.combining(before) == _VIRAMA:
         return _script(_base_before(content, index - 1)) == _script(before)
     if _joining_neighbour(content, index - 1) and _joining_neighbour(content, index + 1):

@@ -5,7 +5,7 @@ every score. How to read them is under the table.
 
 | Check | Corpus | Source | Version | Cases | Precision | Recall | F1 | TP | FP | FN | Wrong decisions |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| injection-structural | injection-structural/in-repo | in-repo | `25d0f964981a` | 119 | 1.000 | 1.000 | 1.000 | 113 | 0 | 0 | 0 |
+| injection-structural | injection-structural/in-repo | in-repo | `2136faae637b` | 129 | 0.748 | 0.970 | 0.845 | 98 | 33 | 3 | 12 |
 | pii | pii/in-repo | in-repo | `06fb3b601aba` | 81 | 0.631 | 0.872 | 0.732 | 41 | 24 | 6 | 24 |
 | pii | pii/third-party | nvidia/Nemotron-PII@b70ffaf | `c25ef538d677` | 300 | 0.960 | 0.997 | 0.978 | 340 | 14 | 1 | 6 |
 | secrets | secrets/in-repo | in-repo | `e9e0ed70dc37` | 39 | 0.957 | 0.880 | 0.917 | 22 | 1 | 3 | 4 |
@@ -71,13 +71,13 @@ of false alarms, capped at 5 per corpus. Every miss is in
 `benchmarks.json`, and every score to four decimals there unless the sentence
 above clamped it.
 
-## Per type: injection-structural on injection-structural/in-repo (in-repo, `25d0f964981a`)
+## Per type: injection-structural on injection-structural/in-repo (in-repo, `2136faae637b`)
 
 | Type | Precision | Recall | TP | FP | FN |
 |---|---:|---:|---:|---:|---:|
-| BIDI_OVERRIDE | 1.000 | 1.000 | 15 | 0 | 0 |
+| BIDI_OVERRIDE | 0.867 | 1.000 | 13 | 2 | 0 |
 | INVISIBLE_TAG_CHARS | 1.000 | 1.000 | 20 | 0 | 0 |
-| ZERO_WIDTH_SMUGGLING | 1.000 | 1.000 | 78 | 0 | 0 |
+| ZERO_WIDTH_SMUGGLING | 0.677 | 0.956 | 65 | 31 | 3 |
 
 ## Per type: pii on pii/in-repo (in-repo, `06fb3b601aba`)
 
@@ -109,9 +109,17 @@ above clamped it.
 | PRIVATE_KEY | 0.750 | 1.000 | 3 | 1 | 0 |
 | SLACK_TOKEN | 1.000 | 0.750 | 3 | 0 | 1 |
 
-## Worst misses: injection-structural on injection-structural/in-repo (in-repo, `25d0f964981a`)
+## Worst misses: injection-structural on injection-structural/in-repo (in-repo, `2136faae637b`)
 
-No misses on this corpus.
+| Case | Kind | Expected | Predicted |
+|---|---|---|---|
+| `inj-0090` | decision_mismatch | allow | deny |
+| `inj-0091` | decision_mismatch | allow | deny |
+| `inj-0092` | decision_mismatch | allow | deny |
+| `inj-0093` | decision_mismatch | allow | deny |
+| `inj-0094` | decision_mismatch | allow | deny |
+
+...and 43 more, in `benchmarks.json`.
 
 ## Worst misses: pii on pii/in-repo (in-repo, `06fb3b601aba`)
 

@@ -97,7 +97,7 @@ beside the scores.
 
 | Check | Corpus | Source | Version | Cases | Precision | Recall | F1 | TP | FP | FN | Wrong decisions |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| injection-structural | injection-structural/in-repo | in-repo | `25d0f964981a` | 119 | 1.000 | 1.000 | 1.000 | 113 | 0 | 0 | 0 |
+| injection-structural | injection-structural/in-repo | in-repo | `2136faae637b` | 129 | 0.748 | 0.970 | 0.845 | 98 | 33 | 3 | 12 |
 | pii | pii/in-repo | in-repo | `06fb3b601aba` | 81 | 0.631 | 0.872 | 0.732 | 41 | 24 | 6 | 24 |
 | pii | pii/third-party | nvidia/Nemotron-PII@b70ffaf | `c25ef538d677` | 300 | 0.960 | 0.997 | 0.978 | 340 | 14 | 1 | 6 |
 | secrets | secrets/in-repo | in-repo | `e9e0ed70dc37` | 39 | 0.957 | 0.880 | 0.917 | 22 | 1 | 3 | 4 |
@@ -114,15 +114,17 @@ shape it over-represents on purpose, and scores the same corpus without it. The
 third-party corpus is the one to read for ordinary text: 300 rows we did not
 write, named in the Source column beside its own numbers.
 
-**The `injection-structural` row scores the check against its own design, and
-that is a narrower claim than the 1.000 looks.** Eleven of its 119 cases are
-labelled at what the design does rather than at what a reader would want: six
-deny text somebody wrote on purpose, including Thai marked up for line breaking
-and Persian written with ASCII digits; one denies a 2,503-character page for
-four incidental zero-width characters; and four allow a payload that really is
-in there. All eleven are named by case id in
-[corpora/NOTICE.md](corpora/NOTICE.md), which also records a family of invisible
-characters this check does not look at.
+**Every corpus here labels a case with what should happen, never with what the
+detector does.** A known false positive is labelled `allow` and costs precision;
+a known false negative is labelled `deny` and costs recall. That is why these
+numbers are lower than the checks behave on ordinary text, and it is the only
+way two rows in one table can be compared. Thirteen `injection-structural` cases
+carry such a label and twelve of them fail on purpose: nine deny text somebody
+wrote on purpose, including Thai marked up for line breaking, Persian written
+with ASCII digits, a 2,503-character page carrying four incidental zero-width
+characters, and mathematical markup extracted to plain text; three allow a
+payload that really is in there. All thirteen are named by case id in
+[corpora/NOTICE.md](corpora/NOTICE.md).
 
 Numbers measured on a corpus we wrote are reported separately from numbers
 measured on a corpus we did not, and the two are never merged. There is no

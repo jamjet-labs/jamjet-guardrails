@@ -93,68 +93,72 @@ values redacting before it and 500 of 5,000 after. A published precision figure
 measured on these corpora is a statement about the detector as it behaves before
 that date.
 
-**`corpora/injection-structural/in-repo.jsonl` scores the implementation
-against the design, and the design is not the same thing as a reader's
-judgement.** Its row publishes `1.000` on both ratios over 119 cases with no
-wrong decisions -- an exact 1, not a rounded one, which is why the table's
-`>0.999` hedge does not appear on it -- and what that says is that the check
-does what
-`src/jamjet_guardrails/detectors/injection_structural.py` says it does. It does
-not say the check has no false positives on real text. Eleven of the 119 cases
-are labelled at the design's behaviour and a reader would disagree with the
-label on every one of them, so those eleven are named here rather than left to
-be found:
+**`corpora/injection-structural/in-repo.jsonl` labels its own failures as
+failures, and its published numbers are lower than the check's behaviour on
+ordinary text because of it.** 0.748 precision, 0.970 recall, 12 wrong
+decisions over 129 cases. Thirteen of those cases carry a label that is NOT
+what the detector does, and twelve of the thirteen fail on purpose:
 
-- **Six deny text somebody wrote on purpose.** `inj-0090` is a Thai sentence
-  marked up for line breaking, which carries one U+200B per word boundary and
-  reaches the four-character total bound on five words. `inj-0091` wraps a
-  two-line value in `FSI ... PDI`, the idiom Unicode recommends and the one
-  `<bdi>` implements; a control's scope ends at its paragraph, so the PDI on the
-  second line closes nothing and both controls are reported, while the text
-  renders byte-identically to the same string with the wrapper deleted --
-  measured with GNU FriBidi 1.0.16 in
-  `tests/test_injection_structural.py`. `inj-0092`, `inj-0093` and `inj-0095`
-  are Persian and Urdu numeral compounds written with ASCII digits, and
-  `inj-0094` is the Persian plural suffix on Latin acronyms. An excusing
-  neighbour has to sit inside the joining-script ranges and an ASCII digit does
-  not, so the same sentences written with Arabic-Indic digits allow: they are
-  `inj-0080`, `inj-0082` and `inj-0079`, and they are in the file beside them.
-- **One denies for being long.** `inj-0106` is a 2,503-character retrieved page
-  whose only fault is four incidental U+200B at sentence boundaries, the shape
-  an HTML pipeline leaves behind. The total bound is a bound on the whole input
-  rather than a rate, so it does not move with length: `inj-0105` is the same
-  page carrying three and allows, and the same pair measured at 10,000
-  characters answers the same way.
-- **Four allow a payload that is really there.** `inj-0096` is a balanced
-  override, which reverses its own scope and renders `transfer 100 USD`.
-  `inj-0097`, `inj-0098` and `inj-0099` each carry the string `exfiltrate` past
-  the check, decoded back out to check that: presence-and-absence spacing of a
-  joiner behind a Devanagari cover, the same encoding between variation
-  selectors at 119 characters with nothing on the page at all, and a bitstream
-  deperiodised with one spare cover character every three bits.
+- **Nine deny text somebody wrote on purpose, and are labelled `allow`.** They
+  score as 33 of the corpus's false positives, which is where nearly all of the
+  distance from 1.000 comes from. `inj-0090` is a Thai sentence marked up for
+  line breaking, which carries one U+200B per word boundary and reaches the
+  four-character total bound on five words. `inj-0091` wraps a two-line value in
+  `FSI ... PDI`, the idiom Unicode recommends and the one `<bdi>` implements; a
+  control's scope ends at its paragraph, so the PDI on the second line closes
+  nothing and both controls are reported, while the text renders byte-identically
+  to the same string with the wrapper deleted -- measured with GNU FriBidi
+  1.0.16. `inj-0092`, `inj-0093` and `inj-0095` are Persian and Urdu numeral
+  compounds written with ASCII digits and `inj-0094` is the Persian plural
+  suffix on Latin acronyms; an excusing neighbour has to sit inside the
+  joining-script ranges and an ASCII digit does not, so the same sentences with
+  Arabic-Indic digits allow and are in the file as `inj-0079`, `inj-0080` and
+  `inj-0082`. `inj-0106` is a 2,503-character retrieved page whose only fault is
+  four incidental U+200B at sentence boundaries; the total bound is a bound on
+  the whole input rather than a rate, so `inj-0105` is the same page carrying
+  three and allows, and the same pair measured at 10,000 characters answers the
+  same way. `inj-0128` and `inj-0129` are the cost of the wider invisible set
+  described below.
+- **Three allow a payload that is really there, and are labelled `deny`.** They
+  score as the corpus's three false negatives. `inj-0097`, `inj-0098` and
+  `inj-0099` each carry the string `exfiltrate` past the check, decoded back out
+  to check that: presence-and-absence spacing of a joiner behind a Devanagari
+  cover, the same encoding between variation selectors at 119 characters with
+  nothing on the page at all, and a bitstream deperiodised with one spare cover
+  character every three bits.
+- **One is labelled `allow` and passes, and it is the exception.** `inj-0096` is
+  a balanced override, which reverses its own scope and renders `transfer 100
+  USD`. That is the SCOPE of the bidi signal rather than a miss: the rule is
+  imbalance, and `inj-0029`, `inj-0030` and `inj-0038` are the same construct
+  labelled `allow` because a balanced override is a negative this corpus needs.
+  Labelling this one `deny` would contradict all three.
 
-Every one of the eleven is a trade taken deliberately and recorded in the
-detector, and each has a test in `tests/test_injection_structural.py` that fails
-the day it is re-taken.
+**The convention, stated so that nobody improves the number by flipping a
+label.** A case is labelled with what SHOULD happen, never with what the
+detector does. A known false positive is therefore labelled `allow` and costs
+precision; a known false negative is labelled `deny` and costs recall. The
+alternative -- labelling each at the detector's own behaviour and explaining it
+in prose -- was tried first here and produced 1.000 on both ratios with no wrong
+decisions, sitting in the same table as the PII corpus's 0.631, which does it
+the honest way. Two numbers that differ only in how their authors chose to score
+their own mistakes cannot be read side by side.
 `tests/test_corpora.py::test_a_disclosed_injection_shape_is_in_the_corpus_and_in_the_notice`
-holds each id against this list, in both directions, because a case that always
-passes moves no number and nothing else in the suite would notice it go.
+holds all thirteen ids against this section, in both directions.
 
-**A 1.000 is only worth reading if the corpus moves when the detector does, and
-that was measured rather than assumed.** Twenty copies of
-`injection_structural.py` were made, each with one rule removed or loosened --
-the RGI allowlist softened to a prefix test, the paragraph flush deleted, the
-two bidi families merged into one stack, each of the three zero-width bounds
-raised by one, a joiner excused when EITHER neighbour is a joining character,
-the virama's base allowed to be any script, the pictographic and virama
-branches deleted outright -- and the committed corpus was scored against each.
-All twenty break at least one case. The widest is deleting the virama branch,
-which turns thirteen cases of ordinary Brahmic and Malayalam text into denials
-and takes precision to 0.685; the narrowest break one case each. Five cases in
-the file exist because a rule survived the first sweep with nothing to show for
-it: `inj-0115` for the CANCEL TAG condition, `inj-0116` for the periodicity
-bound from underneath, `inj-0117` for the virama's own script, and `inj-0118`
-and `inj-0119` for WORD JOINER and the BOM, which until then appeared only in
+**The corpus moves when the detector does, and that was measured rather than
+assumed.** Twenty copies of `injection_structural.py` were made, each with one
+rule removed or loosened -- the RGI allowlist softened to a prefix test, the
+paragraph flush deleted, the two bidi families merged into one stack, each of
+the three zero-width bounds raised by one, a joiner excused when EITHER
+neighbour is a joining character, the virama's base allowed to be any script,
+the pictographic and virama branches deleted outright -- and this corpus was
+scored against each. All twenty break at least one case beyond the twelve that
+already fail. The widest is deleting the virama branch, which turns thirteen
+cases of ordinary Brahmic and Malayalam text into denials. Five cases exist
+because a rule survived the first sweep with nothing to show for it: `inj-0115`
+for the CANCEL TAG condition, `inj-0116` for the periodicity bound from
+underneath, `inj-0117` for the virama's own script, and `inj-0118` and
+`inj-0119` for WORD JOINER and the BOM, which until then appeared only in
 samples that allow either way.
 
 ## Third-party corpus
@@ -191,17 +195,66 @@ found, so the secrets numbers are measured on our own corpus only and are
 self-graded. That is stated rather than left for a reader to notice from a
 missing row.
 
-**The structural-injection corpus measures five zero-width characters and
-there are more.** `_ZERO_WIDTH` is a closed list -- U+200B, U+200C, U+200D,
-U+2060 and U+FEFF -- so a code point that is invisible, carries no orthography
-and is not on that list is not a signal and no case here labels one. Measured
-against the committed detector: U+2061..U+2064, the four invisible math
-operators, are category `Cf`, render nothing, and carry "ignore all previous
-instructions" through this check at 1.0000 characters per bit with nothing on
-the page. That is cheaper than every residual the detector records, the nearest
-of which is the variation-selector channel at 1.4875. It is stated here rather
-than labelled as a case, because deciding what belongs in that list is a change
-to the detector and not to its evidence.
+**The structural-injection check counts 29 invisible characters, and the rule
+that picks them is derived rather than chosen.** It used to count five, listed
+by hand, and a hand-written list is a list of what somebody thought of.
+Measured against that list: a two-symbol bitstream over U+2061 and U+2062,
+FUNCTION APPLICATION and INVISIBLE TIMES, carried "ignore all previous
+instructions" through the check at **1.0000 characters per bit with nothing on
+the page and the payload recovering verbatim** -- cheaper than every residual
+the detector records, the nearest being the variation-selector channel at
+1.4875. The same construction ran over U+2063/U+2064, U+206A..U+206F,
+U+1D173/U+1D174 and U+1BCA0/U+1BCA1, and presence-and-absence encodings ran over
+U+034F and U+180E.
+
+The rule now is: **default-ignorable, category `Cf`, bidi class BN**, minus
+U+00AD and minus the tag block. Default-ignorable is Unicode's own name for
+"renders as nothing", which is this signal's definition; two of the three
+conditions are read off `unicodedata` so they cannot drift; and the two
+exceptions each close something. U+00AD SOFT HYPHEN is the one member of that
+set that renders -- as a hyphen, wherever the line breaks -- and it is in every
+hyphenated ebook, so a signal that fires on six of them is a much larger Thai
+case. The tag block is `INVISIBLE_TAG_CHARS`'s, and counting it twice would make
+every subdivision flag carry six of these as well. U+034F COMBINING GRAPHEME
+JOINER is added by name because it is `Mn` rather than `Cf`: of the 263
+default-ignorable marks in Unicode 16.0.0, 260 are variation selectors and 2 are
+the Khmer inherent vowels, and U+034F is the only one that is neither.
+
+What the rule DROPS is as load-bearing as what it keeps, and each drop is a
+family: the bidi marks U+200E, U+200F and U+061C, which ordinary
+right-to-left text needs; U+202A..U+202E and U+2066..U+2069, which the bidi
+signal already reports; the four Hangul fillers, which are letters; and all 260
+variation selectors, emoji presentation and the 240 ideographic ones alike.
+
+**Two costs were measured before this landed, and one of them is real.**
+
+*Mongolian: none.* U+180E MONGOLIAN VOWEL SEPARATOR is `Cf`, BN and
+default-ignorable, so the rule admits it, and it is also ordinary Mongolian --
+it stands between a word and its suffix vowel, the job ZWNJ does in Persian. It
+therefore gets what ZWNJ gets, a both-neighbours context test, rather than being
+dropped. The Mongolian free variation selectors U+180B..U+180D and U+180F are
+NOT in the set at all, and that distinction is the load-bearing one: a variation
+selector is written word-FINALLY, where a both-neighbours rule has nothing to
+its right and would deny, while the separator is written medially. Measured on
+five samples -- four words with a suffix separator, the same with a selector
+between the letter and the separator, four words ending in a selector, eight
+separators in one paragraph, and selectors and separators mixed -- all five
+allow. They are `inj-0125`, `inj-0126` and `inj-0127`.
+
+*Mathematics and music: real, and taken deliberately.* U+2061..U+2064 are
+genuine in MathML, and U+1D173..U+1D17A in the plain-text encoding of musical
+notation. Extract either to plain text and four of them is the total bound:
+measured, three invisible operators allow and four deny, and two musical beam
+pairs are four controls and deny. `inj-0128` and `inj-0129` carry both, labelled
+`allow`, and they cost 7 of this corpus's 33 false positives.
+
+The exemption that would close it is not available, which is why the trade went
+this way rather than by preference. An invisible operator sits between two
+operands, so the rule would have to be "excuse it when both neighbours are
+characters mathematics writes" -- letters, digits, brackets -- which is every
+neighbour a Latin cover offers, so it would excuse the 1.0000-per-bit channel
+above at one cover character per bit. An exemption whose condition an attacker
+satisfies for free is the shape this module has already replaced twice.
 
 **Two otherwise-ideal PII corpora were rejected on licence**, and the reason
 does not appear in any licence field: `beki/privy` and
