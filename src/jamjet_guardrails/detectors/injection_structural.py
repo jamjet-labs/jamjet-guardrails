@@ -37,6 +37,61 @@ INJECTION_TYPES = frozenset(
 
 _VERSION = "0.1.0"
 
+# U+E0000..U+E007F. TAG SPACE (U+E0020) through TAG TILDE (U+E007E) mirror
+# printable ASCII one-for-one, which is the whole smuggling primitive: any
+# instruction can be written invisibly and survives copy-paste, most log
+# viewers, and every model tokenizer that does not strip them.
+_TAG_START = 0xE0000
+_TAG_END = 0xE007F
+_TAG_LETTER_START = 0xE0020
+_TAG_LETTER_END = 0xE007E
+_CANCEL_TAG = 0xE007F
+# U+1F3F4 WAVING BLACK FLAG. The base of every RGI subdivision flag sequence and
+# the ONLY context in which a tag run is ordinary text.
+_FLAG_BASE = 0x1F3F4
+# The longest RGI subdivision code is five tag letters (gbeng, gbsct, gbwls).
+# Bounded so the exemption cannot be stretched into a channel: at six or more,
+# whatever it is, it is not one of the three sequences Unicode defines.
+_MAX_FLAG_TAG_LETTERS = 5
+
+
+def _is_valid_flag_sequence(content: str, start: int, end: int) -> bool:
+    """Whether a tag run at [start, end) is an RGI subdivision flag's payload.
+
+    Four conditions, and each one closes a laundering route:
+      - the character before the run is U+1F3F4;
+      - the run ends with exactly one CANCEL TAG, and it is the last character;
+      - every other character is a tag LETTER, so a run carrying anything
+        outside U+E0020..U+E007E is not a flag whatever surrounds it;
+      - at most five letters, which is the longest code Unicode assigns.
+    """
+    if start == 0 or ord(content[start - 1]) != _FLAG_BASE:
+        return False
+    run = content[start:end]
+    if not run or ord(run[-1]) != _CANCEL_TAG:
+        return False
+    body = run[:-1]
+    if not body or len(body) > _MAX_FLAG_TAG_LETTERS:
+        return False
+    return all(_TAG_LETTER_START <= ord(ch) <= _TAG_LETTER_END for ch in body)
+
+
+def _tag_spans(content: str) -> list[tuple[int, int]]:
+    """Maximal runs of Unicode tag characters, minus valid flag sequences."""
+    spans: list[tuple[int, int]] = []
+    index = 0
+    length = len(content)
+    while index < length:
+        if not _TAG_START <= ord(content[index]) <= _TAG_END:
+            index += 1
+            continue
+        start = index
+        while index < length and _TAG_START <= ord(content[index]) <= _TAG_END:
+            index += 1
+        if not _is_valid_flag_sequence(content, start, index):
+            spans.append((start, index))
+    return spans
+
 
 class InjectionStructuralGuardrail:
     """Detects instruction smuggling in the encoding rather than in the words."""
@@ -78,8 +133,15 @@ class InjectionStructuralGuardrail:
         before it is returned. Nothing local catches a miss. `deny` is the
         default and a deny never reaches `_rewrite`, so an unsorted return stays
         invisible until a caller configures `redact`.
+
+        Measured, not assumed: replacing the sort with `return found` leaves the
+        whole suite green today. `_tag_spans` walks left to right and is the only
+        signal, so its output is already in span order and the sort is currently
+        a no-op. It is the SECOND signal that makes this load-bearing, which is
+        why the sort goes in now rather than then.
         """
-        return []
+        found = [("INVISIBLE_TAG_CHARS", span) for span in _tag_spans(content)]
+        return sorted(found, key=lambda pair: pair[1])
 
     def check(self, content: str, context: Context) -> Verdict:
         provenance = Provenance(kind="constraint", detector=self.name, version=self.version)
