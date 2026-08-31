@@ -517,9 +517,11 @@ _JOINING_SCRIPTS: tuple[tuple[int, int], ...] = (
 # existed, deleting U+2190..U+2BFF changed no test and no corpus case. It is not
 # spare. RGI sequences join to symbols out of that
 # block -- the transgender flag is U+1F3F3 U+FE0F ZWJ U+26A7 U+FE0F, where the
-# character after the joiner is in no other range this module names -- and four
+# character after the joiner is in no other range this module names -- and five
 # of them in one message is the total bound.
-# `test_a_flag_sequence_joining_to_a_symbol_is_not_an_attack` is that input.
+# `test_a_flag_sequence_joining_to_a_symbol_is_not_an_attack` is that input,
+# and it carries five since `_MIN_TOTAL` was raised: at four it allowed with or
+# without the range and asserted nothing about it.
 _PICTOGRAPHIC: tuple[tuple[int, int], ...] = (
     (0x2190, 0x2BFF),
     (0xFE0E, 0xFE0F),
@@ -586,15 +588,19 @@ _FORMAT = "Cf"
 # THIS CLOSES HALF OF THAT FALSE POSITIVE AND THE OTHER HALF IS STILL OPEN. The
 # digit has to be inside `_JOINING_SCRIPTS` like every other neighbour, so an
 # ASCII digit is not one, and Persian and Urdu web text uses ASCII digits
-# constantly. Measured, four joiners each:
+# constantly. Raising `_MIN_TOTAL` to 5 moved this false positive by one clause
+# rather than removing it. Measured, at four joiners and then at five:
 #
-#   کودک ۵<ZWNJ>ساله ...     allow      کودک 5<ZWNJ>ساله ...   DENY
-#   ۱۹۴۷<ZWNJ>ء میں ...      allow      1947<ZWNJ>ء میں ...    DENY
-#                                       CD<ZWNJ>ها و DVD<ZWNJ>ها  DENY
+#   کودک ۵<ZWNJ>ساله ...     allow      کودک 5<ZWNJ>ساله ...      allow / DENY
+#   ۱۹۴۷<ZWNJ>ء میں ...      allow      1947<ZWNJ>ء میں ...       allow / DENY
+#                                       CD<ZWNJ>ها و DVD<ZWNJ>ها  allow / DENY
 #
-# The last row is the same shape with a Latin acronym, which Persian and Urdu
-# attach the same suffixes to. `test_an_ascii_numeral_before_a_joiner_is_a_known_
-# false_positive` holds all three. The candidate rule is to excuse a digit or a
+# The Arabic-Indic column allows at any length, because a digit inside the
+# ranges is an excusing neighbour. The last row is the same shape with a LATIN
+# ACRONYM rather than a numeral, which Persian and Urdu attach the same suffixes
+# to, and it is a different shape from the two above it.
+# `test_an_ascii_numeral_before_a_joiner_is_a_known_false_positive` holds all
+# three at both lengths. The candidate rule is to excuse a digit or a
 # Latin letter when the OTHER neighbour is in a joining script, which is a
 # different rule from this one -- it makes a neighbour's admissibility depend on
 # its partner -- and it is written here as a candidate rather than shipped
@@ -660,10 +666,13 @@ _MAX_TRANSPARENT = 4
 #
 #   - twelve cases of ORDINARY TEXT stop being reported. Every one of them
 #     carried exactly four unexplained characters, which is what made four the
-#     wrong side of the line: a Thai sentence marked up for line breaking, four
-#     Persian and Urdu numeral compounds written with ASCII digits, a retrieved
-#     page with four incidental U+200B, MathML extracted to plain text, and five
-#     samples of prose about Korean jamo or Khmer inherent vowels.
+#     wrong side of the line: a Thai sentence marked up for line breaking; three
+#     Persian and Urdu numeral compounds written with ASCII digits and one
+#     Persian plural suffix on Latin acronyms; a retrieved page with four
+#     incidental U+200B; MathML extracted to plain text; and five more, which
+#     are Korean prose about jamo, a Khmer dictionary entry, U+034F blocking a
+#     collation contraction, U+034F fixing point order in Biblical Hebrew, and
+#     four UTF-8 files concatenated with each keeping its own BOM.
 #   - three PAYLOADS stop being reported, twelve findings between them, and each
 #     is four zero-width characters with no two adjacent. `inj-0051`, `inj-0052`
 #     and `inj-0053` are those cases and they are labelled `deny`, so they cost
@@ -699,10 +708,12 @@ _MAX_TRANSPARENT = 4
 #
 # `_MIN_RUN` 1 makes `_MIN_TOTAL` irrelevant, since every single character is
 # then a reportable run. `_MIN_TOTAL` 5, 6 and 7 are identical and so are
-# `_MIN_RUN` 3 and 4: no case carries five, six or seven unexplained characters
-# and no allowing case has a run longer than one, so the corpus can say what 5
-# costs and cannot say where between 5 and 7 the answer lies. That is a fact
-# about the corpus, not about the bounds.
+# `_MIN_RUN` 3 and 4: no case carries five or six unexplained characters, and no
+# allowing case has a run longer than one, so the corpus can say what 5 costs and
+# cannot say where between 5 and 7 the answer lies. That is a fact about the
+# corpus, not about the bounds. The counts that DO appear above four are 7
+# (`inj-0123`), 8, 9, 16 and 80, all of them payloads; the reason 5 through 7
+# behave alike is the gap between four and seven, not an absence above four.
 #
 _MIN_RUN = 2
 _MIN_TOTAL = 5
@@ -1030,9 +1041,11 @@ def _is_contextually_legitimate(content: str, index: int) -> bool:
     A virama BEFORE the joiner excuses it whatever follows, because that is the
     one place a both-neighbours rule cannot look: a Malayalam chillu is
     consonant, virama, ZWJ, and it ENDS a word, so the character after the
-    joiner is a space or a full stop. Without this, four ordinary Malayalam words
-    in a sentence are four unexplained joiners, which is exactly the total bound.
-    `test_a_joiner_at_the_end_of_a_word_is_still_orthography` is that sentence.
+    joiner is a space or a full stop. Without this, five ordinary Malayalam words
+    in a sentence are five unexplained joiners, which is exactly the total bound.
+    `test_a_joiner_at_the_end_of_a_word_is_still_orthography` is that sentence,
+    and it carries five since `_MIN_TOTAL` was raised: at four it allowed whether
+    this branch existed or not.
 
     The VIRAMA'S OWN BASE has to be in a joining script too, and that condition
     is the repair of a bypass this branch shipped without it. Written as "any
@@ -1150,10 +1163,19 @@ def _is_contextually_legitimate(content: str, index: int) -> bool:
         # test, which is what this branch shipped as for one measurement. U+180E
         # is itself inside U+1800..U+18AF, so a bare range test makes a run of
         # separators excuse ITSELF: measured, `note` followed by four U+180E and
-        # `end` allowed, which is the total bound defeated by the one character
-        # it was added to catch. Asking for a letter, a digit, or a mark written
+        # `end` allowed, with the one character the branch was added to catch
+        # defeating the check. Asking for a letter, a digit, or a mark written
         # on one closes it, and it still admits the real sequence, where a free
         # variation selector sits between the letter and the separator.
+        #
+        # WHICH BOUND REPORTS IT has changed, and the note used to name the
+        # wrong one. Consecutive separators are ADJACENT, so `_MIN_RUN` reports
+        # them from two onwards; measured, `note` plus two, three, four or five
+        # U+180E all deny, and the total bound never reaches them. That makes
+        # `test_a_run_of_mongolian_vowel_separators_does_not_excuse_itself` a
+        # run-bound test, which is why the raise to `_MIN_TOTAL = 5` left it
+        # discriminating while the four-occurrence Mongolian negatives beside it
+        # stopped.
         #
         # The residual this leaves is the one this module already records rather
         # than a new one: a Mongolian LETTER is visible, so presence-and-absence

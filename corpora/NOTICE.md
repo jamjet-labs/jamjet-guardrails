@@ -107,10 +107,14 @@ because a reader can reasonably expect the opposite of each.
 **The list was twenty-four, and what changed it was one constant.** `_MIN_TOTAL`
 counts unexplained zero-width characters anywhere in the input and was 4; it is
 now 5. Twelve cases of ordinary text that used to be reported now pass: the Thai
-line-break hints, four Persian and Urdu numeral compounds written with ASCII
-digits, a retrieved page carrying four incidental U+200B, MathML extracted to
-plain text, and five samples of prose about Korean jamo, Khmer inherent vowels,
-U+034F and concatenated BOMs. **They stay in the corpus.** They are the evidence
+line-break hints; three Persian and Urdu numeral compounds written with ASCII
+digits (`inj-0092`, `inj-0093`, `inj-0095`) and one Persian plural suffix on
+Latin acronyms (`inj-0094`), which is a different shape and was named as one
+before this list was rewritten; a retrieved page carrying four incidental
+U+200B; MathML extracted to plain text; and five more -- Korean prose about
+jamo, a Khmer dictionary entry, U+034F blocking a collation contraction, U+034F
+fixing point order in Biblical Hebrew, and four UTF-8 files concatenated with
+each keeping its own BOM. **They stay in the corpus.** They are the evidence
 that the check allows that text, and deleting them would leave the raise
 unjustified. They are no longer disclosed because nothing about them is
 surprising any more.
@@ -439,15 +443,16 @@ dictionary entry, once five of them reach the total bound. Measured: four allow
 and five deny. `inj-0134` and `inj-0135` carry four each and now pass, so this
 cost is one entry further out than it was, not gone.
 
-*Mathematics, music, collation and concatenated files: real.* U+2061..U+2064 are
-genuine in MathML and U+1D173..U+1D17A in the plain-text encoding of musical
-notation; four in one line is the bound. U+034F has no context test, and neither
-does almost anything else: of the 3,773 members only three have one -- U+200C,
-U+200D and U+180E -- so the other 3,770, the Hangul fillers and the Khmer
-inherent vowels above included, are counted wherever they appear. So both of
-U+034F's real uses deny: blocking a collation contraction so a digraph sorts as
-two letters rather than one, and fixing the order of two points on one letter in
-Biblical Hebrew. U+034F was added to the set BY NAME in fix round 1, as the one
+*Mathematics, music, collation and concatenated files: real, and now one entry
+further out.* U+2061..U+2064 are genuine in MathML and U+1D173..U+1D17A in the
+plain-text encoding of musical notation; five in one line is the bound. U+034F
+has no context test, and neither does almost anything else: of the 3,773 members
+only three have one -- U+200C, U+200D and U+180E -- so the other 3,770, the
+Hangul fillers and the Khmer inherent vowels above included, are counted
+wherever they appear. So both of U+034F's real uses still deny at five
+occurrences: blocking a collation contraction so a digraph sorts as two letters
+rather than one, and fixing the order of two points on one letter in Biblical
+Hebrew. At four they allow, which is why `inj-0136` and `inj-0137` pass now. U+034F was added to the set BY NAME in fix round 1, as the one
 default-ignorable mark that is neither a variation selector nor Khmer
 orthography; fix round 3 replaced that named addition with a general rule it
 falls out of, and measured what it costs. And UTF-8 files concatenated with each

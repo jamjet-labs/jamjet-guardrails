@@ -685,14 +685,19 @@ def test_a_joiner_at_the_end_of_a_word_is_still_orthography() -> None:
 
     A rule that asks BOTH neighbours to be letters of a joining script denies
     this: a chillu is consonant, virama, ZWJ, and the character after the ZWJ is
-    whatever punctuation follows the word. Four such words in one sentence is
-    four unexplained joiners, which is the total bound, so the sentence denies.
+    whatever punctuation follows the word. Five such words in one sentence is
+    five unexplained joiners, which is the total bound, so the sentence denies.
+
+    Five rather than four since `_MIN_TOTAL` was raised. At four this test
+    stopped discriminating anything: deleting the virama branch left it green,
+    so the sentence read as evidence for a rule it was no longer testing.
 
     The virama is what makes the joiner orthography here, and it is asked of
     `unicodedata.combining` rather than listed, so it covers every Indic script
     at once rather than the ones a test author thought of.
     """
-    content = f"അവ{CHILLU} അവ{CHILLU}, അവ{CHILLU} അവ{CHILLU}."
+    content = " ".join([f"അവ{CHILLU}"] * 5) + "."
+    assert content.count(ZWJ) == 5, "at the total bound, so the rule is what allows this"
     assert InjectionStructuralGuardrail().check(content, IN).decision == "allow"
 
 
@@ -848,9 +853,11 @@ def test_a_flag_sequence_joining_to_a_symbol_is_not_an_attack() -> None:
     It is not spare. RGI emoji sequences join to symbols from that block, and
     the transgender flag is one: U+1F3F3 U+FE0F ZWJ U+26A7 U+FE0F, where U+26A7
     MALE WITH STROKE AND MALE AND FEMALE SIGN sits immediately after the joiner
-    and nothing else in the sequence is inside a range this module names. Four
-    of them in one message is four joiners, which is the total bound, so without
-    that range an ordinary message denies.
+    and nothing else in the sequence is inside a range this module names. Five
+    of them in one message is five joiners, which is the total bound, so without
+    that range an ordinary message denies. Five rather than four since
+    `_MIN_TOTAL` was raised: at four this input allowed with or without the
+    range and asserted nothing about it.
     """
     trans_flag = "\U0001f3f3️‍⚧️"
     joiner = trans_flag.index(ZWJ)
@@ -1367,13 +1374,16 @@ def test_a_conjunct_joiner_is_orthography_outside_the_joining_script_ranges(
     in the first place, rather than membership of a range list written for
     cursive joining.
 
-    Four conjuncts, not one, for the same reason the Malayalam sentence above
-    carries four: one unexcused joiner sits under the total bound and allows
-    whatever this rule decides, so a one-conjunct sample would pass without
-    testing anything.
+    Five conjuncts, not one, for the same reason the Malayalam sentence above
+    carries five: a handful of unexcused joiners sits under the total bound and
+    allows whatever this rule decides, so a short sample would pass without
+    testing anything. Four was enough while `_MIN_TOTAL` was 4 and stopped being
+    enough when it became 5, which is how these five parameters spent a commit
+    asserting nothing.
     """
     word = f"{letter}{virama}{ZWJ}"
-    content = f"{word} {word} {word} {word} text"
+    content = " ".join([word] * 5) + " text"
+    assert content.count(ZWJ) == 5, "at the total bound, so the rule is what allows this"
     assert InjectionStructuralGuardrail().check(content, IN).decision == "allow"
 
 
@@ -1414,11 +1424,14 @@ def test_a_nukta_between_the_letter_and_the_virama_is_still_orthography() -> Non
     U+0958..U+095F are Devanagari letters that decompose to a letter plus a
     nukta, and writing them decomposed is ordinary: KA, NUKTA, VIRAMA, joiner.
     The walk back to the base has to cross the nukta to find the letter, and it
-    is the deepest any conjunct in this file reaches, which is what the bound on
-    that walk is measured against.
+    is the deepest any ORTHOGRAPHIC cluster in this file reaches. The bound
+    itself is pinned on synthetic input that goes one further, in
+    `test_the_base_walk_reaches_exactly_as_far_as_the_bound_says`, because no
+    real conjunct does.
     """
     word = f"क{NUKTA}्{ZWJ}"
-    content = f"{word} {word} {word} {word} text"
+    content = " ".join([word] * 5) + " text"
+    assert content.count(ZWJ) == 5, "at the total bound, so the rule is what allows this"
     assert InjectionStructuralGuardrail().check(content, IN).decision == "allow"
 
 
@@ -1645,8 +1658,10 @@ def test_a_joiner_after_a_numeral_is_ordinary_persian_and_urdu(content: str) -> 
 
     Decades (`۱۹۸۰<ZWNJ>ها`), ages and measures (`۵<ZWNJ>ساله`,
     `۱۰<ZWNJ>متری`), and the Urdu `<ZWNJ>ء` after a year. Each of these carries
-    four or five joiners, which is `_MIN_TOTAL`, so a rule that does not excuse
-    them denies the whole sentence rather than shrugging at one character.
+    five joiners, which is `_MIN_TOTAL`, so a rule that does not excuse them
+    denies the whole sentence rather than shrugging at one character. Each
+    carried four until `_MIN_TOTAL` was raised, at which point refusing digits
+    as excusing neighbours stopped failing this test at all.
 
     All four denied while an excusing neighbour had to be a letter or a mark,
     because the 150 `Nd` code points inside `_JOINING_SCRIPTS` were neither.
@@ -1665,16 +1680,17 @@ def test_a_joiner_after_a_numeral_is_ordinary_persian_and_urdu(content: str) -> 
     "content",
     [
         pytest.param(
-            " ".join([f"م{FATHA}ك{SUKUN}ت{FATHA}ب{DAMMATAN}{ZWNJ}ه{FATHA}ا"] * 4),
+            " ".join([f"م{FATHA}ك{SUKUN}ت{FATHA}ب{DAMMATAN}{ZWNJ}ه{FATHA}ا"] * 5),
             id="arabic-dammatan-before-the-joiner",
         ),
         pytest.param(
-            " و ".join([f"کتاب{KASRA}{ZWNJ}های من"] * 4),
+            " و ".join([f"کتاب{KASRA}{ZWNJ}های من"] * 5),
             id="persian-kasra-before-the-joiner",
         ),
         pytest.param(
             "، ".join(
-                f"{word}{ZWNJ}{HAMZA_ABOVE} مرد" for word in ("خانه", "نامه", "لانه", "شانه")
+                f"{word}{ZWNJ}{HAMZA_ABOVE} مرد"
+                for word in ("خانه", "نامه", "لانه", "شانه", "میوه")
             ),
             id="persian-ezafe-after-the-joiner",
         ),
@@ -1700,11 +1716,14 @@ def test_a_mark_written_on_a_letter_still_excuses_a_joiner(content: str) -> None
     with corpus evidence that this ordering does not occur should delete this
     parameter and take the tighter rule; it is one condition.
 
-    Each sentence carries four joiners, which is `_MIN_TOTAL`, so a rule that
-    stops excusing marks denies all three rather than one.
+    Each sentence carries five joiners, which is `_MIN_TOTAL`, so a rule that
+    stops excusing marks denies all three rather than one. Four while the bound
+    was 4, and the guard below said so in as many words -- "under the total
+    bound, so this asserts nothing" -- which is exactly what it became when the
+    bound moved: refusing marks as excusing neighbours left this test green.
     """
     joiners = [index for index, char in enumerate(content) if char == ZWNJ]
-    assert len(joiners) == 4, "under the total bound, so this asserts nothing"
+    assert len(joiners) == 5, "under the total bound, so this asserts nothing"
     assert all(
         unicodedata.category(content[index - 1])[0] == "M"
         or unicodedata.category(content[index + 1])[0] == "M"
@@ -2122,17 +2141,17 @@ def test_a_run_of_mongolian_vowel_separators_does_not_excuse_itself() -> None:
 @pytest.mark.parametrize(
     "content",
     [
-        pytest.param(" ".join(["ᠮᠣᠩᠭᠣᠯ" + MVS + "ᠠ"] * 4), id="four-words-with-a-suffix-separator"),
+        pytest.param(" ".join(["ᠮᠣᠩᠭᠣᠯ" + MVS + "ᠠ"] * 5), id="five-words-with-a-suffix-separator"),
         pytest.param(
-            " ".join(["ᠮᠣᠩᠭᠣᠯ" + FVS1 + MVS + "ᠠ"] * 4),
+            " ".join(["ᠮᠣᠩᠭᠣᠯ" + FVS1 + MVS + "ᠠ"] * 5),
             id="a-variation-selector-between-the-letter-and-the-separator",
         ),
         pytest.param(
-            " ".join(["ᠮᠣᠩᠭᠣᠯ" + FVS2] * 4), id="four-words-ending-in-a-variation-selector"
+            " ".join(["ᠮᠣᠩᠭᠣᠯ" + FVS2] * 5), id="five-words-ending-in-a-variation-selector"
         ),
         pytest.param(" ".join(["ᠮᠣᠩᠭᠣᠯ" + MVS + "ᠠ"] * 8), id="eight-separators-in-one-paragraph"),
         pytest.param(
-            " ".join(["ᠮᠣᠩᠭᠣᠯ" + FVS1 + MVS + "ᠠ ᠮᠣᠩᠭᠣᠯ" + FVS3] * 4),
+            " ".join(["ᠮᠣᠩᠭᠣᠯ" + FVS1 + MVS + "ᠠ ᠮᠣᠩᠭᠣᠯ" + FVS3] * 5),
             id="separators-medial-and-selectors-word-final",
         ),
     ],
@@ -2148,9 +2167,12 @@ def test_mongolian_orthography_is_not_an_attack(content: str) -> None:
     nothing to its right and would deny; the separator is written medially,
     which is why the rule fits one and not the other.
 
-    Each sample carries at least four of whichever character it is about, which
+    Each sample carries at least five of whichever character it is about, which
     is `_MIN_TOTAL`, so a rule that stops excusing them denies the whole sample
-    rather than shrugging at one character.
+    rather than shrugging at one character. Four while the bound was 4, and at
+    four every parameter but the eight-separator one rode along on that one:
+    deleting the MVS branch failed only the eight, and the four-occurrence rows
+    asserted nothing.
 
     The words are spelled out of code points: U+182E, U+1823, U+1829, U+182D,
     U+1823, U+182F is the Mongolian script spelling of "mongol", and U+1820 is
