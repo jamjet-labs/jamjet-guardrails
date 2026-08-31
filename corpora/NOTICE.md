@@ -96,11 +96,11 @@ that date.
 **`corpora/injection-structural/in-repo.jsonl` labels its own failures as
 failures, and its published numbers are lower than the check's behaviour on
 ordinary text because of it.** 0.679 precision, 0.974 recall, 17 wrong
-decisions over 142 cases. Seventeen cases fail, every one of them on purpose,
-and there are no other failures. Twenty-two cases are listed below: the
-seventeen that fail, plus the three-case balanced-override set and the two stray
-closers, which pass and are here because a reader can reasonably expect the
-opposite of each.
+decisions over 146 cases. Seventeen cases fail, every one of them on purpose,
+and there are no other failures. Twenty-four cases are listed below: the
+seventeen that fail, plus the three-case balanced-override set and the four
+stray-closer cases, which pass and are here because a reader can reasonably
+expect the opposite of each.
 
 - **Fourteen deny text somebody wrote on purpose, and are labelled `allow`.**
   They score as 53 of the corpus's false positives, which is where nearly all of
@@ -192,23 +192,26 @@ decisions, sitting in the same table as the PII corpus's 0.631, which does it
 the honest way. Two numbers that differ only in how their authors chose to score
 their own mistakes cannot be read side by side.
 `tests/test_corpora.py::test_a_disclosed_injection_shape_is_in_the_corpus_and_in_the_notice`
-holds all twenty-two ids against this section, in both directions.
+holds all twenty-four ids against this section, in both directions.
 
 **The corpus moves when the detector does, and that was measured rather than
 assumed.** Twenty-seven copies of `injection_structural.py` were made, each with
 one rule removed or loosened, and this corpus was scored against each. **All
 twenty-seven break at least one case beyond the seventeen that already fail.**
 
-Twenty cover the rules the detector shipped with: the RGI allowlist softened to
-a prefix test, the flag exemption's base and terminator conditions dropped, the
-paragraph flush deleted, the balanced-pair rule removed, the two bidi families
-merged into one stack, each of the three zero-width bounds raised by one, the
-periodicity rule deleted, a joiner excused when EITHER neighbour is a joining
-character, the virama's base allowed to be any script, the transparent-walk
-bound cut to one, digits and marks refused as excusing neighbours, and the
-pictographic, virama and flag branches deleted outright. The widest is deleting
-the virama branch, which turns thirteen cases of ordinary Brahmic and Malayalam
-text into denials.
+Twenty cover the rules the detector shipped with, and they are, one per mutant:
+the RGI allowlist softened to a prefix test; the flag exemption's CANCEL TAG
+condition dropped; its flag-base condition dropped; the flag exemption removed
+entirely; the paragraph flush deleted; the balanced-pair rule removed; the two
+bidi families merged into one stack; `_MIN_TOTAL` raised by one; `_MIN_RUN`
+raised by one; `_MIN_PERIODIC` raised by one; the periodicity rule deleted; a
+joiner excused when EITHER neighbour is a joining character; the virama's base
+allowed to be any script; the virama branch deleted; the pictographic branch
+deleted; `_MAX_TRANSPARENT` cut to one; decimal digits refused as excusing
+neighbours; marks refused as excusing neighbours; a mark neighbour no longer
+required to reach a letter; and WORD JOINER and the BOM dropped from the set.
+The widest is deleting the virama branch, which turns thirteen cases of ordinary
+Brahmic and Malayalam text into denials.
 
 Seven cover the rules added in the two fix rounds, which are the newest and
 therefore the least exercised: reverting the invisible set to five hand-picked
@@ -288,16 +291,56 @@ interpreter ships. What is left is 3,773 code points: 3,738 unassigned, the four
 Hangul fillers, the two Khmer inherent vowels and U+034F, and 28 format
 characters.
 
-**What this does NOT close, stated because the module published the wrong number
-for it.** A membership rule cannot reach the two excluded families, and both
-exclusions are load-bearing. A two-symbol bitstream over two variation selectors
-or over U+200E and U+200F carries a full payload at **1.0000 characters per bit
-with nothing on the page**. That is the module's floor. Until this sweep the
-detector published **1.4875** as its cheapest invisible miss, measured on a
-presence-and-absence encoding, which is the dearer of the two shapes a variation
-selector supports; a two-symbol stream costs a third less and nothing measured
-it. `test_the_cheapest_invisible_channel_is_measured_not_assumed` now holds the
-figure so it cannot drift back.
+**What this does NOT close, and the cost model the module had wrong three
+times.** Every rate this project published for an invisible channel was a rate
+for a TWO-SYMBOL encoder. Two symbols is a choice an encoder makes; it is never
+a property of a channel. **The floor for an alphabet of n invisible symbols is
+1 / log2(n) characters per bit**, because one character drawn from an n-symbol
+alphabet carries log2(n) bits.
+
+There are **256** variation selectors, VARIATION SELECTOR-1..16 at U+FE00 and
+VARIATION SELECTOR-17..256 at U+E0100, so they are a BYTE per character rather
+than a bit. Measured against the committed detector: `"Summarise this. "` plus
+one emoji plus **32** variation selectors returns **zero findings** and decodes
+back to "ignore all previous instructions" verbatim, at **0.1250 characters per
+bit**. That is 1/log2(256) exactly. Adding U+200E, U+200F and U+061C widens the
+alphabet to 259 and the floor to 0.1247.
+
+The three figures this project has published for that one channel are 1.4875,
+1.0000 and 0.1250, and only the last is a property of the channel: the first was
+measured on presence-and-absence, the second on a two-symbol stream over two of
+the 256 symbols, and each was written down as if it bounded the channel.
+`test_the_cheapest_invisible_channel_is_measured_over_alphabet_size` now holds
+the measurement and the arithmetic together.
+
+**That floor is over the families this file has SWEPT, and it is not a floor
+over the code space.** Four more invisible families are uncounted, unclosed and
+measured here rather than left for a reader to find: the C0 controls at 0.2500
+per bit, the C1 controls at 0.1992, U+FFF9..U+FFFB at 1.0000 and the Egyptian
+hieroglyph format controls at 0.2500, each returning zero findings. Closing them
+is not attempted here -- rendering is renderer-dependent for several -- and the
+C0 half is the least arguable of the four.
+
+**Why the two swept families stay out, evidenced rather than asserted.** This
+notice said "counting variation selectors denies every emoji sequence" and that
+is false: with them counted, a single heart with U+FE0F, three keycaps and a
+four-person family sequence all still allow, because one or three unexplained
+characters is under the total bound. What is true is narrower and still
+decisive, and the corpus now carries every one of these rather than leaving the
+claim on this file's word:
+
+| Sample | Case | With the family counted |
+|---|---|---|
+| one rainbow flag | `inj-0058` | **denies** on the RUN bound: U+1F3F3 U+FE0F U+200D U+1F308 puts the selector immediately before the joiner, so one emoji is two adjacent unexplained characters |
+| four keycaps | `inj-0143` | denies |
+| four text-default emoji, each needing U+FE0F | `inj-0144` | denies |
+| four Japanese surnames written with ideographic variation sequences | `inj-0145` | denies |
+| a bilingual invoice carrying four directional marks | `inj-0146` | denies |
+
+The rainbow flag settles it on its own. A check that denies one of those is a
+check that gets switched off, which is the argument this project already makes
+about the Scotland flag. Both families stay out, and the residual above is the
+price.
 
 **Three costs were measured before this landed. Two are real.**
 
@@ -308,12 +351,16 @@ that distinction is load-bearing: a variation selector is written word-FINALLY,
 where a both-neighbours rule has nothing to its right and would deny. Measured
 on five samples, all five allow: `inj-0125`, `inj-0126`, `inj-0127`.
 
-**Constructed samples, disclosed as constructed.** The Mongolian words, the
-Korean jamo table, the Khmer dictionary entry and the Biblical Hebrew line are
-built from the Unicode encoding model rather than drawn from a corpus, and so is
-`inj-0129`, which wraps musical beam controls around the ASCII letters `CD`
-rather than around musical symbols: it is the control characters that are under
-test, and their placement, not the notes between them. The same standard the
+**Constructed samples, disclosed as constructed.** The Mongolian words
+(`inj-0125` to `inj-0127`), the Korean jamo table (`inj-0134`), the Khmer
+dictionary entry (`inj-0135`), the collation line (`inj-0136`), the Biblical
+Hebrew line (`inj-0137`), the two balanced overrides around Hebrew and Arabic
+(`inj-0141`, `inj-0142`), the Japanese names (`inj-0145`) and the bilingual
+invoice (`inj-0146`) are built from the Unicode encoding model rather than drawn
+from a corpus. So is `inj-0129`, which wraps musical beam controls around the
+ASCII letters `CD` rather than around musical symbols: it is the control
+characters that are under test, and their placement, not the notes between
+them. The same standard the
 detector already applies to the Persian ezafe ordering, which it records as
 asserted rather than evidenced.
 
@@ -325,10 +372,14 @@ a blank placeholder denies at four as well. `inj-0134` and `inj-0135`.
 
 *Mathematics, music, collation and concatenated files: real.* U+2061..U+2064 are
 genuine in MathML and U+1D173..U+1D17A in the plain-text encoding of musical
-notation; four in one line is the bound. U+034F is the only member of the set
-with **no context test at all**, which this round is what added, so both of its
-real uses deny: blocking a collation contraction, and fixing the order of two
-points on one letter in Biblical Hebrew. And four UTF-8 files concatenated with
+notation; four in one line is the bound. U+034F has no context test, and neither
+does almost anything else: of the 3,773 members only three have one -- U+200C,
+U+200D and U+180E -- so the other 3,770, the Hangul fillers and the Khmer
+inherent vowels above included, are counted wherever they appear. So both of
+U+034F's real uses deny: blocking a collation contraction so a digraph sorts as
+two letters rather than one, and fixing the order of two points on one letter in
+Biblical Hebrew. U+034F entered the set in the round before this one, under the
+narrower rule, and this round is what measured the cost. And four UTF-8 files concatenated with
 each keeping its own BOM is four occurrences, which is the same
 retrieval-pipeline setting `inj-0105` and `inj-0106` come from. `inj-0128`,
 `inj-0129`, `inj-0136`, `inj-0137` and `inj-0138`.

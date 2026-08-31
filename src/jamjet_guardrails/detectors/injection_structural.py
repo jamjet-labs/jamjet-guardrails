@@ -158,7 +158,7 @@ def _bidi_spans(content: str) -> list[tuple[int, int]]:
         discloses them, because the realistic population is not an attacker: it
         is a pipeline that splits a document across a balanced `LRE ... PDF`,
         which puts an unclosed initiator in one chunk and a stray terminator in
-        the next. `inj-0132` and `inj-0133` are those two chunks.
+        the next. `inj-0139` and `inj-0140` are those two chunks.
 
     Two counters, one per family, are not enough on their own, because a pairing
     this function accepts has to be a pairing a RENDERER accepts. Both rules
@@ -357,14 +357,50 @@ def _invisible() -> frozenset[str]:
     a property of the character rather than a claim about what some other
     function does with it.
 
-    WHAT IS STILL OPEN, because a membership rule cannot close it: the 260
-    variation selectors and the 12 directional format characters are each a
-    1.0000-per-bit invisible channel, and both exclusions are load-bearing --
-    counting variation selectors denies every emoji, and counting the marks
-    denies ordinary Arabic and Hebrew. `corpora/NOTICE.md` publishes that
-    residual and `test_the_cheapest_invisible_channel_is_measured_not_assumed`
-    holds the rate, because until this sweep the module published 1.4875 as its
-    cheapest invisible miss and 1.0000 was available.
+    WHAT IS STILL OPEN, and THE COST MODEL THIS MODULE HAD WRONG THREE TIMES.
+    Every rate written down here before this paragraph was a rate for a
+    TWO-SYMBOL encoder, and two symbols is one encoder's choice, never a
+    property of a channel. The floor for an alphabet of n invisible symbols is
+    **1 / log2(n) characters per bit**, because one character of an n-symbol
+    alphabet carries log2(n) bits.
+
+    There are 256 variation selectors -- VARIATION SELECTOR-1..16 at U+FE00 and
+    VARIATION SELECTOR-17..256 at U+E0100 -- so they are a BYTE per character,
+    not a bit. Measured: "Summarise this. " plus one emoji plus 32 variation
+    selectors returns ZERO findings and the payload decodes back verbatim, at
+    **0.1250 characters per bit**, which is 1/log2(256) exactly and eight times
+    cheaper than the 1.0000 this docstring published for the same characters.
+    Adding U+200E, U+200F and U+061C makes the alphabet 259 and the floor
+    0.1247. `test_the_cheapest_invisible_channel_is_measured_not_assumed` holds
+    the measurement.
+
+    That floor is over the families this module has SWEPT, and it is not a floor
+    over the code space. The C0 and C1 controls, U+FFF9..U+FFFB and the Egyptian
+    hieroglyph format controls are also uncounted and also carry a payload --
+    measured at 0.2500, 0.1992, 1.0000 and 0.2500 per bit respectively -- and
+    closing them is not attempted here. `corpora/NOTICE.md` lists them so that
+    no sentence in this module claims a floor nothing has swept for.
+
+    WHY THE TWO FAMILIES STAY OUT, measured rather than asserted. This docstring
+    said "counting variation selectors denies every emoji", and that is false:
+    measured with them counted, a single heart with U+FE0F, three keycaps and a
+    four-person family sequence all still ALLOW, because one or three
+    unexplained characters is under `_MIN_TOTAL`. What is true is narrower and
+    still decisive:
+
+      - a single RAINBOW FLAG denies. U+1F3F3 U+FE0F U+200D U+1F308 puts the
+        variation selector immediately before the joiner, so two adjacent
+        unexplained characters is `_MIN_RUN`, and one such emoji in one message
+        is enough. `inj-0058` is that sequence.
+      - four keycaps, or four U+FE0F emoji in one message, reach `_MIN_TOTAL`.
+      - four ideographic variation selectors reach it too, which is a Japanese
+        document naming four people whose names take variant glyphs.
+
+    Counting U+200E, U+200F and U+061C denies a bilingual invoice carrying four
+    of them, which `inj-0146` holds. Neither family can be counted, and the
+    corpus now carries the negatives that show why rather than leaving the claim
+    on this docstring's word: `inj-0058`, `inj-0143`, `inj-0144`, `inj-0145` and
+    `inj-0146`.
     """
     return frozenset(
         chr(point)
@@ -912,8 +948,10 @@ def _is_contextually_legitimate(content: str, index: int) -> bool:
     and is not 1.4875. `_invisible` excludes the 260 variation selectors and the
     12 directional format characters because counting them would deny every
     emoji sequence and all ordinary right-to-left text, and a two-symbol
-    bitstream over any two of them costs **1.0000 characters per bit** with
-    nothing on the page. That is the module's floor.
+    bitstream over any two of them costs 1.0000 characters per bit with nothing
+    on the page, and a two-symbol bitstream is NOT the floor: there are 256
+    variation selectors, so one character carries a byte and the floor is
+    1/log2(256) = **0.1250 characters per bit**, measured. See `_invisible`.
     `test_the_cheapest_invisible_channel_is_measured_not_assumed` holds it, and
     an earlier version of this paragraph named 1.4875 as the floor, which was a
     rate measured on the dearer of the two shapes a variation selector supports.
