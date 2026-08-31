@@ -212,6 +212,249 @@ def _bidi_spans(content: str) -> list[tuple[int, int]]:
     return [(index, index + 1) for index in sorted(unbalanced)]
 
 
+# ZWSP, ZWNJ, ZWJ, WORD JOINER, and the ZERO WIDTH NO-BREAK SPACE a UTF-8 BOM
+# decodes to. Escapes rather than literals, for the reason the bidi controls in
+# the tests are escapes: a literal here is invisible in this file, invisible in
+# the diff that adds it, and invisible in the review that should have caught it.
+#
+# PRIVATE USE AREA characters are deliberately NOT a signal, and this is the
+# note the module docstring points at. The PUA is U+E000..U+F8FF, U+F0000..
+# U+FFFFD and U+100000..U+10FFFD: 137,468 code points that `unicodedata.category`
+# answers "Co" for and that Unicode itself assigns no meaning to. Fonts assign
+# them. Nerd Fonts and Powerline put their icons there, so a pasted shell prompt
+# carries a handful, and U+F8FF is the Apple logo on Apple platforms.
+#
+# The reason that is fatal rather than merely noisy is what the signals here have
+# in common. A PUA character RENDERS -- as a glyph in the right font, as a tofu
+# box in the wrong one -- so a reader looking at the text can SEE it, and a
+# detector that fires on it is making a claim about text the reader was never
+# blind to. Every signal in this module is chosen because it is invisible in the
+# rendering while carrying meaning to a model, which is what makes a published
+# precision number defensible. On PUA there is no such number to publish: the
+# same code point is a developer's prompt and an attacker's private encoding,
+# and nothing in the bytes tells the two apart.
+_ZERO_WIDTH = frozenset("\u200b\u200c\u200d\u2060\ufeff")
+# The two that carry meaning, and only next to a script that uses them.
+_CONTEXTUAL = frozenset("\u200c\u200d")
+_ZWJ = "\u200d"
+
+# Scripts in which ZWJ and ZWNJ are orthography rather than decoration. Indic
+# scripts use them to force or suppress conjunct forms; Arabic and its
+# derivatives use ZWNJ to break cursive joining. Ranges rather than a library so
+# this stays stdlib-only.
+_JOINING_SCRIPTS: tuple[tuple[int, int], ...] = (
+    (0x0600, 0x06FF),  # Arabic
+    (0x0700, 0x074F),  # Syriac
+    (0x0780, 0x07BF),  # Thaana
+    (0x0900, 0x0DFF),  # Devanagari through Sinhala
+    (0x0E00, 0x0E7F),  # Thai
+    (0x1000, 0x109F),  # Myanmar
+    (0xFB50, 0xFDFF),  # Arabic Presentation Forms-A
+    (0xFE70, 0xFEFF),  # Arabic Presentation Forms-B
+)
+# Emoji and the variation selector that precedes ZWJ in many sequences.
+_PICTOGRAPHIC: tuple[tuple[int, int], ...] = (
+    (0x2190, 0x2BFF),
+    (0xFE0E, 0xFE0F),
+    (0x1F000, 0x1FAFF),
+)
+# Canonical combining class 9 is the class Unicode gives a virama and the marks
+# that behave like one. Asked of `unicodedata` rather than listed here so it
+# cannot drift from the Unicode data the interpreter ships: in Unicode 16.0.0 it
+# is 69 characters spread across the Brahmic scripts, and listing them by hand
+# would mean tracking a dozen different names for the same job -- virama,
+# halanta, hasanta, al-lakuna, coeng, asat, pangkon, subjoiner, sakot.
+_VIRAMA = 9
+
+# A run of two, or four in total anywhere in the input. Both bounds are about
+# what arrives by ACCIDENT. An unexplained zero-width character turns up one at a
+# time, out of a copy-paste from a rendered page; a payload does not, because one
+# bit per character means a payload is a sequence.
+#
+# Measured over the legitimate samples in tests/test_injection_structural.py: the
+# most unexplained zero-width characters any of them carries is two, a WORD
+# JOINER on each side of a thousands separator, and the longest run is one.
+_MIN_RUN = 2
+_MIN_TOTAL = 4
+
+# A joiner every second character, four of them, with the symbol changing at
+# least once along the way.
+#
+# This is the signal that does not depend on the exemption below being right,
+# and it is here because the exemption cannot be made right on its own. A
+# steganographic encoder emits one joiner per base character; orthography does
+# not. Measured over the samples in tests/test_injection_structural.py, longest
+# chain of EXCUSED joiners exactly one base character apart:
+#
+#   Hindi with five conjunct joiners                    1
+#   Persian prose with six ZWNJ                         1
+#   Malayalam sentence, four chillu words               1
+#   kiss sequence (a variation selector inside it)      2
+#   four-person family emoji                            3
+#   ten family emoji written next to each other         3
+#   a stray ZWSP two characters before a family emoji   3
+#   36 Arabic characters, a ZWNJ between every pair    35
+#   256-bit payload, Devanagari or Arabic cover       256
+#   256-bit payload, emoji cover                        4
+#
+# The emoji row is short because that cover loses its ZWNJ to the context test
+# below: 123 of the 256 joiners are unexcused, the total bound reports them
+# where they stand, and what is left excused is runs of set bits. Its four is a
+# run of four one-bits, and it is at the bound and still not reported, because
+# every joiner in it is the same character -- the condition below suppressing a
+# true positive on an input that denies twice over.
+# `test_the_two_rules_that_catch_a_covered_bitstream_are_different_rules` holds
+# which rule answers for which cover.
+#
+# Three is structural for emoji rather than lucky. An RGI sequence built from
+# single code point elements carries one joiner between each pair; the longest
+# is the four-person family, at three. Two sequences written next to each other
+# cannot chain, because one ends and the next begins on a base character, which
+# leaves three characters between their joiners rather than one. A variation
+# selector or a skin tone modifier LOWERS the score for the same reason, so the
+# longer RGI sequences are the safer ones.
+#
+# The Arabic row is why length cannot be the whole test: it is longer than any
+# attack fragment worth catching, so no bound separates the two by length. It is
+# allowed because it carries NOTHING. One symbol repeated at every position is a
+# channel with no choice in it, and a bitstream needs a choice per bit. Asking
+# for the symbol to change costs the defender nothing for that same reason, and
+# it is what lets this bound sit at four instead of above thirty-five.
+#
+# Four rather than three keeps the bound above the emoji maximum on its own,
+# without the changing-symbol condition helping. That is deliberate: whoever
+# drops that condition should be left with a threshold that still clears every
+# legitimate sample here, rather than with a check that denies family emoji.
+#
+# What this bounds is RATE, not capacity. An attacker who spends one spare cover
+# character every three bits holds every chain at three, and the whole payload
+# goes through for 2.33 characters per bit against the 2.00 of the shape this
+# denies; `test_a_deperiodised_bitstream_is_a_known_miss` is that input.
+_MIN_PERIODIC = 4
+
+
+def _in_ranges(char: str, ranges: tuple[tuple[int, int], ...]) -> bool:
+    """Whether `char` falls in any range. An empty string, the edge of the input, is False."""
+    if not char:
+        return False
+    point = ord(char)
+    return any(low <= point <= high for low, high in ranges)
+
+
+def _is_contextually_legitimate(content: str, index: int) -> bool:
+    """Whether a joiner at `index` sits where a script or an emoji sequence puts one.
+
+    Context, not identity. U+200D is orthography in Devanagari and structural in
+    an emoji sequence; between two Latin letters it is neither, and that is
+    exactly where a payload hides.
+
+    BOTH neighbours, and both in ONE context. Asking whether EITHER neighbour is
+    pictographic or in a joining script is the same per-occurrence shape the tag
+    exemption above shipped, and it fails the same way: one cover character per
+    joiner excuses every joiner, so repeating the construct costs the attacker
+    two characters per bit and nothing else. Loosen the two conditions below to
+    accept either neighbour AND delete the periodicity rule in
+    `_zero_width_spans`, which together are the design this replaced, and
+    "Summarise this. " followed by 256 bits of cover character plus ZWJ or ZWNJ
+    returns `[]` for an emoji, a Devanagari and an Arabic cover alike.
+
+    Loosening this rule ALONE does not reproduce that, and the honest account of
+    why is that the periodicity rule catches all three covers on its own. What
+    this rule adds is the case periodicity cannot see: an attacker who breaks up
+    the spacing to stay under that bound is still caught behind an emoji cover
+    and is NOT caught behind a joining-script one, which is the asymmetry
+    `test_a_deperiodised_bitstream_is_a_known_miss` holds. So the tests that
+    answer for this rule are that one and
+    `test_a_joiner_needs_both_neighbours_in_one_context`, not the covered
+    bitstream, which denies either way.
+
+    ZWNJ is never legitimate between two pictographics, and that is the half of
+    this rule that pays for itself: emoji sequences join with ZWJ, no RGI
+    sequence uses ZWNJ anywhere, so behind an emoji cover the attacker loses one
+    of the two symbols a bitstream needs. Measured on the 256-bit payload above,
+    it leaves 123 of the joiners unexcused and the total bound reports them.
+
+    A virama BEFORE the joiner is enough on its own, and that is not a softening.
+    It is where Indic scripts put these characters, and it is the one place a
+    both-neighbours rule cannot look: a Malayalam chillu is consonant, virama,
+    ZWJ, and it ENDS a word, so the character after the joiner is a space or a
+    full stop. Without it, four ordinary Malayalam words in a sentence are four
+    unexplained joiners, which is exactly the total bound.
+    `test_a_joiner_at_the_end_of_a_word_is_still_orthography` is that sentence.
+    It hands the attacker nothing they did not already have: a Devanagari letter
+    on each side of a joiner is exempt either way, so a virama cover is the same
+    channel at three characters per bit rather than two.
+    """
+    char = content[index]
+    if char not in _CONTEXTUAL:
+        return False
+    before = content[index - 1] if index > 0 else ""
+    after = content[index + 1] if index + 1 < len(content) else ""
+    if before and unicodedata.combining(before) == _VIRAMA:
+        return True
+    if _in_ranges(before, _JOINING_SCRIPTS) and _in_ranges(after, _JOINING_SCRIPTS):
+        return True
+    return char == _ZWJ and _in_ranges(before, _PICTOGRAPHIC) and _in_ranges(after, _PICTOGRAPHIC)
+
+
+def _chains(indices: list[int], step: int) -> list[list[int]]:
+    """Maximal groups in which each index is exactly `step` after the one before it.
+
+    Both rules below are a chain at a different step, which is why this is one
+    function and not two loops. Step 1 gives the maximal RUNS of adjacent
+    characters; step 2 gives the joiners that are one base character apart.
+    """
+    groups: list[list[int]] = []
+    for index in indices:
+        if groups and index - groups[-1][-1] == step:
+            groups[-1].append(index)
+        else:
+            groups.append([index])
+    return groups
+
+
+def _zero_width_spans(content: str) -> list[tuple[int, int]]:
+    """Zero-width characters that no script, no emoji sequence and no accident explains.
+
+    Two rules over one split of the input, and neither one subsumes the other.
+    The first reports what the exemption did not excuse, by run and by total.
+    The second reports what it DID excuse, when the excused joiners arrive one
+    per base character with the symbol changing: that is a bitstream wearing a
+    cover, and every joiner in it has a neighbour that excuses it.
+
+    The periodicity chain is built from the EXCUSED joiners alone. One that was
+    not excused is already reported where it stands, and letting it join a chain
+    would make a stray ZWSP two characters ahead of a family emoji into a
+    four-long chain built out of three identical ZWJ;
+    `test_a_stray_zero_width_space_before_a_family_emoji_is_not_a_payload` is
+    that input. `len(set(...)) > 1` is the changing symbol: only ZWJ and ZWNJ can
+    be excused, so more than one distinct character in a chain means both of
+    them, which is the choice a bit needs.
+
+    Sorted, because the two rules produce spans that interleave. `_matches`
+    re-sorts everything it collects, so nothing downstream depends on this one,
+    but a caller reading spans out of one signal should not have to know that.
+    """
+    suspicious: list[int] = []
+    exempt: list[int] = []
+    for index, char in enumerate(content):
+        if char in _ZERO_WIDTH:
+            bucket = exempt if _is_contextually_legitimate(content, index) else suspicious
+            bucket.append(index)
+
+    spans = [
+        (run[0], run[-1] + 1)
+        for run in _chains(suspicious, 1)
+        if len(suspicious) >= _MIN_TOTAL or len(run) >= _MIN_RUN
+    ]
+    spans += [
+        (chain[0], chain[-1] + 1)
+        for chain in _chains(exempt, 2)
+        if len(chain) >= _MIN_PERIODIC and len({content[index] for index in chain}) > 1
+    ]
+    return sorted(spans)
+
+
 class InjectionStructuralGuardrail:
     """Detects instruction smuggling in the encoding rather than in the words."""
 
@@ -265,6 +508,7 @@ class InjectionStructuralGuardrail:
         """
         found = [("INVISIBLE_TAG_CHARS", span) for span in _tag_spans(content)]
         found += [("BIDI_OVERRIDE", span) for span in _bidi_spans(content)]
+        found += [("ZERO_WIDTH_SMUGGLING", span) for span in _zero_width_spans(content)]
         return sorted(found, key=lambda pair: pair[1])
 
     def check(self, content: str, context: Context) -> Verdict:
