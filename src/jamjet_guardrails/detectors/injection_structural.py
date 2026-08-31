@@ -265,6 +265,43 @@ _PICTOGRAPHIC: tuple[tuple[int, int], ...] = (
 # would mean tracking a dozen different names for the same job -- virama,
 # halanta, hasanta, al-lakuna, coeng, asat, pangkon, subjoiner, sakot.
 _VIRAMA = 9
+# What a virama may stand behind and still be found sitting on its own letter:
+# the marks that decorate a base (Mn, Me) and the format characters that are
+# invisible between them (Cf).
+#
+# The character immediately before a virama is not the character the virama sits
+# on, and the two shapes that exploit the difference both put a character of the
+# VIRAMA'S OWN SCRIPT in that position, where the script test below cannot see
+# anything wrong with it:
+#
+#   - U+093C DEVANAGARI SIGN NUKTA, category Mn, in front of a Devanagari virama
+#     that stands on a Latin letter. Read as the base it is Devanagari and it
+#     excuses the joiner. Measured: four characters per bit, and what shows on
+#     the page is Latin letters with a dot under each.
+#   - U+110BD KAITHI NUMBER SIGN, category Cf and invisible, in front of a
+#     Kaithi virama. Measured: three characters per bit and NO visible text at
+#     all. U+110BD and U+110CD are the only format characters in Unicode 16.0.0
+#     that share a first name word with any character of combining class 9,
+#     which is why this set carries Cf and not only the mark categories.
+#
+# `test_an_invisible_character_does_not_stand_in_for_the_base` holds the first
+# and `test_a_format_character_of_the_virama_s_own_script_is_not_a_base` the
+# second.
+_TRANSPARENT = frozenset({"Mn", "Me", "Cf"})
+# How far back that walk may go, and it is a bound on COST, not on orthography.
+# Unbounded it is QUADRATIC, and the input that shows it is one an attacker can
+# send: a letter followed by repeats of virama-plus-joiner is one unbroken run of
+# Mn and Cf characters, so every joiner walks back over all of it, and every
+# joiner is excused when the walk ends. Measured on that input, unbounded:
+# 5.51 s at 8k joiners, 22.00 s at 16k, 88.53 s at 32k -- four times the work for
+# twice the input. Bounded at four: 0.010 s, 0.018 s, 0.035 s, which is linear.
+#
+# Four is above what orthography needs. Measured over the conjuncts in
+# tests/test_injection_structural.py, every base is one character back except
+# behind a nukta, where it is two. Padding past the bound loses the exemption
+# rather than gaining anything, which is the safe direction for a bound to fail
+# in.
+_MAX_TRANSPARENT = 4
 
 # A run of two, or four in total anywhere in the input. Both bounds are about
 # what arrives by ACCIDENT. An unexplained zero-width character turns up one at a
@@ -272,13 +309,16 @@ _VIRAMA = 9
 # bit per character means a payload is a sequence.
 #
 # Measured over the samples tests/test_injection_structural.py ALLOWS: the most
-# unexplained zero-width characters any of them carries is two, the two WORD
-# JOINERs at the thousands boundaries of `1<WJ>000<WJ>000`, and the longest run
-# is one. That is the allow-set and it is not the whole file: the Thai sample
-# carries four, one at each of four word boundaries, and denies. `_MIN_TOTAL`
-# owns that false positive, which is the reason to know this bound from both
-# sides -- `test_three_unexplained_characters_are_below_the_total_bound` is the
-# one input in the file that pins it from underneath.
+# unexplained zero-width characters any of them carries is THREE, in
+# `test_three_unexplained_characters_are_below_the_total_bound`, which is the
+# one input in the file that pins this bound from underneath and is deliberately
+# one under it. Next is two, the WORD JOINERs at the thousands boundaries of
+# `1<WJ>000<WJ>000`. The longest run in any allowing sample is one.
+#
+# That is the allow-set and it is not the whole file. The Thai sample carries
+# four, one at each of four word boundaries, and denies: `_MIN_TOTAL` owns this
+# signal's one acknowledged false positive, which is why it is worth knowing
+# from both sides.
 _MIN_RUN = 2
 _MIN_TOTAL = 4
 
@@ -360,6 +400,48 @@ def _in_ranges(char: str, ranges: tuple[tuple[int, int], ...]) -> bool:
     return any(low <= point <= high for low, high in ranges)
 
 
+def _script(char: str) -> str:
+    """The script a character belongs to, read off the first word of its name.
+
+    `unicodedata` publishes no Script property, so the name is where the script
+    is: every character of a Brahmic script is named for it, and the mark and
+    the letter agree -- KHMER SIGN COENG with KHMER LETTER KA, SYLOTI NAGRI SIGN
+    HASANTA with SYLOTI NAGRI LETTER KO. Derived rather than tabulated for the
+    reason the virama class is: a table of 69 marks and their scripts is a table
+    that goes stale, and this one cannot.
+
+    Checked across every character of combining class 9 in Unicode 16.0.0: all
+    69 have a letter sharing their first name word, so the test below excuses a
+    conjunct in every one of those scripts, and none of them is excused behind a
+    Latin or pictographic base.
+
+    An unassigned or unnamed code point answers "". A virama is never one --
+    `unicodedata.combining` answers 0 for everything unassigned, so every
+    character of class 9 has a name -- and the comparison below is between a
+    base and a virama, so "" can only appear on the base side, where it matches
+    nothing. That is what closes the 440 unassigned code points inside
+    `_JOINING_SCRIPTS`, which a range test accepts as a base.
+
+    ONE ambiguity, measured and recorded rather than papered over: TAI LE, TAI
+    THAM and TAI VIET share a first word, and the class 9 mark among them is TAI
+    THAM SIGN SAKOT, so a Tai Le or Tai Viet letter under a Tai Tham sakot reads
+    as one script here. It buys an attacker nothing, because a correctly paired
+    Tai Tham letter and sakot is already excused and costs the same three
+    characters per bit of visible cover.
+    """
+    return unicodedata.name(char, "").partition(" ")[0] if char else ""
+
+
+def _base_before(content: str, index: int) -> str:
+    """The character the mark at `index` sits on, past any marks and format chars."""
+    at = index - 1
+    while at >= 0 and index - at <= _MAX_TRANSPARENT:
+        if unicodedata.category(content[at]) not in _TRANSPARENT:
+            return content[at]
+        at -= 1
+    return ""
+
+
 def _is_contextually_legitimate(content: str, index: int) -> bool:
     """Whether a joiner at `index` sits where a script or an emoji sequence puts one.
 
@@ -413,26 +495,38 @@ def _is_contextually_legitimate(content: str, index: int) -> bool:
     existed. `test_a_virama_does_not_excuse_a_joiner_standing_on_a_foreign_base`
     holds both.
 
-    The base test is a VETO rather than one more way to pass, which is why this
+    THE TRADE, since a rule this tight makes one. What it refuses that Unicode
+    would call a cluster is: a virama whose base is in a different script from
+    it, a virama with more than four characters of marks and format characters
+    between it and its base, and a virama with no base at all before it. None of
+    the three is orthography in any script -- checked across all 69 characters of
+    combining class 9 in Unicode 16.0.0, every one of them is excused above a
+    letter of its own script and none is excused above a Latin or pictographic
+    one. The one soft edge is recorded in `_script`: TAI LE, TAI THAM and TAI
+    VIET share a first name word, so this cannot tell them apart.
+
+    The script test is a VETO rather than one more way to pass, which is why this
     branch returns instead of falling through. A virama is in the Devanagari
     through Sinhala range itself, so a joiner behind one already satisfies half
     of the both-neighbours rule below, and falling through would excuse
-    `<latin><virama><joiner><devanagari>` -- alternating bases, the same channel
-    one character wider. Measured: it denies.
+    `<latin><virama><joiner><devanagari>` -- alternating bases, which is the same
+    channel at the SAME price, not a wider one: alternating, Latin-only and
+    Devanagari-only all measure 769 characters for 256 bits. Measured: it denies.
 
-    What is left is a Devanagari base, which the both-neighbours rule excuses on
-    its own whatever this branch does, at three characters per bit against the
-    2.33 of `test_a_deperiodised_bitstream_is_a_known_miss`. This branch adds
-    nothing there, and that was the only case the first version of this note
-    examined.
+    What is left is any base whose script matches its virama's, and separately
+    any pair of neighbours inside `_JOINING_SCRIPTS`, which the rule below
+    excuses whatever this branch does. That residual is NOT visible-text-only:
+    U+061C ARABIC LETTER MARK is inside the Arabic range and renders as nothing,
+    so a joiner between two of them is excused at no cost in visible cover.
+    `test_a_deperiodised_bitstream_is_a_known_miss` records the rate.
     """
     char = content[index]
     if char not in _CONTEXTUAL:
         return False
     before = content[index - 1] if index > 0 else ""
     after = content[index + 1] if index + 1 < len(content) else ""
-    if index >= 2 and unicodedata.combining(before) == _VIRAMA:
-        return _in_ranges(content[index - 2], _JOINING_SCRIPTS)
+    if before and unicodedata.combining(before) == _VIRAMA:
+        return _script(_base_before(content, index - 1)) == _script(before)
     if _in_ranges(before, _JOINING_SCRIPTS) and _in_ranges(after, _JOINING_SCRIPTS):
         return True
     return char == _ZWJ and _in_ranges(before, _PICTOGRAPHIC) and _in_ranges(after, _PICTOGRAPHIC)
