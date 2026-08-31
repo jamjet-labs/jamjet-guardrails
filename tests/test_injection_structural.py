@@ -11,12 +11,17 @@ from jamjet_guardrails.detectors import AVAILABLE, build
 from jamjet_guardrails.detectors.injection_structural import (
     _DEFAULT_IGNORABLE,
     _JOINING_SCRIPTS,
+    _MIN_PERIODIC,
+    _MIN_RUN,
+    _MIN_TOTAL,
     _RGI_SUBDIVISION_CODES,
     _ZERO_WIDTH,
     INJECTION_TYPES,
     InjectionStructuralGuardrail,
     _bidi_spans,
+    _chains,
     _in_ranges,
+    _is_contextually_legitimate,
     _is_letter,
     _script,
     _zero_width_spans,
@@ -696,8 +701,8 @@ def test_a_joiner_at_the_end_of_a_word_is_still_orthography() -> None:
     `unicodedata.combining` rather than listed, so it covers every Indic script
     at once rather than the ones a test author thought of.
     """
-    content = " ".join([f"അവ{CHILLU}"] * 5) + "."
-    assert content.count(ZWJ) == 5, "at the total bound, so the rule is what allows this"
+    content = " ".join([f"അവ{CHILLU}"] * (_MIN_TOTAL)) + "."
+    assert content.count(ZWJ) >= _MIN_TOTAL, "at the total bound, so the rule is what allows this"
     assert InjectionStructuralGuardrail().check(content, IN).decision == "allow"
 
 
@@ -796,8 +801,8 @@ def test_a_zwnj_between_two_emoji_is_not_exempt() -> None:
     covered-bitstream test above would still deny on periodicity if this half
     were dropped and the cover were Devanagari.
     """
-    content = f"{SMILE}{ZWNJ}" * 5 + SMILE
-    assert content.count(ZWNJ) == 5, "one over the total bound"
+    content = f"{SMILE}{ZWNJ}" * _MIN_TOTAL + SMILE
+    assert content.count(ZWNJ) >= _MIN_TOTAL, "at the total bound, so it can bite"
     assert InjectionStructuralGuardrail().check(content, IN).decision == "deny"
 
 
@@ -862,8 +867,8 @@ def test_a_flag_sequence_joining_to_a_symbol_is_not_an_attack() -> None:
     trans_flag = "\U0001f3f3️‍⚧️"
     joiner = trans_flag.index(ZWJ)
     assert _in_ranges(trans_flag[joiner + 1], ((0x2190, 0x2BFF),))
-    content = " ".join([trans_flag] * 5)
-    assert content.count(ZWJ) == 5
+    content = " ".join([trans_flag] * _MIN_TOTAL)
+    assert content.count(ZWJ) >= _MIN_TOTAL
     assert InjectionStructuralGuardrail().check(content, IN).decision == "allow"
 
 
@@ -886,11 +891,16 @@ def test_a_joiner_needs_both_neighbours_in_one_context(content: str) -> None:
 
 
 @pytest.mark.parametrize(
-    ("joiners", "decision"),
-    [pytest.param(3, "allow", id="three"), pytest.param(4, "deny", id="four")],
+    ("offset", "decision"),
+    [pytest.param(-1, "allow", id="one-under"), pytest.param(0, "deny", id="at-the-bound")],
 )
-def test_the_periodicity_bound_is_where_the_measurement_put_it(joiners: int, decision: str) -> None:
-    """Three joiners one base character apart allow; four deny.
+def test_the_periodicity_bound_is_where_the_measurement_put_it(offset: int, decision: str) -> None:
+    """One joiner under the periodicity bound allows; at it, denies.
+
+    The two counts are `_MIN_PERIODIC + offset` rather than 3 and 4, for the
+    reason the total-bound fixtures read `_MIN_TOTAL`: a literal that happens to
+    equal the bound today keeps passing when the bound moves, while the test it
+    guards quietly stops sitting on the boundary.
 
     Both symbols alternate, so both chains carry bits and differ only in length.
     The bound is four because the longest chain any legitimate sample in this
@@ -899,9 +909,29 @@ def test_the_periodicity_bound_is_where_the_measurement_put_it(joiners: int, dec
     code point elements has three joiners, and two sequences written next to
     each other cannot chain, because each ends and the next begins on a base
     character, which puts three characters between the joiners rather than one.
+
+    That last paragraph is the JUSTIFICATION for the value, and it is asserted
+    below rather than left in prose. A fixture derived from the bound keeps
+    sitting on the boundary when the bound moves, which is what stops it going
+    quietly slack -- but it also stops it being a regression check on the VALUE.
+    The two halves do different jobs: the parameters check that the boundary is
+    where the code says it is, and the family emoji checks that the code says
+    what the measurement said.
     """
+    excused = [
+        index
+        for index, char in enumerate(FAMILY)
+        if char in _ZERO_WIDTH and _is_contextually_legitimate(FAMILY, index)
+    ]
+    longest = max((len(chain) for chain in _chains(excused, 2)), default=0)
+    assert longest == _MIN_PERIODIC - 1, (
+        "the longest legitimate excused chain in this file is what the bound clears"
+    )
+
     cover = "क"
+    joiners = _MIN_PERIODIC + offset
     content = "".join(cover + (ZWJ if index % 2 else ZWNJ) for index in range(joiners)) + cover
+    assert content.count(ZWJ) + content.count(ZWNJ) == joiners
     assert InjectionStructuralGuardrail().check(content, IN).decision == decision
 
 
@@ -968,11 +998,11 @@ def test_thai_line_break_hints_allow_at_five_words_and_deny_at_six() -> None:
     """
     check = InjectionStructuralGuardrail().check
     five = ZWSP.join(["สวัสดี", "ชาว", "โลก", "ทดสอบ", "คำ"])
-    assert five.count(ZWSP) == 4
+    assert five.count(ZWSP) == _MIN_TOTAL - 1, "one under the bound"
     assert check(five, IN).decision == "allow"
 
     six = ZWSP.join(["สวัสดี", "ชาว", "โลก", "ทดสอบ", "คำ", "ใหม่"])
-    assert six.count(ZWSP) == 5
+    assert six.count(ZWSP) >= _MIN_TOTAL, "at the bound"
     assert check(six, IN).decision == "deny"
 
 
@@ -1042,8 +1072,12 @@ def test_each_signal_sorts_the_spans_it_returns_on_its_own() -> None:
     across_families = f"a{FSI}b{LRE}c\nd"
     assert _bidi_spans(across_families) == [(1, 2), (3, 4)]
 
-    chain = "क" + "".join((ZWNJ if index % 2 else ZWJ) + "क" for index in range(4))
-    assert _zero_width_spans(f"{chain}x{ZWSP}{ZWSP}") == [(1, 8), (10, 12)]
+    chain = "क" + "".join((ZWNJ if index % 2 else ZWJ) + "क" for index in range(_MIN_PERIODIC))
+    run = ZWSP * _MIN_RUN
+    assert _zero_width_spans(f"{chain}x{run}") == [
+        (1, 2 * _MIN_PERIODIC),
+        (len(chain) + 1, len(chain) + 1 + _MIN_RUN),
+    ], "a periodic chain first in the input and a run last, emitted in the other order"
 
 
 def test_every_type_this_check_declares_can_be_produced() -> None:
@@ -1205,7 +1239,11 @@ def test_two_zero_width_characters_together_are_not_an_accident() -> None:
     notation, where an END BEAM abuts the next BEGIN BEAM -- is the corpus case
     that only this bound catches.
     """
-    assert InjectionStructuralGuardrail().check(f"total{ZWSP * 2}cost", IN).decision == "deny"
+    content = f"total{ZWSP * _MIN_RUN}cost"
+    assert content.count(ZWSP) == _MIN_RUN < _MIN_TOTAL, (
+        "a run at the run bound and under the total bound, so only _MIN_RUN reports it"
+    )
+    assert InjectionStructuralGuardrail().check(content, IN).decision == "deny"
 
 
 VIRAMA = "्"
@@ -1332,11 +1370,11 @@ def test_stray_characters_below_the_total_bound_allow_in_ordinary_prose() -> Non
     assert check(three, IN).decision == "allow"
 
     four = f"{three} The appendix{ZWSP} follows."
-    assert sum(1 for char in four if char == ZWSP) == 4
+    assert sum(1 for char in four if char == ZWSP) == _MIN_TOTAL - 1, "one under the bound"
     assert check(four, IN).decision == "allow"
 
     five = f"{four} The index{ZWSP} is last."
-    assert sum(1 for char in five if char == ZWSP) == 5
+    assert sum(1 for char in five if char == ZWSP) >= _MIN_TOTAL, "at the bound"
     assert check(five, IN).decision == "deny"
 
 
@@ -1382,8 +1420,8 @@ def test_a_conjunct_joiner_is_orthography_outside_the_joining_script_ranges(
     asserting nothing.
     """
     word = f"{letter}{virama}{ZWJ}"
-    content = " ".join([word] * 5) + " text"
-    assert content.count(ZWJ) == 5, "at the total bound, so the rule is what allows this"
+    content = " ".join([word] * _MIN_TOTAL) + " text"
+    assert content.count(ZWJ) >= _MIN_TOTAL, "at the total bound, so the rule is what allows this"
     assert InjectionStructuralGuardrail().check(content, IN).decision == "allow"
 
 
@@ -1430,8 +1468,8 @@ def test_a_nukta_between_the_letter_and_the_virama_is_still_orthography() -> Non
     real conjunct does.
     """
     word = f"क{NUKTA}्{ZWJ}"
-    content = " ".join([word] * 5) + " text"
-    assert content.count(ZWJ) == 5, "at the total bound, so the rule is what allows this"
+    content = " ".join([word] * _MIN_TOTAL) + " text"
+    assert content.count(ZWJ) >= _MIN_TOTAL, "at the total bound, so the rule is what allows this"
     assert InjectionStructuralGuardrail().check(content, IN).decision == "allow"
 
 
@@ -1610,8 +1648,10 @@ def test_the_walk_to_a_base_crosses_non_starters_and_format_characters(cluster: 
     `test_an_invisible_character_does_not_stand_in_for_the_base` and
     `test_a_format_character_of_the_virama_s_own_script_is_not_a_base`.
     """
-    content = f"{cluster} " * 5 + "x"
-    assert sum(1 for char in content if char == ZWJ) == 5, "no joiners, so nothing is tested"
+    content = f"{cluster} " * _MIN_TOTAL + "x"
+    assert sum(1 for char in content if char == ZWJ) >= _MIN_TOTAL, (
+        "under the total bound, so a rule that stops excusing them would not deny"
+    )
     assert InjectionStructuralGuardrail().check(content, IN).decision == "allow"
 
 
@@ -1723,7 +1763,7 @@ def test_a_mark_written_on_a_letter_still_excuses_a_joiner(content: str) -> None
     bound moved: refusing marks as excusing neighbours left this test green.
     """
     joiners = [index for index, char in enumerate(content) if char == ZWNJ]
-    assert len(joiners) == 5, "under the total bound, so this asserts nothing"
+    assert len(joiners) >= _MIN_TOTAL, "under the total bound, so this asserts nothing"
     assert all(
         unicodedata.category(content[index - 1])[0] == "M"
         or unicodedata.category(content[index + 1])[0] == "M"
@@ -1755,8 +1795,8 @@ def test_a_joiner_at_the_very_front_does_not_read_its_neighbour_off_the_back() -
     `test_a_joiner_at_the_front_of_an_emoji_message_does_not_wrap_to_the_end`
     is the branch where the guard is the only thing standing.
     """
-    content = f"{ZWNJ}\u0628{ZWSP}\u0643{ZWSP}\u0644{ZWSP}\u0628{ZWSP}\u0643"
-    assert sum(1 for char in content if char in {ZWNJ, ZWSP}) == 5
+    content = ZWNJ + "\u0628" + f"{ZWSP}\u0643" * (_MIN_TOTAL - 1)
+    assert sum(1 for char in content if char in {ZWNJ, ZWSP}) >= _MIN_TOTAL
     assert InjectionStructuralGuardrail().check(content, IN).decision == "deny"
 
 
@@ -1777,9 +1817,11 @@ def test_a_joiner_at_the_front_of_an_emoji_message_does_not_wrap_to_the_end() ->
     without the guard that joiner is excused between two pictographics, the
     count drops from five to four, and the message allows.
     """
-    content = ZWJ + SMILE + f"{ZWSP}{SMILE}" * 4
+    content = ZWJ + SMILE + f"{ZWSP}{SMILE}" * (_MIN_TOTAL - 1)
     assert content[0] == ZWJ and content[-1] == SMILE
-    assert sum(1 for char in content if char in {ZWJ, ZWSP}) == 5
+    assert sum(1 for char in content if char in {ZWJ, ZWSP}) == _MIN_TOTAL, (
+        "exactly at the bound, so excusing the leading joiner drops it under"
+    )
     assert InjectionStructuralGuardrail().check(content, IN).decision == "deny"
 
 
@@ -1918,8 +1960,8 @@ def test_the_mark_walk_reaches_exactly_as_far_as_the_bound_says(
     is the safe direction for a bound to fail in, and that removing the bound
     entirely puts the deny case back to allow.
     """
-    content = ("م" + FATHA * padding + ZWNJ) * 5 + "م"
-    assert content.count(ZWNJ) == 5, "one over the total bound, so it can bite"
+    content = ("م" + FATHA * padding + ZWNJ) * _MIN_TOTAL + "م"
+    assert content.count(ZWNJ) >= _MIN_TOTAL, "at the total bound, so it can bite"
     assert InjectionStructuralGuardrail().check(content, IN).decision == decision
 
 
@@ -1947,8 +1989,8 @@ def test_the_base_walk_reaches_exactly_as_far_as_the_bound_says(
     the five clusters below; over every other input it never walks further than
     two.
     """
-    content = ("क" + NUKTA * padding + VIRAMA + ZWJ + " ") * 5
-    assert content.count(ZWJ) == 5
+    content = ("क" + NUKTA * padding + VIRAMA + ZWJ + " ") * _MIN_TOTAL
+    assert content.count(ZWJ) >= _MIN_TOTAL
     assert InjectionStructuralGuardrail().check(content, IN).decision == decision
 
 
@@ -2024,10 +2066,10 @@ def test_an_ascii_numeral_before_a_joiner_is_a_known_false_positive() -> None:
     ]
     extra = [f" و پسر 7{ZWNJ}ساله", f" اور 1990{ZWNJ}ء", f" و SMS{ZWNJ}ها"]
     for content, tail in zip(allowed, extra, strict=True):
-        assert sum(1 for char in content if char == ZWNJ) == 4
+        assert sum(1 for char in content if char == ZWNJ) == _MIN_TOTAL - 1, "one under"
         assert check(content, IN).decision == "allow", content
         longer = content + tail
-        assert sum(1 for char in longer if char == ZWNJ) == 5
+        assert sum(1 for char in longer if char == ZWNJ) >= _MIN_TOTAL, "at the bound"
         assert check(longer, IN).decision == "deny", longer
 
 
@@ -2532,7 +2574,7 @@ def test_the_bound_passes_four_non_adjacent_characters_and_what_they_carry() -> 
     guardrail = InjectionStructuralGuardrail()
 
     assert len(page) == 2502
-    assert sum(1 for char in page if char in _ZERO_WIDTH) == 3
+    assert sum(1 for char in page if char in _ZERO_WIDTH) < _MIN_TOTAL
     assert guardrail.check(page, IN).decision == "allow"
 
     bare = page.replace(ZWSP, "")
@@ -2543,20 +2585,30 @@ def test_the_bound_passes_four_non_adjacent_characters_and_what_they_carry() -> 
             out.insert(offset + shift, ZWSP)
         return "".join(out)
 
-    assert guardrail.check(placed([500, 500]), IN).decision == "deny", "two adjacent are a run"
-    assert guardrail.check(placed([400, 900]), IN).decision == "allow"
-    assert guardrail.check(placed([300, 800, 1300, 1800]), IN).decision == "allow"
-    assert guardrail.check(placed([300, 700, 1100, 1500, 1900]), IN).decision == "deny"
+    def scattered(count: int) -> str:
+        return placed([300 + 400 * step for step in range(count)])
 
-    # 4 pairwise non-adjacent positions among len(page) slots, and a free choice
-    # of counted symbol at each.
-    bits = math.log2(math.comb(len(page) - 3, 4)) + 4 * math.log2(len(_ZERO_WIDTH))
+    # Every count below is derived from the bounds, so moving either one fails
+    # this test rather than leaving it asserting something that is no longer the
+    # boundary. The arithmetic further down is derived the same way.
+    assert guardrail.check(placed([500] * _MIN_RUN), IN).decision == "deny", "a run at _MIN_RUN"
+    assert guardrail.check(scattered(_MIN_RUN), IN).decision == "allow", "scattered, not a run"
+    assert guardrail.check(scattered(_MIN_TOTAL - 1), IN).decision == "allow", "one under"
+    assert guardrail.check(scattered(_MIN_TOTAL), IN).decision == "deny", "at the bound"
+
+    # `_MIN_TOTAL - 1` pairwise non-adjacent positions among len(page) slots, and
+    # a free choice of counted symbol at each.
+    passes = _MIN_TOTAL - 1
+
+    def carried(count: int, alphabet: int) -> float:
+        return math.log2(math.comb(len(page) - count + 1, count)) + count * math.log2(alphabet)
+
+    bits = carried(passes, len(_ZERO_WIDTH))
     assert round(bits, 1) == 88.1
-    over_excluded = math.log2(math.comb(len(page) - 3, 4)) + 4 * math.log2(259)
-    assert round(over_excluded, 1) == 72.6, "the figure the wrong alphabet gives"
-
-    at_four = math.log2(math.comb(len(page) - 2, 3)) + 3 * math.log2(len(_ZERO_WIDTH))
-    assert round(bits - at_four, 1) == 21.2, "what raising the bound by one widened"
+    assert round(carried(passes, 259), 1) == 72.6, "the figure the wrong alphabet gives"
+    assert round(bits - carried(passes - 1, len(_ZERO_WIDTH)), 1) == 21.2, (
+        "what raising the bound by one widened"
+    )
 
 
 def test_a_four_character_payload_is_a_known_miss_the_raised_bound_bought() -> None:
@@ -2583,7 +2635,7 @@ def test_a_four_character_payload_is_a_known_miss_the_raised_bound_bought() -> N
     for case_id in ("inj-0051", "inj-0052", "inj-0053"):
         row = cases[case_id]
         assert row["expect"]["decision"] == "deny", "labelled with what should happen"
-        assert sum(1 for char in row["text"] if char in _ZERO_WIDTH) == 4
+        assert sum(1 for char in row["text"] if char in _ZERO_WIDTH) == _MIN_TOTAL - 1
         assert check(row["text"], IN).decision == "allow", "the miss, disclosed"
 
 
