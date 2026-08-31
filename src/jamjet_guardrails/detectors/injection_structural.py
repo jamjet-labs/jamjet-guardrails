@@ -76,6 +76,17 @@ _FLAG_BASE = 0x1F3F4
 # module: an exemption that APPROXIMATES a closed set with a shape test is
 # chainable, and chaining turns the exemption into precisely the channel it was
 # written to deny.
+#
+# MEMBERSHIP CAN BE SOFTENED IN TWO DIRECTIONS AND ONLY ONE WAS PINNED.
+# `any(code.startswith(known) ...)` accepts a code that EXTENDS a real one, and
+# `test_six_tag_letters_are_too_many_to_be_a_subdivision_code` catches it.
+# `any(known.startswith(code) ...)` accepts every PREFIX instead: twelve strings
+# rather than three, the empty one included. Measured, that second mutation
+# changed no test in the suite and no case in the corpus, so the allowlist could
+# have been widened fourfold in silence. Twelve values chosen per visible flag
+# base is not nothing, and bases chain, which is the seam above in a smaller
+# form. `test_a_tag_run_shorter_than_a_subdivision_code_is_not_exempt` is the
+# other direction now.
 _RGI_SUBDIVISION_CODES = frozenset({"gbeng", "gbsct", "gbwls"})
 
 
@@ -270,6 +281,18 @@ def _bidi_spans(content: str) -> list[tuple[int, int]]:
 # every residual the module records, which is false against the module's own
 # list -- `_invisible` publishes encoders at 0.1250, 0.1992, 0.2070, 0.2500,
 # 0.2695 and 0.6289, and the variation-selector row is 0.1250, not 1.4875.
+#
+# FOUR OF THE SEVENTEEN ROWS CONTRIBUTE NOTHING TO THE SET, and that is the
+# table doing its job rather than dead weight. U+00AD, U+061C, U+202A..U+202E
+# and U+FE00..U+FE0F are each removed again by one of the exclusions in
+# `_invisible`, so `_ZERO_WIDTH` is the same 3,773 characters with or without
+# them and the count below cannot see them go: deleting U+061C or
+# U+202A..U+202E changed no test and no corpus case. They are load-bearing the
+# moment an exclusion narrows, because whichever family stops being excluded has
+# to be IN the table to be counted, and an exclusion naming a family the table
+# does not hold excludes nothing at all.
+# `test_every_family_the_rule_excludes_is_in_the_table_it_excludes_them_from`
+# asserts each excluded family's presence here for that reason.
 _DEFAULT_IGNORABLE: tuple[tuple[int, int], ...] = (
     (0x00AD, 0x00AD),
     (0x034F, 0x034F),
@@ -459,6 +482,17 @@ _MONGOLIAN: tuple[tuple[int, int], ...] = ((0x1800, 0x18AF),)
 # scripts use them to force or suppress conjunct forms; Arabic and its
 # derivatives use ZWNJ to break cursive joining. Ranges rather than a library so
 # this stays stdlib-only.
+#
+# SIX OF THESE EIGHT ROWS HAD NOTHING STANDING ON THEM. Deleting one range at a
+# time and running the whole suite and the corpus: only Arabic and the
+# Devanagari-through-Sinhala block were reached by any input. Syriac, Thaana,
+# Thai, Myanmar and both Arabic Presentation Forms blocks could each be deleted
+# with no test and no case noticing, which is five sixths of the table's width
+# asserted and unmeasured. Each row now has a letter of its own script standing
+# beside a joiner in
+# `test_each_declared_joining_range_excuses_the_joiner_it_is_there_for`, with a
+# Latin control that denies, so widening the table is caught as well as
+# narrowing it.
 _JOINING_SCRIPTS: tuple[tuple[int, int], ...] = (
     (0x0600, 0x06FF),  # Arabic
     (0x0700, 0x074F),  # Syriac
@@ -469,7 +503,14 @@ _JOINING_SCRIPTS: tuple[tuple[int, int], ...] = (
     (0xFB50, 0xFDFF),  # Arabic Presentation Forms-A
     (0xFE70, 0xFEFF),  # Arabic Presentation Forms-B
 )
-# Emoji and the variation selector that precedes ZWJ in many sequences.
+# Emoji and the variation selector that precedes ZWJ in many sequences. The
+# first range is symbols rather than emoji proper, and until it was swept it was
+# the one row here nothing exercised: deleting U+2190..U+2BFF changed no test
+# and no corpus case. It is not spare. RGI sequences join to symbols out of that
+# block -- the transgender flag is U+1F3F3 U+FE0F ZWJ U+26A7 U+FE0F, where the
+# character after the joiner is in no other range this module names -- and four
+# of them in one message is the total bound.
+# `test_a_flag_sequence_joining_to_a_symbol_is_not_an_attack` is that input.
 _PICTOGRAPHIC: tuple[tuple[int, int], ...] = (
     (0x2190, 0x2BFF),
     (0xFE0E, 0xFE0F),
@@ -557,13 +598,35 @@ _DECIMAL_DIGIT = "Nd"
 # joiner is excused when the walk ends. Measured on that input, unbounded:
 # 5.51 s at 8k joiners, 22.00 s at 16k, 88.53 s at 32k -- four times the work for
 # twice the input. Bounded at four: 0.010 s, 0.018 s, 0.035 s, which is linear.
+# Seconds are one machine's and will not reproduce; the ratios are the claim and
+# do. Re-measured on both walks, each doubling of the input costs about four
+# times the work unbounded and about twice bounded.
 #
 # Four characters are EXAMINED, so at most three transparent ones are crossed.
-# Four is above what orthography needs: measured over the conjuncts in
-# tests/test_injection_structural.py, every base is one character back except
-# behind a nukta, where it is two. Padding past the bound loses the exemption
-# rather than gaining anything, which is the safe direction for a bound to fail
-# in.
+#
+# WHAT THE VALUE COSTS ON EACH SIDE. Over every input
+# tests/test_injection_structural.py checks, the deepest walk that finds a base
+# is THREE, and it is a `_mark_base` walk, in
+# `test_a_mark_on_a_devanagari_letter_under_an_arabic_fatha_still_allows`, where
+# the mark to the RIGHT of the joiner reaches its letter across the joiner and
+# one more mark. `_base_before` never goes past two. An earlier version of this
+# note said every base is one character back except behind a nukta, where it is
+# two: that is true of `_base_before` and false of the walk that reaches three,
+# and it was the whole evidence offered for a bound governing both.
+#
+# So four sat one above every measured need and nothing showed it. Cutting it to
+# three and raising it to five each left the whole suite green and every one of
+# the corpus's 146 cases where it was. Both sides are pinned now, one test per
+# walk, each carrying the case one character inside the bound and the case one
+# character past it:
+# `test_the_mark_walk_reaches_exactly_as_far_as_the_bound_says` and
+# `test_the_base_walk_reaches_exactly_as_far_as_the_bound_says`. Removing the
+# bound outright fails the second half of each.
+#
+# Padding past the bound loses the exemption rather than gaining anything, which
+# is the safe direction for a bound to fail in: a unit of slack is one more
+# transparent character an attacker may pad a mark cover with, and each padding
+# character is another character per bit.
 _MAX_TRANSPARENT = 4
 
 # A run of two, or four in total anywhere in the input. Both bounds are about
@@ -571,11 +634,18 @@ _MAX_TRANSPARENT = 4
 # time, out of a copy-paste from a rendered page; a payload does not, because one
 # bit per character means a payload is a sequence.
 #
-# Measured over the samples tests/test_injection_structural.py ALLOWS: the most
-# unexplained zero-width characters any of them carries is THREE, in
-# `test_three_unexplained_characters_are_below_the_total_bound`, which is the
-# one input in the file that pins this bound from underneath and is deliberately
-# one under it. Next is two, the WORD JOINERs at the thousands boundaries of
+# Measured over every input tests/test_injection_structural.py ALLOWS, by
+# recording what the detector was asked about across a whole run of the file:
+# the most unexplained zero-width characters any of them carries is THREE, and
+# three separate tests hold one, each deliberately one under the bound --
+# `test_three_unexplained_characters_are_below_the_total_bound`, the
+# three-invisible-operator case in
+# `test_mathematical_and_musical_markup_deny_and_that_is_deliberate`, and the
+# 2,502-character page in
+# `test_the_bound_passes_three_non_adjacent_characters_and_what_they_carry`. An
+# earlier version of this note named the first of the three as the only input
+# that pins the bound from underneath, and tightening `_MIN_TOTAL` to three
+# fails all three. Next is two, the WORD JOINERs at the thousands boundaries of
 # `1<WJ>000<WJ>000`. The longest run in any allowing sample is one.
 #
 # That is the allow-set and it is not the whole file. `_MIN_TOTAL` owns most of
@@ -585,8 +655,18 @@ _MAX_TRANSPARENT = 4
 # four hints; Persian and Urdu written with ASCII digits; a retrieved page
 # carrying four incidental U+200B; MathML and musical notation extracted to
 # plain text; and prose about Korean jamo or Khmer inherent vowels. Every one is
-# four occurrences reaching an absolute bound, and `corpora/NOTICE.md` lists
-# them by case id.
+# four occurrences reaching an absolute bound -- measured over the corpus, each
+# of those thirteen cases carries exactly four unexplained characters and none
+# carries five -- and `corpora/NOTICE.md` lists them by case id.
+#
+# BOTH BOUNDS ARE PINNED FROM BOTH SIDES, and the sweep says what each step
+# costs on the published corpus. `_MIN_RUN` 1 / 2 / 3 scores 0.626 / 0.679 /
+# 0.677 precision against 0.974 / 0.974 / 0.965 recall; `_MIN_TOTAL` 3 / 4 / 5
+# scores 0.655 / 0.679 / 0.971 against 0.974 / 0.974 / 0.870. The last of those
+# is the one worth naming rather than burying: five would publish a much higher
+# precision by ceasing to report the thirteen cases above, and it loses twelve
+# true positives to do it. The labels and the published row are settled, so it
+# is recorded here as a measurement and not acted on.
 _MIN_RUN = 2
 _MIN_TOTAL = 4
 
@@ -701,7 +781,14 @@ def _script(char: str) -> str:
 
 
 def _is_letter(char: str) -> bool:
-    """Whether `char` is a letter. The empty string, the edge of the input, is not."""
+    """Whether `char` is a letter. The empty string, the edge of the input, is not.
+
+    No caller passes "" today: both walks below read a character out of
+    `content` before asking. So the guard is a contract for the next caller
+    rather than a live path, and inverting it left the whole suite green where
+    the same inversion in `_in_ranges` and `_script` did not.
+    `test_the_edge_of_the_input_is_not_a_letter` holds all three.
+    """
     return bool(char) and unicodedata.category(char).startswith("L")
 
 
@@ -729,6 +816,19 @@ def _mark_base(content: str, index: int) -> str:
     letter somebody can see" here.
     `test_a_mark_on_a_letter_outside_the_joining_ranges_is_not_a_neighbour` holds it.
 
+    THAT IT HAS TO BE A LETTER AT ALL was, until it was swept, the widest
+    unmeasured condition in this function. Returning whatever the walk stops on
+    changed no test in the suite and no case in the corpus, because every
+    existing input reaches either a letter or nothing. What it opens is the
+    third case: 440 of the code points inside `_JOINING_SCRIPTS` are unassigned,
+    a walk stops on them and a font draws nothing, so a cover of unassigned code
+    point, fatha, joiner, fatha carried a 256-bit payload at 4.0039 characters
+    per bit with not one letter in the input. That is the same hole
+    `test_an_unwritten_code_point_in_a_joining_script_range_is_not_a_neighbour`
+    closed for the code point standing directly beside a joiner, one
+    construction later with a mark on top of it, and it is now
+    `test_a_mark_over_an_unwritten_code_point_is_not_an_excusing_neighbour`.
+
     The two definitions are incomparable, not nested, and the numbers are in
     `test_the_walk_to_a_base_crosses_non_starters_and_format_characters`: 1,126
     marks in Unicode 16.0.0 are `Mn` or `Me` with combining class 0, and this
@@ -743,7 +843,9 @@ def _mark_base(content: str, index: int) -> str:
     joiner carries a payload at 4.0039 characters per bit against the 3.0039 of
     a bare `<letter><virama><joiner>`, with the same one visible letter per bit,
     so an attacker who uses it pays more for nothing. Narrowing to `Mn`, `Me`
-    and `Cf` would change no verdict in that file either. The reason to leave it
+    and `Cf` would change no verdict in that file either, and that was run
+    rather than reasoned: the narrowed walk leaves the whole suite green and the
+    corpus at the same 146 cases. The reason to leave it
     wide is that a spacing vowel sign under a further mark is ordinary Indic --
     `<ka><vowel sign O><anusvara>` is `Lo Mc Mn`, and so is `<ka><vowel sign
     AA><candrabindu>` -- and this module has no list of which such clusters take
@@ -927,12 +1029,29 @@ def _is_contextually_legitimate(content: str, index: int) -> bool:
     share a first name word, so this cannot tell them apart.
 
     The script test is a VETO rather than one more way to pass, which is why this
-    branch returns instead of falling through. A virama is in the Devanagari
-    through Sinhala range itself, so a joiner behind one already satisfies half
-    of the both-neighbours rule below, and falling through would excuse
-    `<latin><virama><joiner><devanagari>` -- alternating bases, which is the same
-    channel at the SAME price, not a wider one: alternating, Latin-only and
-    Devanagari-only all measure 769 characters for 256 bits. Measured: it denies.
+    branch returns instead of falling through, and WHAT THE VETO IS DOING HAS
+    NARROWED since that was written. A virama is in the Devanagari through
+    Sinhala range itself, so a joiner behind one already satisfies half of the
+    both-neighbours rule below, and the input this note has always cited is
+    `<latin><virama><joiner><devanagari>` -- alternating bases, the same channel
+    at the SAME price, not a wider one: alternating, Latin-only and
+    Devanagari-only all measure 769 characters for 256 bits.
+
+    That input no longer reaches the question, and saying it did was a claim
+    about a rule that has since tightened. `_joining_neighbour` asks a mark to
+    reach a LETTER INSIDE the joining ranges, and a Latin letter is not one, so
+    with this branch turned into a fall-through the alternating cover still
+    denies -- measured, and that mutation left the whole suite green and every
+    corpus case where it was.
+
+    What the veto is still the only thing refusing is a base whose script
+    differs from its virama's while BOTH sit inside the ranges. A Bengali letter
+    under a Devanagari virama satisfies every condition the rule below asks --
+    the virama is a mark in range that reaches a letter in range, and the
+    character after the joiner is a letter in range -- so a fall-through excuses
+    that stream whole, at the 3.0039 characters per bit the table above records
+    for a matched base. `test_a_virama_over_a_letter_of_another_script_is_not_excused`
+    is that input, and it exists because nothing here held the veto.
 
     What is left is any base whose script matches its virama's, and separately
     any pair of neighbours the rule below excuses, which is letters, decimal
@@ -1019,6 +1138,19 @@ def _chains(indices: list[int], step: int) -> list[list[int]]:
     Both rules below are a chain at a different step, which is why this is one
     function and not two loops. Step 1 gives the maximal RUNS of adjacent
     characters; step 2 gives the joiners that are one base character apart.
+
+    EXACTLY, and no test can distinguish that from "at most", which is recorded
+    here rather than repaired because it is an equivalence and not a gap.
+    Indices arrive ascending and distinct, so at step 1 a difference of one is
+    the only difference that can satisfy either spelling. At step 2 the two
+    spellings differ only on ADJACENT excused joiners, and a joiner is excused
+    only when the character before it is a virama, a character
+    `_joining_neighbour` accepts over either range, or a pictographic; ZWJ, ZWNJ
+    and the Mongolian vowel separator are none of those, in any context, so the
+    second of two adjacent joiners is never excused and the difference never
+    arises. Loosening the comparison to `<=` leaves the
+    whole suite green and the corpus unmoved, and that is the argument above
+    rather than a missing test.
     """
     groups: list[list[int]] = []
     for index in indices:
@@ -1050,6 +1182,13 @@ def _zero_width_spans(content: str) -> list[tuple[int, int]]:
     Sorted, because the two rules produce spans that interleave. `_matches`
     re-sorts everything it collects, so nothing downstream depends on this one,
     but a caller reading spans out of one signal should not have to know that.
+    That made it invisible: removing this sort, and the matching one in
+    `_bidi_spans`, changed no test and no corpus case, because every caller goes
+    through `_matches`. Both are pinned at the level where the claim is made now,
+    by `test_each_signal_sorts_the_spans_it_returns_on_its_own`, which calls the
+    two helpers directly with the inputs that put their two sources out of
+    order: a stray pair AFTER a periodic chain here, and an isolate opened
+    before an embedding at a paragraph break there.
     """
     suspicious: list[int] = []
     exempt: list[int] = []
