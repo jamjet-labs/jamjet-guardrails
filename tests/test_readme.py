@@ -47,6 +47,7 @@ from jamjet_guardrails import (
     saw,
 )
 from jamjet_guardrails.detectors import AVAILABLE
+from jamjet_guardrails.detectors.injection_structural import INJECTION_TYPES
 from jamjet_guardrails.detectors.pii import PII_TYPES
 from jamjet_guardrails.detectors.secrets import SECRET_TYPES
 
@@ -62,7 +63,11 @@ DIST = "jamjet-guardrails"
 # The detector each check reports its findings under. Keyed by registry name so
 # that registering a new check makes the parametrised tests below demand an
 # entry here rather than quietly leaving the new row unchecked.
-TYPES: dict[str, frozenset[str]] = {"pii": PII_TYPES, "secrets": SECRET_TYPES}
+TYPES: dict[str, frozenset[str]] = {
+    "injection-structural": INJECTION_TYPES,
+    "pii": PII_TYPES,
+    "secrets": SECRET_TYPES,
+}
 
 BANNED = [
     "production-ready",
@@ -392,7 +397,12 @@ def test_the_no_network_claim_holds_over_every_module_that_ships() -> None:
 # The checks table: every column recomputed from the check it describes.
 # ==========================================================================
 
-_ROW = re.compile(r"^\|\s*`([a-z_]+)`\s*\|([^|]*)\|([^|]*)\|([^|]*)\|\s*$", re.MULTILINE)
+# The name class carries `-` as well as `_`. `injection-structural` is the first
+# registry key that is not a bare Python identifier, and the failure it caused is
+# the quiet kind: `[a-z_]+` did not reject that row, it matched nothing at all, so
+# the table test reported the check undocumented against a README that documented
+# it correctly. Widening the class is what keeps the parse and the eye agreeing.
+_ROW = re.compile(r"^\|\s*`([a-z_-]+)`\s*\|([^|]*)\|([^|]*)\|([^|]*)\|\s*$", re.MULTILINE)
 
 
 def _checks_table() -> dict[str, tuple[str, set[str], set[str]]]:
