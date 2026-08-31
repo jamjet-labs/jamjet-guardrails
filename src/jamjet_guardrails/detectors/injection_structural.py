@@ -416,9 +416,13 @@ def _invisible() -> frozenset[str]:
     Priced over the alphabet the bound actually governs, which is the counted
     set and not the excluded families -- an excluded character consumes no part
     of `_MIN_TOTAL` at all, so "four" is not a limit on those -- four counted
-    characters in `inj-0105`, a 2,502-character retrieved page that allows,
-    choose among C(2499, 4) pairwise-non-adjacent positions and 3,773 symbols
-    each: **88.1 bits carried by 4 added characters**. Priced over the 259
+    characters placed in a page the LENGTH of `inj-0105`, which is 2,502, choose
+    among C(2499, 4) pairwise-non-adjacent positions and 3,773 symbols each:
+    **88.1 bits carried by 4 added characters**. The length is the corpus case
+    and the four are not: `inj-0105` carries three, and `inj-0106` is the same
+    page carrying four at 2,503 characters. The test places four into
+    `inj-0105`'s text with its zero-width characters stripped, which is the model
+    this figure describes. Priced over the 259
     symbols `_MIN_TOTAL` does NOT count it comes to 72.6, which is an accounting
     of two different things and understates the leak of the bound it names.
 
@@ -700,11 +704,11 @@ _MAX_TRANSPARENT = 4
 # THE FULL SWEEP, precision / recall over the 146 published cases. Columns are
 # `_MIN_TOTAL`, rows `_MIN_RUN`; the shipped pair is (2, 5).
 #
-#         2            3            4            5*           6            8
-#   1  .626/.974    .626/.974    .626/.974    .626/.974    .626/.974    .626/.974
-#   2  .647/.974    .655/.974    .679/.974    .971/.870*   .971/.870    .969/.809
-#   3  .647/.974    .653/.965    .677/.965    .980/.861    .980/.861    .979/.800
-#   4  .647/.974    .653/.965    .677/.965    .980/.861    .980/.861    .979/.800
+#         2            3            4            5*           6            7            8
+#   1  .626/.974    .626/.974    .626/.974    .626/.974    .626/.974    .626/.974    .626/.974
+#   2  .647/.974    .655/.974    .679/.974    .971/.870*   .971/.870    .971/.870    .969/.809
+#   3  .647/.974    .653/.965    .677/.965    .980/.861    .980/.861    .980/.861    .979/.800
+#   4  .647/.974    .653/.965    .677/.965    .980/.861    .980/.861    .980/.861    .979/.800
 #
 # `_MIN_RUN` 1 makes `_MIN_TOTAL` irrelevant, since every single character is
 # then a reportable run. `_MIN_TOTAL` 5, 6 and 7 are identical and so are
@@ -1178,8 +1182,13 @@ def _is_contextually_legitimate(content: str, index: int) -> bool:
         #
         # WHICH BOUND REPORTS IT has changed, and the note used to name the
         # wrong one. Consecutive separators are ADJACENT, so `_MIN_RUN` reports
-        # them from two onwards; measured, `note` plus two, three, four or five
-        # U+180E all deny, and the total bound never reaches them. That makes
+        # them from two onwards, which is BEFORE the total bound reaches them at
+        # `_MIN_TOTAL`: measured, `note` plus two, three or four U+180E denies
+        # with the total at two, three and four and the run bound the only thing
+        # firing; at five the total reaches it as well, having been beaten to it.
+        # An earlier version of this sentence said the total bound never reaches
+        # them and then listed five as one of the values, which is false at the
+        # last value it named. That makes
         # `test_a_run_of_mongolian_vowel_separators_does_not_excuse_itself` a
         # run-bound test, which is why the raise to `_MIN_TOTAL = 5` left it
         # discriminating while the four-occurrence Mongolian negatives beside it

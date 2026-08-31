@@ -2202,12 +2202,19 @@ def test_a_run_of_mongolian_vowel_separators_does_not_excuse_itself() -> None:
 
     WHICH BOUND reports this is the run bound, not the total, and this docstring
     said the total until round 4. Consecutive separators are ADJACENT, so
-    `_MIN_RUN` reports them from two onwards and the total bound never reaches
-    the input at all -- measured, `note` plus two, three, four or five U+180E all
-    deny. That is why this test kept discriminating when `_MIN_TOTAL` was raised
-    while the four-occurrence Mongolian negatives beside it stopped. The same
-    sentence in `_is_contextually_legitimate` was corrected one round earlier and
-    this copy was missed, which is the module-and-test twin biting twice.
+    `_MIN_RUN` reports them from two onwards, which is BEFORE the total bound
+    reaches them at `_MIN_TOTAL`: measured, two, three and four separators deny
+    on the run bound alone, and at five the total reaches them as well, having
+    been beaten to it. That is why this test kept discriminating when
+    `_MIN_TOTAL` was raised while the four-occurrence Mongolian negatives beside
+    it stopped.
+
+    The sentence this replaced said the total bound "never reaches them" and then
+    listed five as one of its values, which is false at the last value it named.
+    It was copied here from `_is_contextually_legitimate` in round 4 to close a
+    twin, and it carried the error across with it -- the conclusion stayed true
+    of the fixture below, which uses four, so checking passed and only reading
+    catches it.
 
     `_joining_neighbour` over the block is what closes it, because that asks for
     a letter, a decimal digit, or a mark written on one, and a separator is none
@@ -2226,6 +2233,7 @@ def test_a_run_of_mongolian_vowel_separators_does_not_excuse_itself() -> None:
     separators = 4
     ends = 2
     assert separators > _MIN_RUN, "the shipped code reports this as a run"
+    assert separators < _MIN_TOTAL, "and reports it on the RUN bound, which is the claim"
     assert separators >= 3, "so a bare range test has an interior to excuse"
     assert ends < _MIN_TOTAL, "and the ends it leaves are under the total bound"
 
@@ -2251,8 +2259,18 @@ def test_the_vowel_separator_needs_both_neighbours_not_either(shape: str, which:
     What `or` opens is the per-occurrence shape this module closes everywhere
     else: one cover character per separator excuses every separator, so repeating
     the construct costs an attacker one visible Mongolian letter per bit and
-    nothing more. Both orderings are here because `or` is symmetric and a test
-    that only wrote the left one would leave half the mutation alive.
+    nothing more.
+
+    BOTH ORDERINGS, and the reason is a different mutation from the one in the
+    name. `or` is symmetric, so either parameter alone kills it -- measured, both
+    fail. What needs two is the ONE-SIDED DROP: deleting the left
+    `_joining_neighbour` call is caught only by the parameter whose Mongolian
+    letter is on the right, and deleting the right only by the left. Each drop
+    has exactly one killer, so removing either parameter leaves a real mutation
+    alive. An earlier version of this paragraph justified the pair by the
+    symmetry of `or`, which is the argument against it, and asserted a
+    mutation-survival result without running it -- inside a test written to close
+    a gap that an unrun mutation had left.
 
     `test_mongolian_orthography_is_not_an_attack` is the other side of this: real
     Mongolian puts a letter on both sides of the separator, so asking for both
