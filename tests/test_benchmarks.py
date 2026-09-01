@@ -23,9 +23,12 @@ Lakera and the README says why.
 
 from __future__ import annotations
 
+import ast
 import importlib.util
+import io
 import json
 import re
+import tokenize
 from collections.abc import Iterator
 from pathlib import Path
 from types import ModuleType
@@ -151,6 +154,51 @@ def test_benchmarks_is_not_an_importable_package() -> None:
     assert initialisers == [], f"benchmarks/ has become a package: {initialisers}"
 
 
+def _requirement_names(text: str) -> set[str]:
+    """The distribution names a requirements file asks for, lowercased.
+
+    The line is stripped BEFORE the comment check, because an indented `#` is
+    still a comment and requirements files are full of them; testing the raw
+    line turned one into a package named after its own prose. A trailing
+    comment is cut where pip cuts one, at the whitespace in front of the `#`,
+    so a URL fragment stays part of the requirement it belongs to. Blank and
+    whitespace-only lines leave nothing behind and are dropped.
+    """
+    names: set[str] = set()
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.startswith("#"):
+            continue
+        line = re.split(r"\s+#", line, maxsplit=1)[0].strip()
+        if not line:
+            continue
+        names.add(re.split(r"[<>=!~\[]", line, maxsplit=1)[0].strip().lower())
+    return names
+
+
+def test_a_requirements_comment_is_a_comment_wherever_it_sits() -> None:
+    """Indented comments, inline comments and empty lines are not dependencies.
+
+    An indented `#` used to be read as a package name, so the guard below would
+    have failed naming a package nobody had ever written, which sends a reader
+    looking for a leak that is not there. The other shapes are here for the
+    same reason: each is a line a requirements file is allowed to contain and
+    none of them names a dependency.
+    """
+    text = (
+        "# a comment in the first column\n"
+        "    # an indented comment\n"
+        "\t# a tab-indented comment\n"
+        "\n"
+        "   \n"
+        "numpy==2.5.2\n"
+        "onnxruntime==1.29.0  # the last version with a 3.10 wheel is older\n"
+        "tokenizers  # unpinned, so the comment is all there is to cut\n"
+        "  PyYAML==6.0.3  \n"
+    )
+    assert _requirement_names(text) == {"numpy", "onnxruntime", "pyyaml", "tokenizers"}
+
+
 def test_no_benchmark_dependency_is_a_dependency_of_the_distribution() -> None:
     """The claim `benchmarks/requirements.txt` makes about itself, checked.
 
@@ -162,12 +210,9 @@ def test_no_benchmark_dependency_is_a_dependency_of_the_distribution() -> None:
     """
     from importlib.metadata import requires
 
-    lines = (BENCHMARKS / "requirements.txt").read_text(encoding="utf-8").splitlines()
-    benchmark_deps = {
-        re.split(r"[<>=!~\[]", line, maxsplit=1)[0].strip().lower()
-        for line in lines
-        if line.strip() and not line.startswith("#")
-    }
+    benchmark_deps = _requirement_names(
+        (BENCHMARKS / "requirements.txt").read_text(encoding="utf-8")
+    )
     assert benchmark_deps, "requirements.txt names nothing; this guard would prove nothing"
     declared = requires("jamjet-guardrails") or []
     offenders = [
@@ -415,24 +460,58 @@ def test_the_adapter_imports_nothing_but_the_package() -> None:
     )
 
 
-def test_the_readme_code_block_is_the_adapter_that_was_measured() -> None:
-    """The block in the PINT example README is what a reader will paste and run.
+def _executable_lines(source: str) -> list[str]:
+    """`source` with its comments, docstrings and blank lines removed, in order.
 
-    Checked line by line against the module rather than as one string, because
-    the module carries comments and a docstring the notebook cell does not, and
-    the point is that no LINE of the published code differs from the measured
-    code.
+    The published block carries none of the three, so they are what has to come
+    off the module before the two can be compared as text. Comments come off by
+    token, so a trailing one does not take the code in front of it; docstrings
+    come off by AST node, so a string that is a docstring goes and a string that
+    is a value stays.
+    """
+    lines = source.splitlines()
+    for token in tokenize.generate_tokens(io.StringIO(source).readline):
+        if token.type == tokenize.COMMENT:
+            row, column = token.start
+            lines[row - 1] = lines[row - 1][:column]
+    holders = (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, holders) or not node.body:
+            continue
+        first = node.body[0]
+        if not isinstance(first, ast.Expr) or not isinstance(first.value, ast.Constant):
+            continue
+        if not isinstance(first.value.value, str):
+            continue
+        for row in range(first.lineno, (first.end_lineno or first.lineno) + 1):
+            lines[row - 1] = ""
+    return [line for line in lines if line.strip()]
+
+
+def test_the_readme_code_block_is_the_adapter_that_was_measured() -> None:
+    """The published block EQUALS the adapter stripped of comments and docstrings.
+
+    Line for line and in order, both directions: a line in the block that the
+    module does not have fails, and a line the module has gained that the block
+    does not carry fails too. The earlier version only checked the first of
+    those, so a README that had gone stale and was now missing a line shipped
+    green while claiming otherwise.
+
+    Compared against the stripped module rather than the file because the
+    module carries the reasoning a notebook cell does not, and blank lines
+    because the block's spacing is a rendering choice. Everything else has to
+    match, since that block IS the artifact a PINT reader copies and runs.
     """
     blocks = re.findall(r"```python\n(.*?)```", PINT_README.read_text(encoding="utf-8"), re.DOTALL)
     matching = [b for b in blocks if "def evaluate_jamjet_guardrails" in b]
     assert len(matching) == 1, f"expected one evaluation-function block, found {len(matching)}"
-    source = ADAPTER.read_text(encoding="utf-8")
-    missing = [
-        line
-        for line in matching[0].splitlines()
-        if line.strip() and line not in source.splitlines()
-    ]
-    assert missing == [], f"the README block has lines the adapter does not: {missing}"
+    published = [line for line in matching[0].splitlines() if line.strip()]
+    measured = _executable_lines(ADAPTER.read_text(encoding="utf-8"))
+    assert measured, "the adapter has no code in it; this guard would prove nothing"
+    assert published == measured, (
+        "benchmarks/pint/README.md's code block is no longer benchmarks/pint/"
+        f"jamjet_guardrails_pint.py: published {published}, measured {measured}"
+    )
 
 
 def _pins() -> dict[str, Any]:
