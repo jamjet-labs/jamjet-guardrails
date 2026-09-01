@@ -30,8 +30,13 @@ gap in it.
 What it is for is the input a semantic detector cannot read, because the
 tokenizer has already removed it. A payload written in tag characters survives
 copy-paste, most log viewers, and every model tokenizer that does not strip
-them; a DeBERTa-v3 tokenizer maps a run of them to one `[UNK]`, so the payload's
-content never reaches the model at all.
+them. Measured against `protectai/deberta-v3-base-prompt-injection` at revision
+`373b6af0`, that tokenizer maps a contiguous run of tag characters to a single
+`[UNK]` whatever its length, from 1 character to the 33 the corpus reaches, and
+overwriting the smuggled instruction with a different message of the same length
+gives byte-identical token ids in all 13 of the corpus's tag-character cases. The
+payload's content does not reach the model to be classified. The numbers, both
+directions, are in [`../RESULTS.md`](../RESULTS.md).
 
 Run it under a semantic detector, not instead of one.
 

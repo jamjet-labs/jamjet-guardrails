@@ -141,7 +141,9 @@ does, and only as far as models built on that tokenizer.
 
 Complementary layer, not competitor. On semantic injections the classifier wins
 and it is not close. On payloads carried in the encoding the constraint wins,
-and the reason is mechanical rather than a matter of accuracy: the tokenizer
-maps a run of tag characters to a single `[UNK]`, so the smuggled instruction's
-content never reaches the model to be classified. Numbers, both directions, in
-[`RESULTS.md`](RESULTS.md).
+and the reason is mechanical rather than a matter of accuracy: this tokenizer
+maps a contiguous run of tag characters to a single `[UNK]` whatever its length,
+so the smuggled instruction's content never reaches the model to be classified.
+Overwriting the message with a different one of the same length gives identical
+token ids in all 13 of the corpus's tag-character cases, and the classifier
+flagged none of them. Numbers, both directions, in [`RESULTS.md`](RESULTS.md).
