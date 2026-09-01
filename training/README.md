@@ -166,8 +166,12 @@ either:
 
   This stage is measured against two ProtectAI models,
   `deberta-v3-base-prompt-injection` and its successor
-  `deberta-v3-base-prompt-injection-v2`, so contamination is screened against
-  both. Scoring a detector on a corpus either model memorised publishes
+  `deberta-v3-base-prompt-injection-v2` -- in full,
+  `protectai/deberta-v3-base-prompt-injection` and
+  `protectai/deberta-v3-base-prompt-injection-v2`, and the full id is the form
+  a comparator has to be cited in, because that is the form a screen can
+  recognise without knowing what the model is called. Contamination is screened
+  against both. Scoring a detector on a corpus either model memorised publishes
   memorisation as recall, and a v1 number published beside ours is as published
   as a v2 one.
 

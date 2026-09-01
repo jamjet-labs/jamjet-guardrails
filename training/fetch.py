@@ -60,6 +60,35 @@ NO_DIGEST = "unavailable"
 #: pattern: two copies of a rule drift and both sides look right alone.
 HEX64 = re.compile(r"\A[0-9a-f]{64}\Z")
 
+#: What a source `name` may look like, and the only place this manifest's own
+#: pinning syntax is written down.
+#:
+#: A dataset identifier is a base id -- `<org>/<name>`, or a bare `name` -- followed
+#: by any number of suffixes introduced by `@` or `:`. Both spellings are
+#: already in use here: `corpora/NOTICE.md` records a source as
+#: `nvidia/Nemotron-PII@b70ffaf`, and ProtectAI's own licence summary spells a
+#: dataset `natolambert/xstest-v2-copy:1_full_compliance`. Every source in this
+#: tree is required to be pinned, so a suffixed name is the normal case rather
+#: than the exotic one.
+#:
+#: The contamination and attribution screens compare `base_id(name)`, which is
+#: this pattern's own `base` group. Writing the grammar down once is the point:
+#: a suffix syntax added here is a suffix the screens strip on the same edit,
+#: where a list of separators written out inside a screen would go on matching
+#: nothing and reporting a pass. A name outside this grammar is refused at
+#: load, so there is no third spelling that both loads and evades the screens.
+_ATOM = r"[A-Za-z0-9][A-Za-z0-9._-]*"
+_BASE = rf"(?P<base>{_ATOM}(?:/{_ATOM})?)"
+_PINS = rf"(?P<pins>(?:[@:]{_ATOM})*)"
+
+SOURCE_NAME = re.compile(rf"\A{_BASE}{_PINS}\Z")
+
+#: The same grammar, unanchored and requiring the `/`, for finding identifiers
+#: inside prose. Built from the same atoms as `SOURCE_NAME` rather than written
+#: out again, because the two drifting apart is how a screen comes to look at a
+#: different set of names from the one the manifest can hold.
+QUALIFIED_ID = re.compile(rf"{_ATOM}/{_ATOM}(?:[@:]{_ATOM})*")
+
 _REQUIRED = ("name", "url", "license", "sha256", "role")
 _OPTIONAL = ("note",)
 
@@ -139,7 +168,7 @@ class ManifestLoader(yaml.SafeLoader):
     def construct_mapping(self, node: yaml.nodes.MappingNode, deep: bool = False) -> dict[Any, Any]:
         """Duplicate keys, merge keys, and a comment eating a plain value.
 
-        Checked over the node's own key/value pairs before the base class
+        Checked over the node's own key and value pairs before the base class
         flattens anything, because flattening is what makes a merge key
         invisible and `dict` construction is what makes a duplicate key
         invisible. By the time either has run there is nothing left to see.
@@ -226,6 +255,37 @@ def load_sources(path: Path) -> list[Source]:
     if repeated:
         raise SourceError(f"{path} names {repeated} more than once")
     return sources
+
+
+def base_id(name: str) -> str:
+    """A source name with its pins and configs removed, folded for comparison.
+
+    What the screens compare, and the reason they compare anything but the
+    string itself: `hackaprompt/hackaprompt-dataset@abc1234` and
+    `hackaprompt/hackaprompt-dataset` are one corpus, and a screen that reads
+    them as two returns "not contaminated" for a corpus the reference model was
+    trained on. Case is folded because the Hugging Face hub resolves an id
+    without regard to it, so `VMware/open-instruct` and `vmware/open-instruct`
+    fetch the same rows.
+
+    Nothing else is folded. `_` and `-` are different characters in a hub id
+    and stay different here, because a normaliser that collides two real
+    corpora is the same defect pointing the other way.
+
+    Raises rather than passing the name through unchanged when it does not
+    match `SOURCE_NAME`. `load_sources` has already refused such a name, so the
+    only way to reach this is a `Source` built by hand; a screen that quietly
+    compared an unparseable name against a set of parsed ones would report no
+    match, which is the answer that means "safe".
+    """
+    match = SOURCE_NAME.match(name)
+    if match is None:
+        raise SourceError(
+            f"{name!r} is not a dataset identifier this manifest can read, so it cannot be "
+            "screened; expected `<org>/<name>` or `name`, optionally followed by `@revision` "
+            "or `:config`"
+        )
+    return match.group("base").casefold()
 
 
 def sha256_of(path: Path) -> str:
@@ -352,6 +412,14 @@ def _to_source(entry: object, path: Path, index: int) -> Source:
             )
         fields[str(key)] = text
 
+    name = fields["name"]
+    if SOURCE_NAME.match(name) is None:
+        raise SourceError(
+            f"{where}: name is {name!r}, which is not `<org>/<name>` or `name` optionally "
+            "followed by `@revision` or `:config`. The screens compare the base id, and a "
+            "name they cannot parse is a source they cannot screen"
+        )
+
     role = fields["role"]
     if role not in ROLES:
         raise SourceError(f"{where}: role is {role!r}, expected one of {list(ROLES)}")
@@ -376,7 +444,7 @@ def _to_source(entry: object, path: Path, index: int) -> Source:
             )
 
     return Source(
-        name=fields["name"],
+        name=name,
         url=fields["url"],
         license=fields["license"],
         sha256=sha256,

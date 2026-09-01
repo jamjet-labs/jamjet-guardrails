@@ -1,11 +1,11 @@
 """The licence and contamination screens over `training/sources.yaml`.
 
 Run in CI over committed data. `training/fetch.py` reads the manifest with
-`yaml.safe_load`, and PyYAML is in the `dev` extra beside pytest, ruff and
-mypy, so `pip install -e ".[dev]"` -- which is what every CI leg runs -- brings
-it in and these screens run everywhere. The package itself still declares
-`dependencies = []`; `tests/test_packaging.py` reads the built metadata and
-holds that.
+PyYAML, through its `ManifestLoader`, and PyYAML is in the `dev` extra beside
+pytest, ruff and mypy, so `pip install -e ".[dev]"` -- which is what every CI
+leg runs -- brings it in and these screens run everywhere. The package itself
+still declares `dependencies = []`; `tests/test_packaging.py` reads the built
+metadata and holds that.
 
 What the screens can and cannot see is stated at `NAMED_TRAINING_DATA`
 below, and it matters more than any assertion here: the contamination denylist
@@ -29,10 +29,12 @@ from training.fetch import (
     DATA,
     HEX64,
     NO_DIGEST,
+    QUALIFIED_ID,
     ROLES,
     ManifestLoader,
     Source,
     SourceError,
+    base_id,
     fetch,
     load_sources,
     sha256_of,
@@ -55,10 +57,23 @@ TRAINING_FILES = tuple(
     )
 )
 
-#: How a ProtectAI prompt-injection model is spelled in prose. The optional
-#: version suffix is part of the match, and `re` prefers the longer
-#: alternative, so `-v2` is never read as the unversioned v1 name.
+#: How a ProtectAI prompt-injection model is spelled in prose when its org
+#: prefix is left off. The optional version suffix is part of the match, and
+#: `re` prefers the longer alternative, so `-v2` is never read as the
+#: unversioned v1 name.
+#:
+#: This pattern is family-scoped and cannot be the whole screen: a comparator
+#: from another family matches nothing here, and two of them were added to the
+#: README in review without a single test noticing.
+#: `test_every_external_identifier_in_this_tree_is_accounted_for` is the screen
+#: that does not depend on what a model is called; this one only adds the
+#: org-less spelling of the two models already registered.
 MODEL_REFERENCE = re.compile(r"deberta-v3-base-prompt-injection(?:-v\d+)?")
+
+#: Identifiers named under `training/` that are neither a reference model nor a
+#: dataset this repository records anywhere. Empty, and an entry is a decision
+#: someone wrote down with a reason rather than a name a screen skipped.
+UNSCREENED_IDS: dict[str, str] = {}
 
 
 @dataclass(frozen=True)
@@ -203,8 +218,43 @@ ATTRIBUTION_REQUIRED = {
 }
 
 
+#: The denylist as the screens actually compare it: base ids, pins stripped,
+#: case folded. Derived from `NAMED_TRAINING_DATA` through the manifest's own
+#: name grammar, never written out.
+DENYLIST_BASES = frozenset(base_id(name) for name in NAMED_TRAINING_DATA)
+
+#: The same, for the attribution map.
+ATTRIBUTION_BASES = frozenset(base_id(name) for name in ATTRIBUTION_REQUIRED)
+
+
+def _base_ids_in(text: str) -> frozenset[str]:
+    """Every `org/name` identifier a piece of prose names, as base ids.
+
+    URLs are removed first. A pinned Hugging Face download URL contains the
+    dataset id as path segments, and a screen that read those would call a
+    corpus attributed because a link to it appears somewhere on the page.
+
+    Matched with `QUALIFIED_ID`, which is built from the same atoms as
+    `SOURCE_NAME`, and compared as a set of base ids. `name in text` would have
+    been shorter and would have said yes to `vmware/open-instruct` because the
+    text mentioned `vmware/open-instruct-2`, which is the defect this whole
+    round is about.
+    """
+    without_urls = re.sub(r"https?://\S+", " ", text)
+    return frozenset(base_id(match.group(0)) for match in QUALIFIED_ID.finditer(without_urls))
+
+
 def _contaminated(sources: Iterable[Source]) -> list[str]:
-    """Evaluation sources the reference model is named as trained on. The rule.
+    """Evaluation sources a reference model is named as trained on. The rule.
+
+    Compared on `base_id`, not on the recorded string. Every source in this
+    tree is required to be pinned, and this repository's idiom for a pinned
+    dataset is `name@revision` -- `corpora/NOTICE.md` records
+    `nvidia/Nemotron-PII@b70ffaf` -- so the spelling a real manifest entry
+    carries is exactly the spelling an exact-match screen returns "clean" for.
+    ProtectAI's own licence summary writes one of these datasets
+    `natolambert/xstest-v2-copy:1_full_compliance`, so copying a name off the
+    card was enough to walk past this rule before it normalised.
 
     Factored out of the test that applies it to the shipped manifest so the
     same rule can be pointed at a manifest that breaks it. Today's manifest
@@ -214,23 +264,28 @@ def _contaminated(sources: Iterable[Source]) -> list[str]:
     return sorted(
         source.name
         for source in sources
-        if source.role == "eval" and source.name in NAMED_TRAINING_DATA
+        if source.role == "eval" and base_id(source.name) in DENYLIST_BASES
     )
 
 
 def _unattributed(sources: Iterable[Source], notice: str) -> list[str]:
     """Sources in use under an attribution licence that the NOTICE does not name.
 
-    Same shape as `_contaminated`, and for the same reason: the manifest
-    records no such source today, so the rule has to be exercised against one
-    that does or it is an empty loop wearing a test's name.
+    Same shape as `_contaminated`, same normalisation, and for the same reason:
+    `VMware/open-instruct@1234abc` is `VMware/open-instruct` under a licence
+    whose attribution term is a condition of use, and a screen that read the
+    two as different corpora would let a CC-BY corpus in unattributed.
+
+    The NOTICE is matched by identifier too, not by substring, for the reason
+    `_base_ids_in` records.
     """
+    attributed = _base_ids_in(notice)
     return sorted(
         source.name
         for source in sources
-        if source.name in ATTRIBUTION_REQUIRED
+        if base_id(source.name) in ATTRIBUTION_BASES
         and source.role != "excluded"
-        and source.name not in notice
+        and base_id(source.name) not in attributed
     )
 
 
@@ -287,7 +342,27 @@ def test_no_evaluation_source_is_one_protectai_names_as_training_data() -> None:
     assert _contaminated(load_sources(SOURCES)) == []
 
 
-@pytest.mark.parametrize("name", ["hackaprompt/hackaprompt-dataset", "OpenSafetyLab/Salad-Data"])
+@pytest.mark.parametrize(
+    "name",
+    [
+        # Bare, one from each reference model's card.
+        "hackaprompt/hackaprompt-dataset",
+        "OpenSafetyLab/Salad-Data",
+        # Pinned, which is the spelling a real entry carries: every source in
+        # this tree must be pinned, and `name@revision` is this repository's own
+        # idiom for that (`corpora/NOTICE.md` records
+        # `nvidia/Nemotron-PII@b70ffaf`). Before the screen normalised, all four
+        # of these returned "not contaminated".
+        "hackaprompt/hackaprompt-dataset@abc1234",
+        "Lakera/gandalf_ignore_instructions@deadbee",
+        # The config spelling, which is how ProtectAI's own licence summary
+        # writes this dataset. Copying the name off the card was enough.
+        "natolambert/xstest-v2-copy:1_full_compliance",
+        "hackaprompt/hackaprompt-dataset:default",
+        # Case, which the Hugging Face hub does not distinguish.
+        "HACKAPROMPT/Hackaprompt-Dataset@abc1234",
+    ],
+)
 def test_the_contamination_rule_catches_a_manifest_that_breaks_it(
     tmp_path: Path, name: str
 ) -> None:
@@ -361,6 +436,77 @@ def test_no_dataset_is_named_by_more_than_one_reference_model() -> None:
     )
 
 
+def test_every_external_identifier_in_this_tree_is_accounted_for() -> None:
+    """The screen that does not depend on what a model happens to be called.
+
+    The registry scan below matches one model family by name, so naming
+    `meta-llama/Llama-Prompt-Guard-2-86M` as a further comparator left the
+    whole module green: two models declared as scored, their training data
+    screened by nothing, and no test with anything to say. A pattern is only as
+    wide as the names somebody thought of.
+
+    So this reads every `org/name` identifier in the tree and requires each one
+    to be something this repository already accounts for: a registered
+    reference model, a source in the manifest, a dataset on the denylist or in
+    the attribution map, a corpus recorded in `corpora/NOTICE.md`, or an entry
+    in `UNSCREENED_IDS` with a reason. Anything else fails, whatever it is
+    called.
+
+    Repository paths are told apart from identifiers by asking the filesystem
+    rather than by a list of prefixes: `src/jamjet_guardrails` is the same shape
+    as an org/model id, and what distinguishes it is that it exists. URLs go
+    first, because a pinned download URL carries a dataset id as path segments.
+
+    What this cannot see, stated rather than left to be discovered: a
+    comparator written with no org prefix and outside the deberta family. That
+    is why the test below requires every registered model's full `model_id` to
+    appear in the README -- citing the full id is the convention this makes
+    checkable.
+    """
+    prefixes = frozenset(entry.name.lstrip(".") for entry in ROOT.iterdir())
+    accounted = set(DENYLIST_BASES) | set(ATTRIBUTION_BASES)
+    accounted |= {base_id(model.model_id) for model in REFERENCE_MODELS}
+    accounted |= {base_id(source.name) for source in load_sources(SOURCES)}
+    accounted |= _base_ids_in(NOTICE.read_text(encoding="utf-8"))
+    accounted |= {base_id(name) for name in UNSCREENED_IDS}
+
+    unaccounted: dict[str, str] = {}
+    examined: set[str] = set()
+    for path in TRAINING_FILES:
+        text = re.sub(r"https?://\S+", " ", path.read_text(encoding="utf-8"))
+        for match in QUALIFIED_ID.finditer(text):
+            token = match.group(0)
+            before = text[match.start() - 1] if match.start() else " "
+            if before in "./!":
+                # The tail of a longer path (`./.venv-training/bin/python`) or
+                # of a YAML tag (`!!python/object/apply`). An identifier is
+                # cited after whitespace or a backtick, never mid-path.
+                continue
+            if (ROOT / token).exists() or token.split("/")[0] in prefixes:
+                # A path in this repository, including one not created yet:
+                # `training/artifacts/` is made by the task that exports a
+                # model. The repository's own top-level names are read from the
+                # filesystem rather than listed, so adding a directory does not
+                # mean editing this test.
+                continue
+            examined.add(base_id(token))
+            if base_id(token) not in accounted:
+                unaccounted[token] = path.name
+    # Not vacuous. Every rule above is a `continue`, and a discriminator that
+    # skipped everything would leave `unaccounted` empty and this test green
+    # over a tree it never looked at. The two models the stage is measured
+    # against are cited by full id in the README, so they have to come out of
+    # the scan.
+    for model in REFERENCE_MODELS:
+        assert base_id(model.model_id) in examined, (
+            f"the scan did not reach {model.model_id}, so it is not reading the tree"
+        )
+    assert unaccounted == {}, (
+        "these identifiers are named under training/ and accounted for by nothing: a "
+        f"comparator whose training data nothing screens, or a name to record: {unaccounted}"
+    )
+
+
 def test_every_reference_model_named_in_this_tree_has_its_datasets_registered() -> None:
     """The gap N-1 found, closed by construction rather than by remembering.
 
@@ -390,6 +536,16 @@ def test_every_reference_model_named_in_this_tree_has_its_datasets_registered() 
         "these models are registered but named nowhere under training/, so the tree does "
         "not document what it is measured against: " + str(sorted(registered - found))
     )
+    # And the full `org/model` id, which is the form the identifier scan above
+    # can see without knowing what family a model belongs to. Citing a
+    # comparator by its bare name is what let two of them into the README with
+    # nothing to say about it.
+    cited = _base_ids_in(TRAINING_README.read_text(encoding="utf-8"))
+    for model in REFERENCE_MODELS:
+        assert base_id(model.model_id) in cited, (
+            f"{model.model_id} is registered but the README never cites its full id, so "
+            "the convention that makes the identifier scan work is not being followed"
+        )
 
 
 def test_the_readme_states_the_same_partiality_the_denylist_records() -> None:
@@ -452,19 +608,93 @@ def test_a_source_under_an_attribution_licence_is_named_in_the_notice() -> None:
     assert _unattributed(load_sources(SOURCES), NOTICE.read_text(encoding="utf-8")) == []
 
 
-def test_the_attribution_rule_catches_a_manifest_that_breaks_it(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "name",
+    [
+        "VMware/open-instruct",
+        # The pinned and config spellings, which are what a real entry carries
+        # and what ProtectAI's licence summary writes. Both returned "attributed"
+        # before the screen normalised, so a CC-BY corpus could enter with no
+        # NOTICE entry at all.
+        "VMware/open-instruct@1234abc",
+        "natolambert/xstest-v2-copy:1_full_compliance",
+        "vmware/open-instruct",
+    ],
+)
+def test_the_attribution_rule_catches_a_manifest_that_breaks_it(tmp_path: Path, name: str) -> None:
     """The same rule against a manifest that uses one without attributing it."""
     used = _manifest(
         tmp_path,
-        "- name: VMware/open-instruct\n"
+        f"- name: {name}\n"
         '  url: "https://example.invalid/corpus.csv"\n'
         '  license: "CC-BY-3.0"\n'
         f'  sha256: "{"a" * 64}"\n'
         "  role: train\n",
     )
-    assert _unattributed(load_sources(used), "a NOTICE that names nothing") == [
-        "VMware/open-instruct"
+    assert _unattributed(load_sources(used), "a NOTICE that names nothing") == [name]
+
+
+def test_the_attribution_rule_reads_the_notice_by_identifier_not_by_substring(
+    tmp_path: Path,
+) -> None:
+    """The dual, and the trap inside it.
+
+    A NOTICE that names the corpus, in any spelling, satisfies the rule; a
+    NOTICE that merely contains the name as part of a longer identifier does
+    not. `name in notice` said yes to the second, which is how a corpus gets
+    counted as attributed by a NOTICE that attributes a different one.
+    """
+    used = _manifest(
+        tmp_path,
+        "- name: VMware/open-instruct@1234abc\n"
+        '  url: "https://example.invalid/corpus.csv"\n'
+        '  license: "CC-BY-3.0"\n'
+        f'  sha256: "{"a" * 64}"\n'
+        "  role: train\n",
+    )
+    sources = load_sources(used)
+    assert _unattributed(sources, "derived from `VMware/open-instruct`, CC-BY-3.0") == []
+    assert _unattributed(sources, "derived from `VMware/open-instruct-2`, CC-BY-3.0") == [
+        "VMware/open-instruct@1234abc"
     ]
+
+
+def test_a_url_in_the_notice_does_not_attribute_a_corpus() -> None:
+    """URLs are stripped before the NOTICE is read for identifiers.
+
+    A pinned Hugging Face download URL carries the dataset id as path segments,
+    so a NOTICE that merely links to a corpus would otherwise read as one that
+    credits it. Attribution is a licence term; a hyperlink is not it.
+    """
+    linked = "see https://huggingface.co/datasets/VMware/open-instruct/resolve/main/x.csv"
+    assert base_id("VMware/open-instruct") not in _base_ids_in(linked)
+
+
+def test_two_distinct_dataset_ids_do_not_normalise_together() -> None:
+    """The opposite error, which a normaliser is the natural way to introduce.
+
+    Stripping too much collides two real corpora, and a collision here reads as
+    "contaminated" for a corpus nobody was trained on, or as "attributed" for
+    one nobody credited. Checked over the whole denylist rather than a sample:
+    19 names have to stay 19 base ids.
+
+    The explicit pairs are the ones a looser normaliser would join. `_` and `-`
+    are different characters in a hub id, and a suffix is only a suffix after
+    `@` or `:`.
+    """
+    assert len(DENYLIST_BASES) == len(NAMED_TRAINING_DATA), (
+        "two denylisted datasets normalise to the same base id, so the screen can no "
+        "longer tell them apart"
+    )
+    distinct = [
+        ("HuggingFaceH4/no_robots", "HuggingFaceH4/no-robots"),
+        ("Dahoas/hh_prompt_format", "Dahoas/synthetic-hh-rlhf-prompts"),
+        ("natolambert/xstest-v2-copy", "natolambert/xstest-v2-copy-extra"),
+        ("hackaprompt/hackaprompt-dataset", "hackaprompt/hackaprompt-dataset-v2"),
+        ("a/b", "a/b-c"),
+    ]
+    for left, right in distinct:
+        assert base_id(left) != base_id(right), f"{left} and {right} normalise together"
 
 
 def test_the_loader_refuses_an_unpinned_source_that_gets_measured_on(tmp_path: Path) -> None:
@@ -639,6 +869,30 @@ def test_the_loader_refuses_an_unknown_field(tmp_path: Path) -> None:
     )
     with pytest.raises(SourceError, match=r"unknown keys \['screened'\]"):
         load_sources(extra)
+
+
+@pytest.mark.parametrize(
+    "name", ["someone corpus", "someone//corpus", "/someone/corpus", "someone/corpus@"]
+)
+def test_the_loader_refuses_a_name_the_screens_cannot_read(tmp_path: Path, name: str) -> None:
+    """A name outside the grammar is a source nothing can screen.
+
+    The contamination and attribution rules compare `base_id`, which is the
+    grammar's own base group. A name it cannot parse has no base id, so a
+    screen would have to either guess or skip it, and skipping is the answer
+    that reads as "clean". Refused at load instead, which leaves no third
+    spelling that both loads and evades.
+    """
+    unreadable = _manifest(
+        tmp_path,
+        f'- name: "{name}"\n'
+        '  url: "https://example.invalid/corpus.csv"\n'
+        "  license: Apache-2.0\n"
+        f'  sha256: "{"a" * 64}"\n'
+        "  role: train\n",
+    )
+    with pytest.raises(SourceError, match="which is not"):
+        load_sources(unreadable)
 
 
 def test_the_loader_refuses_a_duplicate_key_inside_one_source(tmp_path: Path) -> None:
