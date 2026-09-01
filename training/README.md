@@ -410,6 +410,13 @@ exactly distinct across all of its rows and still held eleven near-duplicate
 pairs differing by a comma or a dropped final word, which leaks between the
 halves of whatever split comes next.
 
+Two per-kind floors are stated the same way and cross-checked the same way. A
+kind quality floor 0.55 of `delimiter_confusion` rows must carry a subversive
+verb, against the 0.123 that did before the pairing; and a quoting floor 0.90
+of the two quoting kinds must actually quote a span, against the 0.912 and
+1.000 measured. A floor that is written down once can be lowered without any
+test objecting, which is the same hole the ceilings had.
+
 Function words sit higher than style and that is expected rather than
 tolerated. A closed-class model is the standard authorship probe because
 function words carry register and almost no topic; for THIS pair of classes

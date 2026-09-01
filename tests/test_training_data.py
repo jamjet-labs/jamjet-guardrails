@@ -231,7 +231,6 @@ KIND_QUALITY_FLOOR = 0.55
 #: 8.8% of `security_report_with_payload` quoted nothing at all; it is now 1.000,
 #: and `documentation_quoting_an_attack` is 0.921.
 QUOTING_FLOOR = 0.90
-KIND_QUALITY_FLOOR = 0.55
 
 #: Words that make text LOOK like an instruction to a model. Not a detector, and
 #: not trying to be: a lexical proxy, used by one test to ask whether the two
@@ -2695,6 +2694,15 @@ def test_the_readme_states_the_separability_it_was_measured_at() -> None:
     # The two thresholds that are not ceilings on a score but parameters of how
     # a score is taken. Left out, `OPENER_PURITY` could be moved to 1.01 and
     # `NEAR_DUPLICATE` to 1.0, and both screens would pass over everything.
+    # The two quality floors are cross-checked the same way, and for the same
+    # reason as the ceilings: LOWERING a floor cannot fail the test the floor
+    # gates, because the measured value still clears it. Only a second statement
+    # of the number can object.
+    for label, floor in (("kind quality", KIND_QUALITY_FLOOR), ("quoting", QUOTING_FLOOR)):
+        assert f"{label} floor {floor:.2f}" in readme, (
+            f"training/README.md does not state the {label} floor {floor:.2f}, so it can be "
+            "lowered in this file with nothing to disagree"
+        )
     for label, threshold in (("opener purity", OPENER_PURITY), ("near-duplicate", NEAR_DUPLICATE)):
         assert f"{label} threshold {threshold:.2f}" in readme, (
             f"training/README.md does not state the {label} threshold {threshold:.2f}"
