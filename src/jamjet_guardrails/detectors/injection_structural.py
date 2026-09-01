@@ -294,8 +294,8 @@ def _bidi_spans(content: str) -> list[tuple[int, int]]:
 # FOUR OF THE SEVENTEEN ROWS CONTRIBUTE NOTHING TO THE SET, and that is the
 # table doing its job rather than dead weight. U+00AD, U+061C, U+202A..U+202E
 # and U+FE00..U+FE0F are each removed again by one of the exclusions in
-# `_invisible`, so `_ZERO_WIDTH` is the same 3,773 characters with or without
-# them and the count below cannot see them go: measured against the file before
+# `_invisible`, so `_ZERO_WIDTH` is the same set with or without them -- 3,773
+# characters on Unicode 16.0.0 -- and the count below cannot see them go: measured against the file before
 # the test named at the end of this note existed, deleting U+061C or
 # U+202A..U+202E changed no test and no corpus case. They are load-bearing the
 # moment an exclusion narrows, because whichever family stops being excluded has
@@ -369,13 +369,28 @@ def _invisible() -> frozenset[str]:
         the glyph of the character before it, so it is orthography wherever that
         character is: U+FE0F is in every emoji sequence, the 240 ideographic
         ones are in Japanese personal names, and the four Mongolian ones are
-        written word-finally in ordinary Mongolian.
+        written word-finally in ordinary Mongolian. Four is the Unicode 14.0.0
+        count; on 13.0.0 only three of them have a name for this test to match,
+        which is what the note below is about.
       - U+00AD and the tag block, for the reasons beside them.
 
-    What is left is 3,773 code points: 3,738 unassigned, which no text can
-    contain by accident; the four Hangul fillers, which are `Lo`; the two Khmer
-    inherent vowels and U+034F COMBINING GRAPHEME JOINER, which are `Mn`; and 28
-    `Cf`.
+    WHAT IS LEFT IS A FACT ABOUT THE INTERPRETER, NOT ABOUT THIS MODULE, because
+    every input to the rule comes from `unicodedata`. Measured on the five
+    interpreters the CI matrix runs: **3,773 code points on Unicode 14.0.0,
+    15.0.0, 15.1.0 and 16.0.0 -- 3,738 unassigned, which no text can contain by
+    accident; the four Hangul fillers, which are `Lo`; the two Khmer inherent
+    vowels and U+034F COMBINING GRAPHEME JOINER, which are `Mn`; and 28 `Cf`.**
+    On Unicode 13.0.0, which Python 3.10 ships, it is 3,774 and 3,739: U+180F
+    MONGOLIAN FREE VARIATION SELECTOR FOUR was unassigned then, so the
+    name-based selector exclusion had no name to match and the code point fell
+    through into the unassigned bucket. That one code point is the whole
+    difference between the two sets, it is a real difference in what this
+    detector denies, and `corpora/NOTICE.md` discloses it beside the other
+    residuals. Only the unassigned bucket moves; 28, 4 and 3 hold on all five.
+    `test_the_one_member_that_moves_between_unicode_versions` is that
+    measurement and `test_every_invisible_character_is_default_ignorable_and_nothing_else_is`
+    keys the counts by `unicodedata.unidata_version` rather than publishing one
+    of them as universal.
 
     THE PROPERTY THIS RULE HAS AND ITS PREDECESSOR DID NOT. The rule here was
     "`Cf` and bidi class BN", which admitted 29 characters and left every other
@@ -428,7 +443,9 @@ def _invisible() -> frozenset[str]:
     `inj-0105`'s text with its own zero-width characters stripped, 2,499
     characters, and ADD four counted ones: a 2,503-character page, which is
     `inj-0106`'s length, in which the four choose among C(2500, 4)
-    pairwise-non-adjacent positions and 3,773 symbols each:
+    pairwise-non-adjacent positions and 3,773 symbols each (Unicode 16.0.0;
+    3,774 on 13.0.0, which moves this to 88.0899 from 88.0884 and rounds to the
+    same figure):
     **88.1 bits carried by 4 added characters**. The page the four are added to
     is the corpus case and the four are not: `inj-0105` carries three of its own
     at 2,502 characters, and `inj-0106` is the same page carrying four at 2,503.

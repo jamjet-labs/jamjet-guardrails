@@ -290,8 +290,11 @@ found, so the secrets numbers are measured on our own corpus only and are
 self-graded. That is stated rather than left for a reader to notice from a
 missing row.
 
-**The structural-injection check counts 3,773 invisible characters, and the
-rule that picks them is derived rather than chosen.** It counted five, listed by
+**The structural-injection check counts 3,773 invisible characters on Unicode
+16.0.0, and the rule that picks them is derived rather than chosen.** The count
+is a fact about the interpreter's Unicode data and not a constant of this
+package; the exact figures per version, and the one behavioural difference they
+cause, are at the end of this section. It counted five, listed by
 hand, and then 29 under a rule about format characters. Both were too narrow,
 and the second was too narrow for a reason worth recording: it excluded the
 Hangul fillers because they are "handled where letters are, by
@@ -311,15 +314,46 @@ points:
 | Excluded | Why |
 |---|---|
 | directional format characters | ordinary right-to-left text is written with U+200E, U+200F and U+061C, and `_bidi_spans` owns U+202A..U+202E and U+2066..U+2069, where a balanced pair is deliberately allowed |
-| every VARIATION SELECTOR, all 260 | a variation selector modifies the glyph of the character before it, so it is orthography wherever that character is: U+FE0F is in every emoji sequence, the 240 ideographic ones are in Japanese personal names, and the four Mongolian ones are written word-finally |
+| every VARIATION SELECTOR, all 260 on Unicode 14.0.0 and later (259 on 13.0.0) | a variation selector modifies the glyph of the character before it, so it is orthography wherever that character is: U+FE0F is in every emoji sequence, the 240 ideographic ones are in Japanese personal names, and the four Mongolian ones are written word-finally. The test is the character's NAME, so it matches only the selectors the interpreter's Unicode version has named |
 | `U+00AD` SOFT HYPHEN | the one member that RENDERS, as a hyphen wherever the line breaks, and it is in every hyphenated ebook |
 | the tag block | `INVISIBLE_TAG_CHARS` owns it; counting it twice would make every subdivision flag carry six of these as well |
 
 Two of the three family tests are read off `unicodedata` -- the bidi class and
 the character's name -- so they cannot drift from the Unicode data the
-interpreter ships. What is left is 3,773 code points: 3,738 unassigned, the four
-Hangul fillers, the two Khmer inherent vowels and U+034F, and 28 format
-characters.
+interpreter ships. The other side of that is that the RESULT moves with the
+interpreter. Measured on the five the CI matrix runs:
+
+| Python | Unicode | members | unassigned | `Cf` | `Lo` | `Mn` |
+|---|---|---:|---:|---:|---:|---:|
+| 3.10 | 13.0.0 | 3,774 | 3,739 | 28 | 4 | 3 |
+| 3.11 | 14.0.0 | 3,773 | 3,738 | 28 | 4 | 3 |
+| 3.12 | 15.0.0 | 3,773 | 3,738 | 28 | 4 | 3 |
+| 3.13 | 15.1.0 | 3,773 | 3,738 | 28 | 4 | 3 |
+| 3.14 | 16.0.0 | 3,773 | 3,738 | 28 | 4 | 3 |
+
+**One code point is the whole difference, and it changes what this detector
+denies.** U+180F MONGOLIAN FREE VARIATION SELECTOR FOUR was UNASSIGNED in
+Unicode 13.0.0. The selector exclusion asks for the words VARIATION SELECTOR in
+the character's NAME, and an unassigned code point has no name, so on 13.0.0 it
+is not excluded and is counted as an invisible character; from 14.0.0 it is
+named and dropped like the other three. Diffing the two sets code point by code
+point, the symmetric difference is exactly `U+180F` and nothing else.
+
+So **Mongolian text using free variation selector four scores differently by
+Python version**: measured, five Mongolian words each carrying one of them DENY
+on Python 3.10 and ALLOW on 3.11 and later. Four allow on both, since four is
+under the total bound wherever the character is counted. This is narrow -- one
+code point, one script, and only at or above the total bound -- and it is
+disclosed here rather than smoothed over, because a caller scoring the same
+document on two interpreters can get two answers. Whoever needs one answer
+should pin the interpreter, which is the only fix that does not mean freezing a
+Unicode table into the package.
+
+It does NOT reach the published scores. No case in any corpus here contains
+U+180F, so `benchmarks.json` and `BENCHMARKS.md` regenerate byte-identically on
+Python 3.10 and on 3.14, and the precision and recall in this repository are the
+same number on every leg. That is checked rather than assumed, because CI
+regenerates both artifacts on all five legs and diffs them.
 
 **What this does NOT close, and why no minimum is published for it.** This
 project has published four different numbers for the cost of getting a payload
@@ -365,8 +399,9 @@ Priced over the alphabet that bound actually governs, which is the **counted**
 set: take `inj-0105`'s text with its own zero-width characters stripped, 2,499
 characters, and ADD four counted ones. That is a 2,503-character page -- the
 length of `inj-0106` -- in which the four choose among C(2500, 4) pairwise
-non-adjacent positions and 3,773 symbols each, which is **88.1 bits carried by 4
-added characters**. The page is the corpus case and the four are not --
+non-adjacent positions and 3,773 symbols each -- the Unicode 16.0.0 alphabet
+size; on 13.0.0 it is 3,774, which moves the figure to 88.0899 from 88.0884 and
+rounds to the same one -- which is **88.1 bits carried by 4 added characters**. The page is the corpus case and the four are not --
 `inj-0105` carries three of its own at 2,502 characters and allows with zero
 findings, and `inj-0106` is the same page carrying four at 2,503. The slot count
 is the page AFTER the additions; pricing 2,502 slots for a construction that
@@ -458,9 +493,13 @@ cost is one entry further out than it was, not gone.
 further out.* U+2061..U+2064 are genuine in MathML and U+1D173..U+1D17A in the
 plain-text encoding of musical notation; five in one line is the bound. U+034F
 has no context test, and neither does almost anything else: of the 3,773 members
-only three have one -- U+200C, U+200D and U+180E -- so the other 3,770, the
-Hangul fillers and the Khmer inherent vowels above included, are counted
-wherever they appear. So both of U+034F's real uses still deny at five
+on Unicode 16.0.0 only three have one -- U+200C, U+200D and U+180E -- so the
+other 3,770, the Hangul fillers and the Khmer inherent vowels above included,
+are counted wherever they appear. The three with a context test are the same
+three on every Unicode version this package runs on; it is the total that moves,
+so on 13.0.0 the figures are 3,774 and 3,771.
+
+So both of U+034F's real uses still deny at five
 occurrences: blocking a collation contraction so a digraph sorts as two letters
 rather than one, and fixing the order of two points on one letter in Biblical
 Hebrew. At four they allow, which is why `inj-0136` and `inj-0137` pass now. U+034F was added to the set BY NAME in fix round 1, as the one

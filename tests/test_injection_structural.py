@@ -2244,6 +2244,34 @@ SHORTHAND_OVERLAP, SHORTHAND_CONTINUING = "\U0001bca0", "\U0001bca1"
 CGJ, MVS = "\u034f", "\u180e"
 # Mongolian free variation selectors one, two and three, which are NOT signals.
 FVS1, FVS2, FVS3 = "\u180b", "\u180c", "\u180d"
+# The FOURTH one, and it gets its own name because it is the one code point in
+# this module whose membership depends on which Unicode version the interpreter
+# ships. `test_the_one_member_that_moves_between_unicode_versions` is the story.
+FVS4 = "\u180f"
+
+# `_ZERO_WIDTH` is derived from the interpreter's own Unicode data, so its size
+# is a fact about the interpreter and NOT a constant of this package. Measured
+# on every interpreter the CI matrix runs, with `len(_ZERO_WIDTH)` and
+# `Counter(unicodedata.category(c) for c in _ZERO_WIDTH)`:
+#
+#     Python 3.10  Unicode 13.0.0  3774   Cn 3739, Cf 28, Lo 4, Mn 3
+#     Python 3.11  Unicode 14.0.0  3773   Cn 3738, Cf 28, Lo 4, Mn 3
+#     Python 3.12  Unicode 15.0.0  3773   Cn 3738, Cf 28, Lo 4, Mn 3
+#     Python 3.13  Unicode 15.1.0  3773   Cn 3738, Cf 28, Lo 4, Mn 3
+#     Python 3.14  Unicode 16.0.0  3773   Cn 3738, Cf 28, Lo 4, Mn 3
+#
+# The whole difference is one code point, U+180F, and the row below it in this
+# file says why. This is keyed by Unicode version rather than by Python version
+# because the Unicode version is what decides it: a future 3.10 patch release
+# does not move, and a future interpreter on Unicode 17.0.0 fails LOUDLY here
+# rather than silently passing a count nobody measured.
+_ZERO_WIDTH_BY_UNICODE = {
+    "13.0.0": {"Cn": 3739, "Cf": 28, "Lo": 4, "Mn": 3},
+    "14.0.0": {"Cn": 3738, "Cf": 28, "Lo": 4, "Mn": 3},
+    "15.0.0": {"Cn": 3738, "Cf": 28, "Lo": 4, "Mn": 3},
+    "15.1.0": {"Cn": 3738, "Cf": 28, "Lo": 4, "Mn": 3},
+    "16.0.0": {"Cn": 3738, "Cf": 28, "Lo": 4, "Mn": 3},
+}
 
 
 def _bitstream(zero: str, one: str, payload: str) -> str:
@@ -2506,10 +2534,38 @@ def test_every_invisible_character_is_default_ignorable_and_nothing_else_is() ->
     category mix, and that each family the rule DROPS is really absent. A drop
     that stops working is invisible otherwise, because a wider set still denies
     every attack in this file.
+
+    THE SIZE IS NOT A CONSTANT OF THIS PACKAGE and this test asserted it as one,
+    which is the session's own lesson landing on the session: a number counted
+    in code, asserted as universal, when the code's answer depends on the
+    interpreter. `_ZERO_WIDTH` is built from `unicodedata`, so it is 3,774 on
+    Unicode 13.0.0 and 3,773 from 14.0.0 on, and the 3.10 leg of the CI matrix
+    ships 13.0.0. The figures now come from `_ZERO_WIDTH_BY_UNICODE`, keyed by
+    `unicodedata.unidata_version`, and an unmeasured Unicode version fails here
+    rather than passing on a number nobody took.
+
+    Keying it did not weaken anything: the version-keyed assertion is the exact
+    check that stood here, and the structural one below it is NEW and holds on
+    every version. Only the unassigned bucket may move, because assignment is
+    the only thing a new Unicode version does to this set; if a future version
+    moves `Cf`, `Lo` or `Mn`, a family changed category and the rule needs
+    re-reading rather than the count needs updating.
     """
-    assert len(_ZERO_WIDTH) == 3773
+    version = unicodedata.unidata_version
+    assert version in _ZERO_WIDTH_BY_UNICODE, (
+        f"Unicode {version} has not been measured; run the counts and add a row to "
+        f"_ZERO_WIDTH_BY_UNICODE rather than relaxing this assertion"
+    )
     counts = Counter(unicodedata.category(c) for c in _ZERO_WIDTH)
-    assert dict(counts) == {"Cn": 3738, "Cf": 28, "Lo": 4, "Mn": 3}
+    assert dict(counts) == _ZERO_WIDTH_BY_UNICODE[version]
+    assert len(_ZERO_WIDTH) == sum(_ZERO_WIDTH_BY_UNICODE[version].values())
+
+    # Version-independent, and it is what the count was really guarding. Every
+    # non-unassigned member is named by a family this module chose on purpose,
+    # so those three numbers cannot move without a family moving with them.
+    assert {k: v for k, v in counts.items() if k != "Cn"} == {"Cf": 28, "Lo": 4, "Mn": 3}, (
+        "only the unassigned bucket may differ between Unicode versions"
+    )
 
     # In: the families the round-2 sweep found open, each a carrier rather than
     # an excusing neighbour.
@@ -2523,7 +2579,10 @@ def test_every_invisible_character_is_default_ignorable_and_nothing_else_is() ->
     assert not {"\u200e", "\u200f", "\u061c"} & _ZERO_WIDTH  # LRM, RLM, ALM
     assert not {LRE, RLE, PDF, LRO, RLO, LRI, RLI, FSI, PDI} & _ZERO_WIDTH  # the bidi signal's
     assert not {VS16, "\ufe00", "\U000e0100"} & _ZERO_WIDTH  # variation selectors
-    assert not {FVS1, FVS2, FVS3, "\u180f"} & _ZERO_WIDTH  # Mongolian ones are selectors too
+    # Three, not four. U+180F is excluded from Unicode 14.0.0 on and INCLUDED on
+    # 13.0.0, where it has no name for the exclusion to match; it is asserted
+    # against the interpreter's own data in the test below rather than here.
+    assert not {FVS1, FVS2, FVS3} & _ZERO_WIDTH  # Mongolian ones are selectors too
     assert not {chr(TAG_BASE + ord("a")), CANCEL} & _ZERO_WIDTH  # the tag signal's
 
     # Every excluded family is excluded by a PROPERTY, not by a list, apart from
@@ -2533,6 +2592,61 @@ def test_every_invisible_character_is_default_ignorable_and_nothing_else_is() ->
         assert unicodedata.bidirectional(char) != "BN"
     for char in (VS16, "\ufe00", FVS1, "\U000e0100"):
         assert "VARIATION SELECTOR" in unicodedata.name(char)
+
+
+def test_the_one_member_that_moves_between_unicode_versions() -> None:
+    """A name-based exclusion cannot see a character that has no name yet.
+
+    `_invisible` drops every variation selector by asking
+    `unicodedata.name(char)` for the words VARIATION SELECTOR. U+180F MONGOLIAN
+    FREE VARIATION SELECTOR FOUR was UNASSIGNED in Unicode 13.0.0, which is what
+    Python 3.10 ships, so it has no name there for the exclusion to match: it
+    falls through into the unassigned bucket and is COUNTED. From Unicode 14.0.0
+    it is assigned, named, and dropped like its three siblings.
+
+    Measured across the whole CI matrix by dumping the set from each interpreter
+    and diffing, the symmetric difference between the Unicode 13.0.0 set and the
+    Unicode 16.0.0 set is exactly one code point, and it is this one. Everything
+    else about the rule is stable.
+
+    THE DIFFERENCE IS BEHAVIOURAL AND IT IS DISCLOSED RATHER THAN SMOOTHED OVER.
+    Mongolian text using free variation selector four is scored differently by
+    Python version: measured, five Mongolian words each carrying one of them
+    DENY on 3.10 and ALLOW on 3.11 and later. Four allow on both, because four
+    is under `_MIN_TOTAL` wherever the character is counted. It is narrow -- one
+    code point, in one script, at or above the total bound -- and it is real,
+    and `corpora/NOTICE.md` carries it beside the other residuals.
+
+    Both halves are asserted against `unicodedata` rather than against a version
+    string, so this states the RULE and not the calendar: membership is the
+    negation of "the interpreter has a variation-selector name for it". A future
+    version that names it and still counts it fails here, and so does one that
+    stops naming it and stops counting it.
+    """
+    named = "VARIATION SELECTOR" in unicodedata.name(FVS4, "")
+    assert (FVS4 in _ZERO_WIDTH) is not named, (
+        "membership is decided by whether this interpreter's Unicode data names it"
+    )
+    assert not {FVS1, FVS2, FVS3} & _ZERO_WIDTH, "the three named ones are always dropped"
+    assert all("VARIATION SELECTOR" in unicodedata.name(c) for c in (FVS1, FVS2, FVS3)), (
+        "and they are dropped by the same name test, not by a list"
+    )
+
+    # MONGOLIAN LETTER GA, O, RA, then the selector: a word taking a variant
+    # glyph, which is what these characters are for.
+    word = f"\u182d\u1823\u1837{FVS4}"
+    check = InjectionStructuralGuardrail().check
+    tail = " \u1828\u1822\u182d"
+
+    under = " ".join([word] * (_MIN_TOTAL - 1)) + tail
+    assert under.count(FVS4) == _MIN_TOTAL - 1, "one under the bound"
+    assert check(under, IN).decision == "allow", "under the bound on every version"
+
+    at_bound = " ".join([word] * _MIN_TOTAL) + tail
+    assert at_bound.count(FVS4) >= _MIN_TOTAL, "at the bound"
+    assert check(at_bound, IN).decision == ("deny" if FVS4 in _ZERO_WIDTH else "allow"), (
+        "this is the cross-interpreter difference, asserted rather than tolerated"
+    )
 
 
 def test_every_family_the_rule_excludes_is_in_the_table_it_excludes_them_from() -> None:
