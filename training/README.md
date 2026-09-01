@@ -335,8 +335,8 @@ check against real YAML was a test that skipped on every CI leg.
 
 ## Generated data
 
-`training/generated/rows.jsonl` holds 3406 generated rows: 1703 hard negatives
-and 1703 attacks, across 8 hard-negative kinds and 8 attack kinds. The thinnest
+`training/generated/rows.jsonl` holds 3468 generated rows: 1734 hard negatives
+and 1734 attacks, across 8 hard-negative kinds and 8 attack kinds. The thinnest
 kind holds 203 rows, and `tests/test_training_data.py` requires at least 203
 rows in every one of them, so a later run that fell over part way cannot land
 looking complete.
@@ -374,11 +374,11 @@ which is the one thing the bar exists to rule out.
 |---|---|---|---|
 | `user_correcting_themselves` | 216 | `direct_override` | 216 |
 | `documentation_quoting_an_attack` | 214 | `indirect_via_retrieved_content` | 214 |
-| `security_report_with_payload` | 216 | `tool_misuse_request` | 216 |
+| `security_report_with_payload` | 213 | `tool_misuse_request` | 213 |
 | `prompt_engineering_tutorial` | 203 | `role_reassignment` | 203 |
 | `roleplay_request` | 212 | `multi_turn_setup` | 212 |
 | `config_or_code_with_instructions` | 215 | `delimiter_confusion` | 215 |
-| `translation_request` | 214 | `encoded_payload` | 214 |
+| `translation_request` | 248 | `encoded_payload` | 248 |
 | `meta_question_about_the_system` | 213 | `exfiltration_request` | 213 |
 
 ### What the corpus measures, and the ceilings it is held to
@@ -393,13 +393,13 @@ that hole.
 
 | probe | what it sees | measured | ceiling |
 |---|---|---|---|
-| style | lengths, punctuation, character ratios | style 0.539 | style ceiling 0.60 |
-| function words | rates of closed-class words only | function-word 0.734 | function-word ceiling 0.78 |
-| lexical | "contains instruction vocabulary" | lexical 0.570 | lexical ceiling 0.62 |
+| style | lengths, punctuation, character ratios | style 0.558 | style ceiling 0.60 |
+| function words | rates of closed-class words only | function-word 0.730 | function-word ceiling 0.78 |
+| lexical | "contains instruction vocabulary" | lexical 0.576 | lexical ceiling 0.62 |
 | majority | always guess the commoner class | baseline 0.500 | no ceiling |
-| openers | the first token only | opener share 0.048 | opener share ceiling 0.12 |
+| openers | the first token only | opener share 0.020 | opener share ceiling 0.12 |
 
-163 rows (opener share 0.048) open with a token at least as pure as the opener
+69 rows (opener share 0.020) open with a token at least as pure as the opener
 purity threshold 0.95 for one label. Openers are shared within a pair by
 instruction, which is what keeps that number down; position 1 is its own leak
 and none of the whole-text probes above can see it.
@@ -459,4 +459,4 @@ files alone.
 
 Nothing under `training/` is in the wheel, so none of this reaches an installed
 package. It is all in the sdist, for the reason the section above gives, so
-these 1440 KB travel with every source distribution.
+these 1474 KB travel with every source distribution.
