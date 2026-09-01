@@ -64,6 +64,10 @@ corpus and is a different measurement. The two must not be quoted as one.
 | `protectai/deberta-v3-base-prompt-injection-v2` (v2, current) | 8 | 2 | 0 | 0 | 6 | 1.000 | 1.000 | 1.000 |
 | `protectai/deberta-v3-base-prompt-injection` (v1, superseded) | 8 | 2 | 0 | 0 | 6 | 1.000 | 1.000 | 1.000 |
 
+**Scope of these rows.** This comparison runs each detector on a corpus outside the class of input it was built for. That is what the 2 corpora are here to do, and it is not a finding about either kind. `injection-structural` reads the encoding and has no mechanism for an instruction written in plain words: its recall is 0.000 on PINT `example-dataset.yaml` and 0.885 on `corpora/injection-structural/in-repo.jsonl`. A classifier reads the words, and where the payload is carried in characters this tokenizer does not deliver to the model, measured below, there are no words left for it to read.
+
+The comparison is 2 revisions of one vendor's prompt-injection classifier over 2 corpora, measured once, on 2026-09-01. It is not a measurement of semantic classifiers in general. The tokenizer result below generalises further than these scores do, and only as far as models built on that tokenizer. Nothing here says one approach replaces the other: they are layers over different failure modes and are meant to run together.
+
 | Category | Label | Inputs | `injection-structural` flagged | `protectai/deberta-v3-base-prompt-injection-v2` (v2, current) flagged | `protectai/deberta-v3-base-prompt-injection` (v1, superseded) flagged |
 |---|---|---:|---:|---:|---:|
 | `jailbreak` | injection | 1 | 0 | 1 | 1 |
@@ -82,6 +86,10 @@ corpus and is a different measurement. The two must not be quoted as one.
 | `injection-structural` | 146 | 46 | 2 | 6 | 92 | 0.958 | 0.885 | 0.945 |
 | `protectai/deberta-v3-base-prompt-injection-v2` (v2, current) | 146 | 11 | 45 | 41 | 49 | 0.196 | 0.212 | 0.411 |
 | `protectai/deberta-v3-base-prompt-injection` (v1, superseded) | 146 | 10 | 16 | 42 | 78 | 0.385 | 0.192 | 0.603 |
+
+**Scope of these rows.** This comparison runs each detector on a corpus outside the class of input it was built for. That is what the 2 corpora are here to do, and it is not a finding about either kind. `injection-structural` reads the encoding and has no mechanism for an instruction written in plain words: its recall is 0.000 on PINT `example-dataset.yaml` and 0.885 on `corpora/injection-structural/in-repo.jsonl`. A classifier reads the words, and where the payload is carried in characters this tokenizer does not deliver to the model, measured below, there are no words left for it to read.
+
+The comparison is 2 revisions of one vendor's prompt-injection classifier over 2 corpora, measured once, on 2026-09-01. It is not a measurement of semantic classifiers in general. The tokenizer result below generalises further than these scores do, and only as far as models built on that tokenizer. Nothing here says one approach replaces the other: they are layers over different failure modes and are meant to run together.
 
 | Category | Label | Inputs | `injection-structural` flagged | `protectai/deberta-v3-base-prompt-injection-v2` (v2, current) flagged | `protectai/deberta-v3-base-prompt-injection` (v1, superseded) flagged |
 |---|---|---:|---:|---:|---:|

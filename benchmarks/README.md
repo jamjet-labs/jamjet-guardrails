@@ -161,19 +161,22 @@ And nothing in it can be set beside a number from this repository. Ours are
 measured on our own 146 cases by us; a PINT score is measured on 4,314 inputs
 nobody outside Lakera has seen.
 
-**Not a claim about semantic classifiers in general.** Two revisions of one
-model, one corpus, one day. The tokenizer result generalises further than the
-scores do, and only as far as models built on that tokenizer.
+**Not a claim about semantic classifiers in general.** That limit, and the rest
+of what this comparison does not support, is generated beside every table it
+qualifies in [`RESULTS.md`](RESULTS.md) by `render.py`, so it travels with a
+table that gets quoted, linked or screenshotted. It is deliberately not restated
+here: two copies of a limit drift apart, and a reader only ever lands on one of
+them.
 
 ## The conclusion
 
-Complementary layer, not competitor. On semantic injections the classifiers win
-and it is not close. On payloads carried in the encoding the constraint wins,
-and the reason is mechanical rather than a matter of accuracy: this tokenizer
-collapses a contiguous run of tag characters to a single `[UNK]`, and
-overwriting the smuggled message with a different one of the same length leaves
-the token ids unchanged, so the payload's content never reaches the model to be
-classified. Both of those are measured rather than asserted, per revision, with
-the counts and the one case where the collapse is not one-to-one, in
-[`RESULTS.md`](RESULTS.md). Every number, both directions, is there and none of
-it is in this file.
+The two approaches catch different things, and [`RESULTS.md`](RESULTS.md) says
+so beside the numbers rather than after them. Why the constraint wins on
+payloads carried in the encoding is mechanical rather than a matter of accuracy:
+this tokenizer collapses a contiguous run of tag characters to a single `[UNK]`,
+and overwriting the smuggled message with a different one of the same length
+leaves the token ids unchanged, so the payload's content never reaches the model
+to be classified. Both of those are measured rather than asserted, per revision,
+with the counts and the one case where the collapse is not one-to-one. Every
+number, both directions, and every limit on what they support are in that file,
+and none of them is in this one.

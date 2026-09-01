@@ -14,6 +14,12 @@ this file never prints one without its status. A reader who sees only this
 document must not come away believing the superseded revision is the vendor's
 current model, so the version and the status travel with the model name in
 every row rather than being explained once at the top.
+
+The limits of the comparison travel the same way, for the same reason one step
+further out: a table is quoted, linked and screenshotted away from the document
+around it, so `_scope` is emitted against each table rather than collected into
+a section at the end. `benchmarks/README.md` points at that block instead of
+carrying its own copy.
 """
 
 from __future__ import annotations
@@ -69,10 +75,59 @@ def _category_rows(runs: list[dict[str, Any]]) -> list[str]:
     return lines
 
 
+def _scope(data: dict[str, Any], runs: dict[tuple[str, str], dict[str, Any]]) -> list[str]:
+    """What the comparison does not support, generated beside the numbers.
+
+    These limits lived in `benchmarks/README.md` alone. A table lifted out of
+    this file left them behind, and what travelled was a bare accuracy figure
+    against a named vendor's shipping product. So they are built from the same
+    JSON as the numbers and placed against every table, not gathered into a
+    closing section a reader scrolls past. `benchmarks/README.md` points here
+    and does not restate them: two copies of a limit drift apart, and a reader
+    only ever lands on one of them.
+
+    Both directions are stated, and the recall `injection-structural` scores on
+    semantic inputs is read out of the runs rather than written down. A scope
+    note that qualified only the other side would be an argument, not a limit.
+    """
+    structural = next(d for d in data["detectors"] if d["kind"] == "constraint")
+    classifiers = [d for d in data["detectors"] if d["kind"] == "classifier"]
+    corpora = data["corpora"]
+
+    def recall_on(corpus_id: str) -> str:
+        overall = runs[(structural["id"], corpus_id)]["overall"]
+        return _ratio(overall["tp"], overall["tp"] + overall["fn"])
+
+    recalls = " and ".join(f"{recall_on(c['id'])} on {c['name']}" for c in corpora)
+    return [
+        (
+            f"**Scope of these rows.** This comparison runs each detector on a corpus "
+            f"outside the class of input it was built for. That is what the "
+            f"{len(corpora)} corpora are here to do, and it is not a finding about "
+            f"either kind. {structural['name']} reads the encoding and has no "
+            f"mechanism for an instruction written in plain words: its recall is "
+            f"{recalls}. A classifier reads the words, and where the payload is carried "
+            f"in characters this tokenizer does not deliver to the model, measured "
+            f"below, there are no words left for it to read."
+        ),
+        "",
+        (
+            f"The comparison is {len(classifiers)} revisions of one vendor's "
+            f"prompt-injection classifier over {len(corpora)} corpora, measured once, "
+            f"on {data['measured']}. It is not a measurement of semantic classifiers in "
+            f"general. The tokenizer result below generalises further than these scores "
+            f"do, and only as far as models built on that tokenizer. Nothing here says "
+            f"one approach replaces the other: they are layers over different failure "
+            f"modes and are meant to run together."
+        ),
+    ]
+
+
 def render(data: dict[str, Any]) -> str:
     """The whole document, as a string. Deterministic: no clock, no filesystem."""
     runs = {(r["detector"]["id"], r["corpus"]["id"]): r for r in data["runs"]}
     env = data["environment"]
+    scope = _scope(data, runs)
     out: list[str] = []
     add = out.append
 
@@ -140,6 +195,8 @@ def render(data: dict[str, Any]) -> str:
         for detector in data["detectors"]:
             run = runs[(detector["id"], corpus["id"])]
             add(_binary_row(detector["name"], run["overall"]))
+        add("")
+        out.extend(scope)
         add("")
         by_corpus = [runs[(d["id"], corpus["id"])] for d in data["detectors"]]
         add(
