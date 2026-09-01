@@ -9,6 +9,8 @@ recorded in task-13-report.md.
 """
 
 import json
+import os
+import re
 import subprocess
 import sys
 from collections.abc import Callable
@@ -25,6 +27,24 @@ from jamjet_guardrails.types import Context, Direction, Kind, Verdict
 # file stays pure ASCII and an editor cannot normalise the fixture away. It is
 # the smallest thing that tells UTF-8 from a cp1252 default.
 NON_ASCII = "caf" + chr(0xE9)
+
+# Select Graphic Rendition escapes, which is all CPython 3.14's argparse emits
+# when it decides the destination can take colour.
+_SGR = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _text(rendered: str) -> str:
+    """Argparse output with the colour taken back out of it.
+
+    A help screen is text; colour is a rendering of it. From 3.14 argparse
+    consults `NO_COLOR`, `FORCE_COLOR` and `PYTHON_COLORS` and interleaves SGR
+    escapes through the usage line, so an assertion against the raw stream
+    passes or fails on the caller's environment rather than on what the program
+    printed. It passed in CI, which is never a terminal, and failed for two
+    separate readers running the suite by hand.
+    """
+    return _SGR.sub("", rendered)
+
 
 CASE = {
     "id": "pii-0001",
@@ -895,9 +915,44 @@ def test_the_usage_line_names_the_command_that_exists(
     with pytest.raises(SystemExit) as exit_info:
         main(["--help"])
     assert exit_info.value.code == 0
-    out = capsys.readouterr().out
+    out = _text(capsys.readouterr().out)
     assert "usage: jamjet-guardrails [" in out
     assert "jamjet-guardrails eval" not in out
+
+
+@pytest.mark.parametrize(
+    ("colour", "value"),
+    [("FORCE_COLOR", "3"), ("NO_COLOR", "1")],
+)
+def test_the_usage_line_reads_the_same_whatever_the_colour_setting(colour: str, value: str) -> None:
+    """The guard on the guard above: the help text is a property of the program.
+
+    A subprocess, because colour is decided from the environment at the moment
+    argparse writes, and `capsys` inherits whatever the runner was started
+    with. Both settings are exercised here so neither direction can be the one
+    that happens to be true on somebody's machine: the assertion that failed in
+    review passed under `NO_COLOR=1` and failed under a colour-capable
+    terminal, which is a test of the terminal.
+    """
+    env = {k: v for k, v in os.environ.items() if k not in ("FORCE_COLOR", "NO_COLOR")}
+    env[colour] = value
+    run = subprocess.run(
+        [sys.executable, "-m", "jamjet_guardrails.eval.cli", "--help"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert run.returncode == 0, run.stderr
+    assert "usage: jamjet-guardrails [" in _text(run.stdout)
+    assert "jamjet-guardrails eval" not in _text(run.stdout)
+    # Not vacuous where it counts. From CPython 3.14 argparse colours the usage
+    # line, so on that interpreter the raw stream is NOT the text and stripping
+    # is what recovers it; on 3.10-3.13 no escape is emitted and the two are
+    # the same string. Asserting the difference only when an escape is present
+    # states the split without pinning a version number nothing measured.
+    if _SGR.search(run.stdout):
+        assert "usage: jamjet-guardrails [" not in run.stdout
 
 
 def test_a_looped_symlink_destination_exits_two(tmp_path: Path) -> None:
