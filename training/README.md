@@ -99,6 +99,10 @@ under `training/` is therefore committed by default and a file written under
 - `training/` holds anything a published number is measured on or measured by.
   A number that describes an artifact nobody else can obtain is not a
   measurement.
+- `training/generated/` holds the synthetic corpus and the record of what
+  produced it. Committed for the same reason: a classifier is fitted on it, so
+  a number measured on the resulting model is a number measured through this
+  file. It is described under [Generated data](#generated-data) below.
 - `training/artifacts/` is therefore committed, and it is named here rather
   than left to the general rule because it is the directory that makes the
   published numbers reproducible: the exported model, its tokenizer and the
@@ -328,3 +332,99 @@ how pytest, ruff and mypy already live in the `dev` extra. The parser cost 101
 lines at `b06b881` -- `_read_manifest`, `_scalar` and the three line-shape
 regexes, countable from `git show b06b881:training/fetch.py` -- and its only
 check against real YAML was a test that skipped on every CI leg.
+
+## Generated data
+
+`training/generated/rows.jsonl` holds 759 generated rows: 375 hard
+negatives and 384 attacks, across 8 hard-negative kinds and
+8 attack kinds. The thinnest kind holds 41 rows, and
+`tests/test_training_data.py` requires at least 41 rows in every one of
+them, so a later run that fell over part way cannot land looking complete.
+
+The hard negatives are why any of this is generated. Task 3's licence screen
+left two usable public corpora and no public `eval` corpus, and neither of the
+two contains the shape a deployed injection classifier actually fails on: text
+that talks ABOUT instructions without being one. Public benign sets are ordinary
+prose, which a classifier separates from an injection without learning anything
+worth having.
+
+| kind | `label` | rows | prompt |
+|---|---|---|---|
+| `user_correcting_themselves` | 0 | 47 | v1 |
+| `documentation_quoting_an_attack` | 0 | 41 | v2 |
+| `security_report_with_payload` | 0 | 48 | v2 |
+| `prompt_engineering_tutorial` | 0 | 47 | v1 |
+| `roleplay_request` | 0 | 48 | v2 |
+| `config_or_code_with_instructions` | 0 | 48 | v2 |
+| `translation_request` | 0 | 48 | v1 |
+| `meta_question_about_the_system` | 0 | 48 | v1 |
+| `direct_override` | 1 | 49 | v1 |
+| `indirect_via_retrieved_content` | 1 | 49 | v4 |
+| `role_reassignment` | 1 | 47 | v1 |
+| `delimiter_confusion` | 1 | 47 | v2 |
+| `encoded_payload` | 1 | 48 | v2 |
+| `multi_turn_setup` | 1 | 48 | v2 |
+| `tool_misuse_request` | 1 | 48 | v2 |
+| `exfiltration_request` | 1 | 48 | v1 |
+
+### What produced them, and what that is checkable against
+
+`training/generated/provenance.json` records the model, the sha256 of its
+weights blob, the sampling options, the seed range per kind, the ollama version,
+and the full text of every prompt with its digest. A row carries the tag, the
+weights digest and the prompt id; the rest belongs to the run rather than to the
+row.
+
+The generator is `qwen2.5:14b`, which is Qwen/Qwen2.5-14B-Instruct, and its licence
+was screened the way a corpus licence is. It is `apache-2.0`, which
+`training/screen.py` accepts, and the finding is pinned by the sha256 of the
+licence text the artifact itself ships rather than by the name alone. That
+distinction earns its keep here: the 3B size of the same generation carries
+`qwen-research`, a research-only licence the same screen refuses, so the grant
+is a property of the size and not of the family. Apache-2.0 says nothing about
+model output, so it places no term on this data and none on a classifier fitted
+to it.
+
+Reproducibility was measured rather than assumed, on ollama 0.24.0: the same
+seed returns a byte-identical reply, and it stays byte-identical when the
+request is one of six issued concurrently. What that does not establish is
+reproduction on other hardware or a later ollama build, and nothing here claims
+it.
+
+Two tests re-derive the recorded digests from the live model. Both are gated on
+`JAMJET_GUARDRAILS_OLLAMA=1` and skip by default, here as well as in CI, because
+a suite that fails on a laptop with no model server is a suite people learn to
+ignore. Everything else about the corpus is checked from the committed files
+alone.
+
+### The prompts were rewritten after their output was read
+
+9 of the 16 prompts are past v1, because reading a sample of what
+they produced showed they were not producing it. Two examples, both of which
+every other test in this module would have passed:
+
+- `documentation_quoting_an_attack` and `security_report_with_payload` read
+  "injection" as SQL injection and wrote `admin' OR '1'='1` and `DROP TABLE
+  users`. Fluent, on topic for a different topic, and no use to a classifier
+  that has to tell prose about a model from an instruction to one.
+- `multi_turn_setup` wrote ordinary workplace messages: "Legal's reviewed our
+  proposal", "The boss gave us the green light". Under `label = 1` those rows
+  teach a classifier that a status update from a colleague is an attack, which
+  spends precision on the traffic a deployed detector sees most of.
+
+`prompt_id` carries the revision, so a row generated under one wording and a row
+generated under another are not recorded as the same thing.
+
+One filter exists for the same reason. Asked for a document with an instruction
+planted inside it, the model addressed the planted sentence to "Qwen" in three
+replies out of four, because that is the name it answers to. Left in, "says
+Qwen" would have been the cheapest rule separating the two classes, and the
+classifier would have learned which model wrote its training data rather than
+what an injection is. The prompt now asks for a generic address and the
+generator drops what still gets through.
+
+### Where it lands
+
+Nothing under `training/` is in the wheel, so none of this reaches an installed
+package. It is all in the sdist, for the reason the section above gives, so
+these 279 KB travel with every source distribution.
