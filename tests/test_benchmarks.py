@@ -10,13 +10,15 @@ carries one is not.
 
 The generated numbers can drift from the generated prose. `RESULTS.md` is
 rendered from `results/measurements.json`, and neither CI nor any reviewer can
-re-run the measurement behind it: it needs a network and a 738 MB model. So the
-rendering is checked instead, which is the part that can be checked offline.
+re-run the measurement behind it: it needs a network and two model downloads of
+several hundred megabytes each. So the rendering is checked instead, which is
+the part that can be checked offline.
 
 And the adapter can drift from the copy of itself in the README. That README is
-written to be contributed to PINT's `examples/` directory, where the code block
-IS the artifact a reader runs, so a block that no longer matches the module
-beside it is the whole deliverable being wrong.
+written in the shape of a PINT `examples/` entry, where the code block IS the
+artifact a reader runs, so a block that no longer matches the module beside it
+is wrong in the one place a reader will copy from. It has not been sent to
+Lakera and the README says why.
 """
 
 from __future__ import annotations
@@ -24,10 +26,10 @@ from __future__ import annotations
 import importlib.util
 import json
 import re
+from collections.abc import Iterator
 from pathlib import Path
 from types import ModuleType
-
-import pytest
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 BENCHMARKS = ROOT / "benchmarks"
@@ -104,9 +106,39 @@ def test_the_release_workflow_opens_the_wheel_the_test_above_cannot() -> None:
 
 
 def test_nothing_under_benchmarks_can_reach_the_package_directory() -> None:
-    """The config above is only a guard while `benchmarks/` stays outside `src/`."""
-    inside = [p for p in BENCHMARKS.rglob("*") if (ROOT / "src") in p.parents]
-    assert inside == [], f"these benchmark files are inside src/: {inside}"
+    """The config above is only a guard while `benchmarks/` stays outside `src/`.
+
+    The first version of this asserted that no path under `benchmarks/` had
+    `src/` among its parents. Every path it looked at was under `benchmarks/` by
+    construction, so `src/` never could be one, and the assertion could not
+    fail: a reviewer copied `run.py` into the package AND symlinked
+    `benchmarks/pkg -> src/jamjet_guardrails`, and it still passed. It asserted
+    nothing.
+
+    Two different things have to hold, and neither of them is about where the
+    walk starts. A path under `benchmarks/` must not RESOLVE into the package,
+    which is what a symlink does and what `p.parents` cannot see. And no
+    benchmark module may exist inside the package under its own name, which is
+    the direction that actually ships `onnxruntime` code to an installer. The
+    configuration assertion above cannot see either, because it reads
+    `pyproject.toml` rather than the tree.
+    """
+    package = (ROOT / "src" / "jamjet_guardrails").resolve()
+    assert package.is_dir(), f"{package} is missing; this guard would prove nothing"
+    modules = {p.name for p in BENCHMARKS.rglob("*.py")}
+    assert modules, "benchmarks/ holds no Python files; this guard would prove nothing"
+
+    escaping = sorted(
+        str(p.relative_to(BENCHMARKS))
+        for p in BENCHMARKS.rglob("*")
+        if p.resolve() == package or package in p.resolve().parents
+    )
+    assert escaping == [], (
+        f"these paths under benchmarks/ resolve inside the package directory: {escaping}"
+    )
+
+    copied = sorted(str(p.relative_to(ROOT)) for p in package.rglob("*.py") if p.name in modules)
+    assert copied == [], f"benchmark modules are inside the package directory: {copied}"
 
 
 def test_benchmarks_is_not_an_importable_package() -> None:
@@ -151,9 +183,9 @@ def test_results_md_is_the_rendering_of_the_committed_json() -> None:
     """The published numbers must be the measured ones.
 
     Nothing offline can re-run the measurement behind `results/measurements.json`
-    -- it needs a network and a 738 MB model -- so the guard is on the step that
-    CAN be re-run. A figure edited into the prose by hand, or a JSON updated
-    without re-rendering, fails here.
+    -- it needs a network and two large model downloads -- so the guard is on the
+    step that CAN be re-run. A figure edited into the prose by hand, or a JSON
+    updated without re-rendering, fails here.
     """
     render = _load(BENCHMARKS / "render.py", "benchmarks_render")
     data = json.loads((BENCHMARKS / "results" / "measurements.json").read_text(encoding="utf-8"))
@@ -172,18 +204,102 @@ def test_the_published_results_claim_no_pint_score() -> None:
     public. Any percentage sitting beside the words "PINT score" in a file this
     repository publishes is a claim we cannot back, and it is the kind of claim
     a reader carries away whole.
+
+    The literal-string half of this is weaker than it reads, and the second half
+    is why. "Our PINT-style result is 88%" contains no "PINT score", and a row
+    added to the reproduced leaderboard table naming this package would contain
+    none either, because leaderboard rows are a name, a number and a date. So
+    the percentage is also refused anywhere it shares a line with OUR name: the
+    board reproduced here is other people's, and a percentage against our own
+    name in these three files could only be the claim this directory exists to
+    avoid making.
     """
+    ours = ("jamjet-guardrails", "injection-structural")
+    percentage = re.compile(r"\d+(\.\d+)?\s*%")
     for document in (BENCHMARKS / "RESULTS.md", BENCHMARKS / "README.md", PINT_README):
         text = document.read_text(encoding="utf-8")
         for line in text.splitlines():
-            if "PINT score" not in line:
+            if not percentage.search(line):
                 continue
             # A line naming a score AND a number is only allowed to be about
             # somebody else's, and the leaderboard table names its owner in its
             # own column. The prose lines here must not carry one at all.
-            assert not re.search(r"\d+(\.\d+)?\s*%", line), (
+            assert "PINT score" not in line, (
                 f"{document.name} puts a percentage on a line about a PINT score: {line!r}"
             )
+            named = [name for name in ours if name in line]
+            assert named == [], (
+                f"{document.name} puts a percentage on a line naming {named}: {line!r}"
+            )
+
+
+def test_the_two_published_tables_agree_on_how_many_decisions_were_wrong() -> None:
+    """`BENCHMARKS.md` and `benchmarks/RESULTS.md` measure one corpus twice.
+
+    They are deliberately different measurements. `BENCHMARKS.md` is
+    finding-level, counting located spans; `RESULTS.md` is decision-level,
+    counting inputs. RESULTS.md says in as many words that the two must not be
+    quoted as one, and that stays true.
+
+    What they cannot disagree about is the DECISION each input got, so the
+    number of inputs decided wrongly has to be the same in both. `BENCHMARKS.md`
+    is regenerated and gated by CI on every push and `RESULTS.md` can never be,
+    so a change to the check moves one file and not the other, and both look
+    right on their own. The column is found by its header rather than by
+    position, because a reordered table would otherwise compare the wrong cell
+    and still pass.
+    """
+    lines = (ROOT / "BENCHMARKS.md").read_text(encoding="utf-8").splitlines()
+    rows = [[cell.strip() for cell in line.strip().strip("|").split("|")] for line in lines]
+    header = next(r for r in rows if "Wrong decisions" in r)
+    column = header.index("Wrong decisions")
+    check, corpus = header.index("Check"), header.index("Corpus")
+    matching = [
+        r
+        for r in rows
+        if len(r) == len(header)
+        and r[check] == "injection-structural"
+        and r[corpus] == "injection-structural/in-repo"
+    ]
+    assert len(matching) == 1, f"expected one injection-structural in-repo row, got {matching}"
+    published = int(matching[0][column])
+
+    data = json.loads((BENCHMARKS / "results" / "measurements.json").read_text(encoding="utf-8"))
+    run = next(
+        r
+        for r in data["runs"]
+        if r["detector"]["id"] == "structural" and r["corpus"]["id"] == "in-repo"
+    )
+    measured = run["overall"]["fp"] + run["overall"]["fn"]
+    assert measured == published, (
+        f"BENCHMARKS.md reports {published} wrong decisions for injection-structural on "
+        f"injection-structural/in-repo; benchmarks/RESULTS.md reports {measured} "
+        f"(FP {run['overall']['fp']} + FN {run['overall']['fn']}) on the same corpus"
+    )
+
+
+def test_the_readme_commands_are_the_commands_that_ran() -> None:
+    """`benchmarks/README.md` tells a reader how to reproduce the committed numbers.
+
+    Those commands carry two revision SHAs and two directory names, and `run.py`
+    builds the same list from `pins.json` and writes it into
+    `results/measurements.json`. Transcribed into the README by hand they are a
+    second copy that can disagree with the first, and a reader following a stale
+    SHA downloads a different model and gets different numbers with no error
+    anywhere. Compared line for line, not as one string, so the failure names the
+    line that drifted.
+    """
+    readme = (BENCHMARKS / "README.md").read_text(encoding="utf-8")
+    blocks = re.findall(r"\n```\n(.*?)```", readme, re.DOTALL)
+    matching = [b for b in blocks if "benchmarks/run.py" in b]
+    assert len(matching) == 1, f"expected one commands block, found {len(matching)}"
+    published = matching[0].rstrip("\n").splitlines()
+    data = json.loads((BENCHMARKS / "results" / "measurements.json").read_text(encoding="utf-8"))
+    measured = list(data["commands"])
+    assert published == measured, (
+        "benchmarks/README.md's command block is not the commands the measurement ran; "
+        "copy the `commands` list from benchmarks/results/measurements.json"
+    )
 
 
 def test_the_adapter_returns_a_bool_for_the_two_cases_that_matter() -> None:
@@ -201,7 +317,7 @@ def test_the_adapter_returns_a_bool_for_the_two_cases_that_matter() -> None:
 
 
 def test_the_adapter_imports_nothing_but_the_package() -> None:
-    """It is contributed to PINT as a file someone installs one package to run."""
+    """It is written to be a file someone can run with one package installed."""
     imports = [
         line.strip()
         for line in ADAPTER.read_text(encoding="utf-8").splitlines()
@@ -233,16 +349,69 @@ def test_the_readme_code_block_is_the_adapter_that_was_measured() -> None:
     assert missing == [], f"the README block has lines the adapter does not: {missing}"
 
 
-@pytest.mark.parametrize("key", ["pint_benchmark", "classifier"])
-def test_every_pinned_artifact_carries_something_to_verify_it_against(key: str) -> None:
+def _pins() -> dict[str, Any]:
+    return dict(json.loads((BENCHMARKS / "pins.json").read_text(encoding="utf-8")))
+
+
+def _pinned_artifacts(node: Any, path: str = "") -> Iterator[tuple[str, dict[str, Any]]]:
+    """Every downloadable thing anywhere in pins.json, found rather than listed.
+
+    Walked instead of enumerated on purpose. The parametrised version of this
+    named `pint_benchmark` and `classifier`, so adding a second classifier under
+    a new key would have left it pinned by nobody's assertion. A dict carrying a
+    `bytes` count is a file this harness downloads, wherever it sits.
+    """
+    if isinstance(node, dict):
+        if "bytes" in node:
+            yield path, node
+        for key, value in node.items():
+            yield from _pinned_artifacts(value, f"{path}/{key}")
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            yield from _pinned_artifacts(value, f"{path}[{index}]")
+
+
+def test_every_pinned_artifact_carries_something_to_verify_it_against() -> None:
     """A pin with no digest is a version string, and a version string is not a pin.
 
     `run.py` refuses to measure anything whose bytes do not match, so an entry
     here with no `sha256` would be a file downloaded and trusted.
     """
-    pins = json.loads((BENCHMARKS / "pins.json").read_text(encoding="utf-8"))[key]
-    files = {pins["dataset"]["path"]: pins["dataset"]} if key == "pint_benchmark" else pins["files"]
-    assert files, f"{key} pins no files"
-    for name, entry in files.items():
-        assert re.fullmatch(r"[0-9a-f]{64}", entry["sha256"]), f"{key}/{name} has no sha256"
-        assert entry["bytes"] > 0, f"{key}/{name} has no byte count"
+    artifacts = list(_pinned_artifacts(_pins()))
+    assert len(artifacts) >= 4, f"pins.json describes {len(artifacts)} files; expected the dataset"
+    for name, entry in artifacts:
+        assert re.fullmatch(r"[0-9a-f]{64}", str(entry["sha256"])), f"{name} has no sha256"
+        assert entry["bytes"] > 0, f"{name} has no byte count"
+
+
+def test_every_pinned_classifier_is_pinned_by_revision_and_measured() -> None:
+    """A model can be pinned and never run, and then the pin proves nothing.
+
+    Both directions are checked. Every classifier in `pins.json` has a full
+    40-character revision, that revision appears in the URL the files are
+    fetched from, and the three files `run.py` reads are all pinned. And every
+    one of them appears in the committed measurements, so a revision added here
+    cannot sit in the file unmeasured while `RESULTS.md` shows one row.
+
+    Exactly one is marked `current`. That word is what `render.py` puts beside
+    each model name in every table, and it is the whole answer to a reader
+    taking a superseded revision for the vendor's current model.
+    """
+    classifiers = _pins()["classifiers"]
+    assert len(classifiers) >= 2, "only one classifier is pinned; the v1/v2 comparison is gone"
+    for pin in classifiers:
+        where = pin["id"]
+        assert re.fullmatch(r"[0-9a-f]{40}", pin["revision"]), f"{where} has no full revision"
+        assert pin["revision"] in pin["base_url"], f"{where} fetches from another revision"
+        assert set(pin["files"]) == {
+            "onnx/model.onnx",
+            "onnx/config.json",
+            "onnx/tokenizer.json",
+        }, f"{where} does not pin the three files run.py reads: {sorted(pin['files'])}"
+    current = [pin["id"] for pin in classifiers if pin["status"] == "current"]
+    assert len(current) == 1, f"expected exactly one current classifier, found {current}"
+
+    data = json.loads((BENCHMARKS / "results" / "measurements.json").read_text(encoding="utf-8"))
+    measured = {d["id"] for d in data["detectors"]}
+    unmeasured = sorted(pin["id"] for pin in classifiers if pin["id"] not in measured)
+    assert unmeasured == [], f"pinned but absent from the published results: {unmeasured}"

@@ -49,14 +49,19 @@ package's own environment must never have onnxruntime in it, because a
 dependency that is present locally is a dependency nothing local can prove
 absent.
 
+The classifier weights are not vendored. Both pinned revisions are fetched from
+Hugging Face, and the exact byte counts and digests are in `pins.json`.
+
 ```
 python3 -m venv /tmp/guardrails-bench
 /tmp/guardrails-bench/bin/pip install -r benchmarks/requirements.txt
-```
 
-The classifier weights are a 738 MB download and are not vendored:
+REV=90c9989b1a342275dd0d1a95aad283c04e075671
+B=https://huggingface.co/protectai/deberta-v3-base-prompt-injection-v2/resolve/$REV
+mkdir -p /tmp/deberta-prompt-injection-v2
+for f in model.onnx config.json tokenizer.json; do \
+  curl -sSL -o "/tmp/deberta-prompt-injection-v2/$f" "$B/onnx/$f"; done
 
-```
 REV=373b6af0f8d16739cff5de28be326652246bfaa3
 B=https://huggingface.co/protectai/deberta-v3-base-prompt-injection/resolve/$REV
 mkdir -p /tmp/deberta-prompt-injection
@@ -64,19 +69,27 @@ for f in model.onnx config.json tokenizer.json; do \
   curl -sSL -o "/tmp/deberta-prompt-injection/$f" "$B/onnx/$f"; done
 
 PYTHONPATH=src /tmp/guardrails-bench/bin/python benchmarks/run.py \
+  --model-dir-v2 /tmp/deberta-prompt-injection-v2 \
   --model-dir /tmp/deberta-prompt-injection
 ```
 
+That block is generated, not transcribed:
+`tests/test_benchmarks.py::test_the_readme_commands_are_the_commands_that_ran`
+asserts it line for line against the `commands` list in
+`benchmarks/results/measurements.json`, which `run.py` builds from `pins.json`.
+A revision edited here and nowhere else fails the build.
+
 `run.py` verifies every downloaded file against the byte count and SHA-256 in
 `pins.json` before it measures anything, and refuses to run if either differs.
-PINT's `example-dataset.yaml` is fetched at the pinned commit into
-`benchmarks/.cache/`, which is gitignored, and checked the same way on every
-run including a cached one.
+It also refuses to run if onnxruntime declines the execution provider the
+results table names. PINT's `example-dataset.yaml` is fetched at the pinned
+commit into a gitignored `.cache/` directory inside `benchmarks/`, and checked
+the same way on every run including a cached one.
 
-Both detectors are put through four controls each before a single number is
-reported: two inputs they must flag and two they must not. A harness wired up
-wrong produces a plausible table and no error, so a control it fails is the only
-thing that separates it from a correct run.
+Every detector is put through four controls before a single number is reported:
+two inputs it must flag and two it must not, once per detector rather than once
+per kind. A harness wired up wrong produces a plausible table and no error, so a
+control it fails is the only thing that separates it from a correct run.
 
 ## What these measurements are
 
@@ -86,10 +99,19 @@ Two, and they are two halves of one question.
 smoke test that the adapter works end to end, and the honest half of the
 comparison: it shows what a purely structural check does not catch.
 
-**`protectai/deberta-v3-base-prompt-injection` on our 146-case structural
-corpus.** The measurement nobody publishes: can a semantic classifier read an
-instruction smuggled in invisible characters? Both detectors are run on both
-corpora, so the table is symmetric by construction rather than by intention.
+**ProtectAI's DeBERTa prompt-injection classifiers on our 146-case structural
+corpus.** A measurement we have not seen published: can a semantic classifier
+read an instruction smuggled in invisible characters? Every detector is run on
+both corpora, so the table is symmetric by construction rather than by
+intention.
+
+**Two revisions of that classifier, not one.**
+`protectai/deberta-v3-base-prompt-injection` is superseded upstream by
+`protectai/deberta-v3-base-prompt-injection-v2`, which is the revision on PINT's
+board. Publishing only the older one would let a reader take a superseded model
+for ProtectAI's current one, so both are pinned, both are measured through the
+same harness, and both get a row in [`RESULTS.md`](RESULTS.md) with its status
+beside its name. ProtectAI marks both revisions archived.
 
 ## What they are not
 
@@ -123,27 +145,35 @@ LangKit's 80.0164% among them, are commented out in the source of that README
 as "PINT V1, not re-evaluated". A V1 score and a V2 score are not comparable to
 each other either.
 
-The model measured here is **not on it**. Only v2 is. The v1 model's 88.6597%
-was measured on 2024-04-05 against PINT V1 and last appeared in the README at
-commit `93f4859d` on 2024-04-09, alongside Lakera Guard at 97.7129% and Azure AI
-Prompt Shield for Documents at 91.1914%. Those figures are historical and the
-board no longer carries them.
+One of the models measured here has a row on that board and the other does not,
+and neither fact helps. `protectai/deberta-v3-base-prompt-injection-v2` is the
+fourth row; its figure there was produced by Lakera on 4,314 private inputs, and
+what is measured here is the same weights on 146 inputs we wrote. Same model,
+different dataset, different scorer, so the two numbers describe different
+things and putting them side by side would be the error this section exists to
+prevent. The older revision has no current row at all: its 88.6597% was measured
+on 2024-04-05 against PINT V1 and last appeared in the README at commit
+`93f4859d` on 2024-04-09, alongside Lakera Guard at 97.7129% and Azure AI Prompt
+Shield for Documents at 91.1914%. Those figures are historical and the board no
+longer carries them.
 
 And nothing in it can be set beside a number from this repository. Ours are
 measured on our own 146 cases by us; a PINT score is measured on 4,314 inputs
 nobody outside Lakera has seen.
 
-**Not a claim about semantic classifiers in general.** One model, one revision,
-one corpus, one day. The tokenizer result generalises further than the score
-does, and only as far as models built on that tokenizer.
+**Not a claim about semantic classifiers in general.** Two revisions of one
+model, one corpus, one day. The tokenizer result generalises further than the
+scores do, and only as far as models built on that tokenizer.
 
 ## The conclusion
 
-Complementary layer, not competitor. On semantic injections the classifier wins
+Complementary layer, not competitor. On semantic injections the classifiers win
 and it is not close. On payloads carried in the encoding the constraint wins,
 and the reason is mechanical rather than a matter of accuracy: this tokenizer
-maps a contiguous run of tag characters to a single `[UNK]` whatever its length,
-so the smuggled instruction's content never reaches the model to be classified.
-Overwriting the message with a different one of the same length gives identical
-token ids in all 13 of the corpus's tag-character cases, and the classifier
-flagged none of them. Numbers, both directions, in [`RESULTS.md`](RESULTS.md).
+collapses a contiguous run of tag characters to a single `[UNK]`, and
+overwriting the smuggled message with a different one of the same length leaves
+the token ids unchanged, so the payload's content never reaches the model to be
+classified. Both of those are measured rather than asserted, per revision, with
+the counts and the one case where the collapse is not one-to-one, in
+[`RESULTS.md`](RESULTS.md). Every number, both directions, is there and none of
+it is in this file.

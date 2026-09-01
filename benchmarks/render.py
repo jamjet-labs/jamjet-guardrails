@@ -8,6 +8,12 @@ number edited into the prose by hand fails the build.
 
 Every table here names what it measures and on whose data in the header row.
 Nothing in this file emits a PINT score, because there is not one to emit.
+
+Two revisions of the same third-party classifier appear in those tables, and
+this file never prints one without its status. A reader who sees only this
+document must not come away believing the superseded revision is the vendor's
+current model, so the version and the status travel with the model name in
+every row rather than being explained once at the top.
 """
 
 from __future__ import annotations
@@ -43,7 +49,7 @@ def _binary_row(name: str, scores: dict[str, Any]) -> str:
 
 
 def _category_rows(runs: list[dict[str, Any]]) -> list[str]:
-    """One row per category, with both detectors' flags side by side.
+    """One row per category, with every detector's flags side by side.
 
     Ordered by the category list of the first run, which run.py sorts, so the
     row order is a property of the corpus rather than of dict insertion.
@@ -79,6 +85,11 @@ def render(data: dict[str, Any]) -> str:
     add("")
     add(f"Measured on **{data['measured']}**.")
     add("")
+    add("## Which model is which")
+    add("")
+    for line in data["supersession"]:
+        add(line)
+    add("")
     add("## There is no PINT score here")
     add("")
     add("The PINT dataset is 4,314 inputs and is not published. `benchmark/data/` in the")
@@ -94,12 +105,12 @@ def render(data: dict[str, Any]) -> str:
     add("")
     add("## What each thing is")
     add("")
-    add("| | What it reads | Kind | Pin |")
-    add("|---|---|---|---|")
+    add("| | What it reads | Kind | Status | Pin |")
+    add("|---|---|---|---|---|")
     for detector in data["detectors"]:
         add(
             f"| **{detector['name']}** | {detector['reads']} | {detector['kind']} "
-            f"| `{detector['pin']}` |"
+            f"| {detector['status']} | `{detector['pin']}` |"
         )
     add("")
     add("| Corpus | Whose data | Inputs | Labelled injection | Pin |")
@@ -110,11 +121,13 @@ def render(data: dict[str, Any]) -> str:
             f"| {corpus['positives']} | `{corpus['pin']}` |"
         )
     add("")
-    add("## Both detectors on both corpora")
+    add(data["protocol"])
     add("")
-    add("One decision per input, scored the same way for both: positive means the")
+    add("## Every detector on both corpora")
+    add("")
+    add("One decision per input, scored the same way for all of them: positive means the")
     add("detector flagged the input. For `injection-structural` that is a verdict other")
-    add("than `allow`; for the classifier it is an `INJECTION` label at argmax. This is a")
+    add("than `allow`; for a classifier it is an `INJECTION` label at argmax. This is a")
     add("DECISION-level score and it is not the finding-level precision and recall in")
     add("[BENCHMARKS.md](../BENCHMARKS.md), which counts located spans on the same")
     add("corpus and is a different measurement. The two must not be quoted as one.")
@@ -138,7 +151,7 @@ def render(data: dict[str, Any]) -> str:
         out.extend(_category_rows(by_corpus))
         add("")
 
-    add("## Where the classifier wins")
+    add("## Where the classifiers win")
     add("")
     for line in data["classifier_wins"]:
         add(line)
@@ -153,11 +166,14 @@ def render(data: dict[str, Any]) -> str:
     add("Every input, by what the label says and by which detectors flagged it. This is")
     add('the whole answer to "do they overlap": the `neither` row on an injection line')
     add("is what both missed, and the two `only` rows are what each one contributes that")
-    add("the other does not.")
+    add("the other does not. One table per classifier, because agreeing with the current")
+    add("model and agreeing with the superseded one are two different facts.")
     add("")
     for entry in data["agreement"]:
         corpus = next(c for c in data["corpora"] if c["id"] == entry["corpus"])
-        add(f"### {corpus['name']}")
+        add(f"### {corpus['name']} ({corpus['cases']} inputs), {entry['classifier_short']}")
+        add("")
+        add(f"`injection-structural` against {entry['classifier_name']}.")
         add("")
         add("| Label | Flagged by | Inputs | Example ids |")
         add("|---|---|---:|---|")
@@ -165,82 +181,119 @@ def render(data: dict[str, Any]) -> str:
             ids = ", ".join(f"`{case_id}`" for case_id in row["ids"])
             add(f"| {row['label']} | {row['flagged_by']} | {row['cases']} | {ids} |")
         add("")
-    add("## Can the classifier read a smuggled instruction?")
+    add("## Can a classifier read a smuggled instruction?")
     add("")
     visibility = data["payload_visibility"]
-    add("Three measurements over the labelled payload spans, at the pinned revision.")
+    add("Four measurements over the labelled payload spans, at the pinned revisions.")
+    add("Three of them read the tokenizer alone and none of the weights, so where two")
+    add("revisions produce the same answer it is reported once and says whose.")
     add("")
-    add("### What the tokenizer does to each payload character")
-    add("")
-    add("Every distinct character appearing inside a labelled span, put through this")
-    add('tokenizer\'s normalizer on the probe `"a<char>b"`.')
-    add("")
-    add("The rows that answer the question are the first two. A character the normalizer")
-    add("turns into a space never reaches the vocabulary, and one that survives to no token")
-    add("becomes `[UNK]`; either way its identity is gone before the model runs.")
-    add("")
-    add("The `survives; has a token` row is mixed, and the names listed under it are how to")
-    add("tell which is which. A span is the region the label names, and for the bit-encoded")
-    add("zero-width cases that region also covers the carrier letters the invisible")
-    add("characters sit between, so those letters are inside a span and counted here. They")
-    add("are visible text and are supposed to survive. The rest of that row is not: it is")
-    add("invisible characters this tokenizer does have a token for, so NOT every invisible")
-    add("character is erased here and a claim that they all are would be wrong.")
-    add("")
-    add("| What the tokenizer does | Distinct characters | Occurrences in payloads |")
-    add("|---|---:|---:|")
-    for entry in visibility["census"]:
-        add(f"| {entry['fate']} | {len(entry['characters'])} | {entry['occurrences']} |")
-    add("")
-    add("Every character behind those counts, so the table can be checked rather than")
-    add("taken:")
-    add("")
-    for entry in visibility["census"]:
-        add(f"**{entry['fate']}**")
+    for study in visibility["tokenizer_studies"]:
+        add("### What the tokenizer does to each payload character")
         add("")
-        for char in entry["characters"]:
-            add(f"- `{char['codepoint']}` {char['name']} ({char['occurrences']})")
+        add(study["note"])
         add("")
-    add("### Does the smuggled text's content reach the model?")
-    add("")
-    add("For the tag-character cases the payload is an instruction written one tag")
-    add("character per ASCII character, so it can be overwritten with a different message")
-    add("of the same length in the same block and tokenised again. The stand-in is")
-    add(f"{visibility['tag_replacement']} repeated, TAG LATIN SMALL LETTER X. Identical token")
-    add("ids mean the model receives the same input whatever the smuggled text says, which")
-    add("is a proof about this tokenizer rather than a score.")
-    add("")
-    add("| Signal | Cases | Content test run | Token ids unchanged when the message changes |")
-    add("|---|---:|---:|---:|")
-    for entry in visibility["per_signal"]:
+        add("Every distinct character appearing inside a labelled span, put through this")
+        add('tokenizer\'s normalizer on the probe `"a<char>b"`.')
+        add("")
+        add("The rows that answer the question are the first two. A character the normalizer")
+        add("turns into a space never reaches the vocabulary, and one that survives to no token")
+        add("becomes `[UNK]`; either way its identity is gone before the model runs.")
+        add("")
+        add("The `survives; has a token` row is mixed, and the names listed under it are how to")
+        add("tell which is which. A span is the region the label names, and for the bit-encoded")
+        add("zero-width cases that region also covers the carrier letters the invisible")
+        add("characters sit between, so those letters are inside a span and counted here. They")
+        add("are visible text and are supposed to survive. The rest of that row is not: it is")
+        add("invisible characters this tokenizer does have a token for, so NOT every invisible")
+        add("character is erased here and a claim that they all are would be wrong.")
+        add("")
+        add("| What the tokenizer does | Distinct characters | Occurrences in payloads |")
+        add("|---|---:|---:|")
+        for entry in study["census"]:
+            add(f"| {entry['fate']} | {len(entry['characters'])} | {entry['occurrences']} |")
+        add("")
+        add("Every character behind those counts, so the table can be checked rather than")
+        add("taken:")
+        add("")
+        for entry in study["census"]:
+            add(f"**{entry['fate']}**")
+            add("")
+            for char in entry["characters"]:
+                add(f"- `{char['codepoint']}` {char['name']} ({char['occurrences']})")
+            add("")
+        add("### Does the smuggled text's content reach the model?")
+        add("")
+        add("For the tag-character cases the payload is an instruction written one tag")
+        add("character per ASCII character, so it can be overwritten with a different message")
+        add("of the same length in the same block and tokenised again. The stand-in is")
+        add(f"{visibility['tag_replacement']} repeated, TAG LATIN SMALL LETTER X. Identical token")
+        add("ids mean the model receives the same input whatever the smuggled text says, which")
+        add("is a proof about this tokenizer rather than a score.")
+        add("")
+        add("| Signal | Cases | Content test run | Token ids unchanged when the message changes |")
+        add("|---|---:|---:|---:|")
+        for entry in study["per_signal"]:
+            add(
+                f"| `{entry['signal']}` | {entry['cases']} | {entry['content_cases']} "
+                f"| {entry['content_invariant']} |"
+            )
+        add("")
+        add("The test is run for one signal only, and the omissions are not oversights: a bidi")
+        add("override is a single control character with no message to vary, and substituting")
+        add("one zero-width character for another crosses between characters this normalizer")
+        add("treats differently, so the result would measure the substitution rather than the")
+        add("model.")
+        add("")
+        add("### How long a run of tag characters collapses")
+        add("")
+        collapse = study["run_collapse"]
         add(
-            f"| `{entry['signal']}` | {entry['cases']} | {entry['content_cases']} "
-            f"| {entry['content_invariant']} |"
+            f"The corpus holds {collapse['spans']} labelled tag-character spans, "
+            f"{collapse['shortest']} to {collapse['longest']} characters long."
         )
-    add("")
-    add("The test is run for one signal only, and the omissions are not oversights: a bidi")
-    add("override is a single control character with no message to vary, and substituting")
-    add("one zero-width character for another crosses between characters this normalizer")
-    add("treats differently, so the result would measure the substitution rather than the")
-    add("model.")
-    add("")
+        add(
+            f"Encoded on their own, {collapse['spans_encoding_alone_to_one_unk']} of "
+            f"those {collapse['spans']} become exactly one `[UNK]` id, so a longer"
+        )
+        add("smuggled instruction is not a bigger signal to the model than a shorter one.")
+        add("Synthetic runs of the same character, including one far longer than anything")
+        add("the corpus reaches:")
+        add("")
+        add("| Run length in tag characters | `[UNK]` ids |")
+        add("|---:|---:|")
+        for entry in collapse["synthetic"]:
+            add(f"| {entry['length']} | {entry['unk_ids']} |")
+        add("")
+        add("In context the count is not always one per span, and that nuance is why this")
+        add(
+            f"is measured rather than asserted: "
+            f"{collapse['context_one_unk_per_span']} of the {collapse['context_cases']} "
+            f"tag-character cases encode to"
+        )
+        add("exactly one `[UNK]` for each labelled span, and the rest carry more. The")
+        add("collapse is a property of a run in isolation, not a promise about a whole")
+        add("prompt.")
+        add("")
     add("### Flags that survive deleting the payload")
     add("")
-    flagged = visibility["flagged"]
-    survived = visibility["flagged_without_payload"]
-    add(
-        f"The classifier flagged {flagged} of the {visibility['positives']} smuggling cases. "
-        f"Cutting the payload"
-    )
-    add(
-        f"out entirely and asking again, it still flags {survived} of those {flagged}: those "
-        f"{survived} are"
-    )
-    add("judgements about the visible words and would stand with the attack removed. The")
-    add(f"remaining {flagged - survived} do depend on the payload BEING there. Read together")
-    add("with the table above, which shows the tag payloads are content-invariant, what")
-    add("that dependence can carry is the presence of something unreadable, not what it")
-    add("said.")
+    add("Of the smuggling cases a classifier flagged, how many it still flags with the")
+    add("payload cut out entirely. Those flags are judgements about the visible words and")
+    add("would stand with the attack removed. This one does read the weights, so it is")
+    add("reported per model.")
+    add("")
+    add("| Classifier | Smuggling cases | Flagged | Still flagged with the payload deleted |")
+    add("|---|---:|---:|---:|")
+    for entry in visibility["dependence"]:
+        add(
+            f"| {entry['detector']} | {visibility['positives']} | {entry['flagged']} "
+            f"| {entry['flagged_without_payload']} |"
+        )
+    add("")
+    add("The difference between those last two columns is the flags that DO depend on the")
+    add("payload being there. Read together with the content-invariance table above, which")
+    add("shows the tag payloads are content-invariant, what that dependence can carry is")
+    add("the presence of something unreadable, not what it said.")
     add("")
     add("## Environment")
     add("")

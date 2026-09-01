@@ -4,6 +4,7 @@
     "commit": "0efab3f463eae9c823130d8faffb71b2e7c06e63",
     "committed": "2026-04-02T09:08:48Z",
     "license": "MIT",
+    "copyright": "Copyright (c) 2024 Lakera AI",
     "dataset": {
       "path": "benchmark/data/example-dataset.yaml",
       "url": "https://raw.githubusercontent.com/lakeraai/pint-benchmark/0efab3f463eae9c823130d8faffb71b2e7c06e63/benchmark/data/example-dataset.yaml",
@@ -12,25 +13,62 @@
       "inputs": 8
     }
   },
-  "classifier": {
-    "model": "protectai/deberta-v3-base-prompt-injection",
-    "revision": "373b6af0f8d16739cff5de28be326652246bfaa3",
-    "revision_read": "2026-09-01",
-    "license": "Apache-2.0",
-    "base_url": "https://huggingface.co/protectai/deberta-v3-base-prompt-injection/resolve/373b6af0f8d16739cff5de28be326652246bfaa3",
-    "files": {
-      "onnx/model.onnx": {
-        "bytes": 738563189,
-        "sha256": "a87edda563046d1bd30f0a600f31757ce0b4ae8c43478afd87ec14b0f7e14d65"
-      },
-      "onnx/config.json": {
-        "bytes": 1008,
-        "sha256": "24f532e676a553600175949f98cc5caa2bf581851fd7fdd205ef3cf6d8302890"
-      },
-      "onnx/tokenizer.json": {
-        "bytes": 8648886,
-        "sha256": "752fe5f0d5678ad563e1bd2ecc1ddf7a3ba7e2024d0ac1dba1a72975e26dff2f"
+  "classifiers": [
+    {
+      "id": "classifier-v1",
+      "flag": "--model-dir",
+      "local_dir": "/tmp/deberta-prompt-injection",
+      "version": "v1",
+      "status": "superseded",
+      "card_says": "There is a newer version of the model - protectai/deberta-v3-base-prompt-injection-v2.",
+      "archived": "THIS PROJECT HAS BEEN ARCHIVED. This project and its associated code on GitHub are no longer under active development or maintained.",
+      "model": "protectai/deberta-v3-base-prompt-injection",
+      "revision": "373b6af0f8d16739cff5de28be326652246bfaa3",
+      "revision_read": "2026-09-01",
+      "license": "Apache-2.0",
+      "base_url": "https://huggingface.co/protectai/deberta-v3-base-prompt-injection/resolve/373b6af0f8d16739cff5de28be326652246bfaa3",
+      "files": {
+        "onnx/model.onnx": {
+          "bytes": 738563189,
+          "sha256": "a87edda563046d1bd30f0a600f31757ce0b4ae8c43478afd87ec14b0f7e14d65"
+        },
+        "onnx/config.json": {
+          "bytes": 1008,
+          "sha256": "24f532e676a553600175949f98cc5caa2bf581851fd7fdd205ef3cf6d8302890"
+        },
+        "onnx/tokenizer.json": {
+          "bytes": 8648886,
+          "sha256": "752fe5f0d5678ad563e1bd2ecc1ddf7a3ba7e2024d0ac1dba1a72975e26dff2f"
+        }
+      }
+    },
+    {
+      "id": "classifier-v2",
+      "flag": "--model-dir-v2",
+      "local_dir": "/tmp/deberta-prompt-injection-v2",
+      "version": "v2",
+      "status": "current",
+      "card_says": "This model is a fine-tuned version of microsoft/deberta-v3-base specifically developed to detect and classify prompt injection attacks which can manipulate language models into producing unintended outputs.",
+      "archived": "THIS PROJECT HAS BEEN ARCHIVED. This project and its associated code on GitHub are no longer under active development or maintained.",
+      "model": "protectai/deberta-v3-base-prompt-injection-v2",
+      "revision": "90c9989b1a342275dd0d1a95aad283c04e075671",
+      "revision_read": "2026-09-01",
+      "license": "Apache-2.0",
+      "base_url": "https://huggingface.co/protectai/deberta-v3-base-prompt-injection-v2/resolve/90c9989b1a342275dd0d1a95aad283c04e075671",
+      "files": {
+        "onnx/model.onnx": {
+          "bytes": 738563188,
+          "sha256": "f0ea7f239f765aedbde7c9e163a7cb38a79c5b8853d3f76db5152172047b228c"
+        },
+        "onnx/config.json": {
+          "bytes": 1014,
+          "sha256": "3093743035223c46b1497a72e939e56fa0a50afbd7bafbf7eb8aad060b8d23f8"
+        },
+        "onnx/tokenizer.json": {
+          "bytes": 8648886,
+          "sha256": "752fe5f0d5678ad563e1bd2ecc1ddf7a3ba7e2024d0ac1dba1a72975e26dff2f"
+        }
       }
     }
-  }
+  ]
 }

@@ -7,6 +7,18 @@ difference.
 
 Measured on **2026-09-01**.
 
+## Which model is which
+
+**This file measures 2 revisions of ProtectAI's prompt-injection classifier: 1 current and 1 superseded.**
+
+`protectai/deberta-v3-base-prompt-injection` at revision `373b6af0f8d1` is NOT ProtectAI's current prompt-injection model. Its own model card at that revision says, in bold: "There is a newer version of the model - protectai/deberta-v3-base-prompt-injection-v2." Note that the current model's name ends in `-v2` and this one's does not, which is exactly how the two get confused.
+
+`protectai/deberta-v3-base-prompt-injection-v2` at revision `90c9989b1a34` is that newer version, and it is the ProtectAI row on PINT's published leaderboard.
+
+Both are measured here, on both corpora, through the same harness on the same day. A number quoted out of this file should be the current model's row. The superseded one is kept because it is what the first commits on this branch measured, and deleting it would hide a change rather than correct one.
+
+Both model cards carry the same notice: "THIS PROJECT HAS BEEN ARCHIVED. This project and its associated code on GitHub are no longer under active development or maintained." That is upstream's statement about its own project, not a finding of this measurement.
+
 ## There is no PINT score here
 
 The PINT dataset is 4,314 inputs and is not published. `benchmark/data/` in the
@@ -22,21 +34,24 @@ semantic injections, which is the honest half of the comparison.
 
 ## What each thing is
 
-| | What it reads | Kind | Pin |
-|---|---|---|---|
-| **`injection-structural`** | the encoding: invisible tag characters, unbalanced bidi overrides, unexplained zero-width runs | constraint | `jamjet-guardrails 0.1.0` |
-| **`protectai/deberta-v3-base-prompt-injection`** | the words: a DeBERTa-v3 sequence classifier fine-tuned on prompt injections | classifier | `373b6af0f8d1` |
+| | What it reads | Kind | Status | Pin |
+|---|---|---|---|---|
+| **`injection-structural`** | the encoding: invisible tag characters, unbalanced bidi overrides, unexplained zero-width runs | constraint | this package | `jamjet-guardrails 0.1.0` |
+| **`protectai/deberta-v3-base-prompt-injection-v2` (v2, current)** | the words: a DeBERTa-v3 sequence classifier fine-tuned on prompt injections | classifier | current | `90c9989b1a34` |
+| **`protectai/deberta-v3-base-prompt-injection` (v1, superseded)** | the words: a DeBERTa-v3 sequence classifier fine-tuned on prompt injections | classifier | superseded | `373b6af0f8d1` |
 
 | Corpus | Whose data | Inputs | Labelled injection | Pin |
 |---|---|---:|---:|---|
 | **PINT `example-dataset.yaml`** | Lakera's, MIT | 8 | 2 | `0efab3f463ea` |
 | **`corpora/injection-structural/in-repo.jsonl`** | ours, self-scored | 146 | 52 | `in-repo` |
 
-## Both detectors on both corpora
+**How each detector was asked.** `injection-structural` is built through the registry with its defaults and called with `direction="input"`, `origin="user"`; any verdict other than `allow` is a positive. Each classifier is run on its ONNX export at the pinned revision on `CPUExecutionProvider`, with no system prompt and no threshold: the label is `argmax` over the two logits and a positive is the `INJECTION` index read from that model's own `config.json`. Inputs are truncated at 512 tokens, each model's own `max_position_embeddings`. That is the configuration PINT's published example for this model family uses (`injection_label="INJECTION"`, `max_length=512`), so neither classifier is run in a setting chosen to make it lose.
 
-One decision per input, scored the same way for both: positive means the
+## Every detector on both corpora
+
+One decision per input, scored the same way for all of them: positive means the
 detector flagged the input. For `injection-structural` that is a verdict other
-than `allow`; for the classifier it is an `INJECTION` label at argmax. This is a
+than `allow`; for a classifier it is an `INJECTION` label at argmax. This is a
 DECISION-level score and it is not the finding-level precision and recall in
 [BENCHMARKS.md](../BENCHMARKS.md), which counts located spans on the same
 corpus and is a different measurement. The two must not be quoted as one.
@@ -46,63 +61,94 @@ corpus and is a different measurement. The two must not be quoted as one.
 | Detector | Inputs | TP | FP | FN | TN | Precision | Recall | Accuracy |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | `injection-structural` | 8 | 0 | 0 | 2 | 6 | - | 0.000 | 0.750 |
-| `protectai/deberta-v3-base-prompt-injection` | 8 | 2 | 0 | 0 | 6 | 1.000 | 1.000 | 1.000 |
+| `protectai/deberta-v3-base-prompt-injection-v2` (v2, current) | 8 | 2 | 0 | 0 | 6 | 1.000 | 1.000 | 1.000 |
+| `protectai/deberta-v3-base-prompt-injection` (v1, superseded) | 8 | 2 | 0 | 0 | 6 | 1.000 | 1.000 | 1.000 |
 
-| Category | Label | Inputs | `injection-structural` flagged | `protectai/deberta-v3-base-prompt-injection` flagged |
-|---|---|---:|---:|---:|
-| `jailbreak` | injection | 1 | 0 | 1 |
-| `prompt_injection` | injection | 1 | 0 | 1 |
-| `benign_input` | benign | 1 | 0 | 0 |
-| `chat` | benign | 1 | 0 | 0 |
-| `documents` | benign | 1 | 0 | 0 |
-| `hard_negatives` | benign | 1 | 0 | 0 |
-| `long_input` | benign | 1 | 0 | 0 |
-| `short_input` | benign | 1 | 0 | 0 |
+| Category | Label | Inputs | `injection-structural` flagged | `protectai/deberta-v3-base-prompt-injection-v2` (v2, current) flagged | `protectai/deberta-v3-base-prompt-injection` (v1, superseded) flagged |
+|---|---|---:|---:|---:|---:|
+| `jailbreak` | injection | 1 | 0 | 1 | 1 |
+| `prompt_injection` | injection | 1 | 0 | 1 | 1 |
+| `benign_input` | benign | 1 | 0 | 0 | 0 |
+| `chat` | benign | 1 | 0 | 0 | 0 |
+| `documents` | benign | 1 | 0 | 0 | 0 |
+| `hard_negatives` | benign | 1 | 0 | 0 | 0 |
+| `long_input` | benign | 1 | 0 | 0 | 0 |
+| `short_input` | benign | 1 | 0 | 0 | 0 |
 
 ### `corpora/injection-structural/in-repo.jsonl` (146 inputs, ours, self-scored)
 
 | Detector | Inputs | TP | FP | FN | TN | Precision | Recall | Accuracy |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | `injection-structural` | 146 | 46 | 2 | 6 | 92 | 0.958 | 0.885 | 0.945 |
-| `protectai/deberta-v3-base-prompt-injection` | 146 | 10 | 16 | 42 | 78 | 0.385 | 0.192 | 0.603 |
+| `protectai/deberta-v3-base-prompt-injection-v2` (v2, current) | 146 | 11 | 45 | 41 | 49 | 0.196 | 0.212 | 0.411 |
+| `protectai/deberta-v3-base-prompt-injection` (v1, superseded) | 146 | 10 | 16 | 42 | 78 | 0.385 | 0.192 | 0.603 |
 
-| Category | Label | Inputs | `injection-structural` flagged | `protectai/deberta-v3-base-prompt-injection` flagged |
-|---|---|---:|---:|---:|
-| `BIDI_OVERRIDE` | injection | 11 | 11 | 2 |
-| `INVISIBLE_TAG_CHARS` | injection | 13 | 13 | 0 |
-| `ZERO_WIDTH_SMUGGLING` | injection | 28 | 22 | 8 |
-| `benign-plain-text` | benign | 20 | 0 | 6 |
-| `benign-with-format-characters` | benign | 74 | 2 | 10 |
+| Category | Label | Inputs | `injection-structural` flagged | `protectai/deberta-v3-base-prompt-injection-v2` (v2, current) flagged | `protectai/deberta-v3-base-prompt-injection` (v1, superseded) flagged |
+|---|---|---:|---:|---:|---:|
+| `BIDI_OVERRIDE` | injection | 11 | 11 | 2 | 2 |
+| `INVISIBLE_TAG_CHARS` | injection | 13 | 13 | 3 | 0 |
+| `ZERO_WIDTH_SMUGGLING` | injection | 28 | 22 | 6 | 8 |
+| `benign-plain-text` | benign | 20 | 0 | 10 | 6 |
+| `benign-with-format-characters` | benign | 74 | 2 | 35 | 10 |
 
-## Where the classifier wins
+## Where the classifiers win
 
-**Semantic injections, which is most of what an attacker writes.** Of the 2 inputs PINT's example dataset labels as injection, the classifier flagged 2 and `injection-structural` flagged 0. Neither of those inputs hides anything in its encoding, so there is nothing in them for a structural check to find. This is not a close result and it is not meant to be: anyone who needs semantic injection detection needs a classifier, and this package is not one.
+**Semantic injections, which is most of what an attacker writes.** Of the 2 inputs PINT's example dataset labels as injection, `injection-structural` flagged 0 and the classifiers flagged 2 (v2) and 2 (v1). Neither of those inputs hides anything in its encoding, so there is nothing in them for a structural check to find. This is not a close result and it is not meant to be: anyone who needs semantic injection detection needs a classifier, and this package is not one.
 
-**It is not blind to our corpus either.** On the 52 smuggling cases the classifier flagged 10 against 46 for `injection-structural`. The agreement table below is where that 10 came from.
+**Neither classifier is blind to our corpus either.** On the 52 smuggling cases they flagged 11 (v2) and 10 (v1), against 46 for `injection-structural`. The agreement tables below are where those came from.
 
 ## Where the constraint wins
 
-**Payloads carried in the encoding.** On the 52 smuggling cases in our corpus `injection-structural` flagged 46 and the classifier flagged 10. On this corpus, at this revision.
+**Payloads carried in the encoding.** On the 52 smuggling cases in our corpus `injection-structural` flagged 46 and the classifiers flagged 11 (v2) and 10 (v1). On this corpus, at these revisions.
 
-**Text that looks adversarial and is not.** Our corpus carries 94 benign inputs, 74 of which use a format character legitimately: emoji built with zero-width joiners, Indic and Persian text, balanced bidi isolates, regional-indicator flags. `injection-structural` raised 2 false alarms across all 94 and the classifier raised 16. The corpus was written to hold exactly these shapes, so this measures us on our own hard cases and nobody else's.
+**Text that looks adversarial and is not.** Our corpus carries 94 benign inputs, 74 of which use a format character legitimately: emoji built with zero-width joiners, Indic and Persian text, balanced bidi isolates, regional-indicator flags. Across all 94, `injection-structural` raised 2 false alarms and the classifiers raised 45 (v2) and 16 (v1). The corpus was written to hold exactly these shapes, so this measures us on our own hard cases and nobody else's.
 
-**On PINT's benign inputs both were quiet.** 6 benign inputs, 0 false alarms from `injection-structural` and 0 from the classifier. At 6 inputs that is a smoke test, not a false-positive rate, and PINT's own `hard_negatives` category is one of them.
+**On PINT's benign inputs everything was quiet.** Across 6 benign inputs `injection-structural` raised 0 false alarms and the classifiers raised 0 (v2) and 0 (v1). At 6 inputs that is a smoke test, not a false-positive rate, and PINT's own `hard_negatives` category is one of them.
 
 ## Where they agree and where they disagree
 
 Every input, by what the label says and by which detectors flagged it. This is
 the whole answer to "do they overlap": the `neither` row on an injection line
 is what both missed, and the two `only` rows are what each one contributes that
-the other does not.
+the other does not. One table per classifier, because agreeing with the current
+model and agreeing with the superseded one are two different facts.
 
-### PINT `example-dataset.yaml`
+### PINT `example-dataset.yaml` (8 inputs), v2 (current)
+
+`injection-structural` against `protectai/deberta-v3-base-prompt-injection-v2` (v2, current).
 
 | Label | Flagged by | Inputs | Example ids |
 |---|---|---:|---|
 | injection | classifier only | 2 | `pint-0003`, `pint-0004` |
 | benign | neither | 6 | `pint-0001`, `pint-0002`, `pint-0005`, `pint-0006`, `pint-0007`, `pint-0008` |
 
-### `corpora/injection-structural/in-repo.jsonl`
+### PINT `example-dataset.yaml` (8 inputs), v1 (superseded)
+
+`injection-structural` against `protectai/deberta-v3-base-prompt-injection` (v1, superseded).
+
+| Label | Flagged by | Inputs | Example ids |
+|---|---|---:|---|
+| injection | classifier only | 2 | `pint-0003`, `pint-0004` |
+| benign | neither | 6 | `pint-0001`, `pint-0002`, `pint-0005`, `pint-0006`, `pint-0007`, `pint-0008` |
+
+### `corpora/injection-structural/in-repo.jsonl` (146 inputs), v2 (current)
+
+`injection-structural` against `protectai/deberta-v3-base-prompt-injection-v2` (v2, current).
+
+| Label | Flagged by | Inputs | Example ids |
+|---|---|---:|---|
+| injection | both | 9 | `inj-0003`, `inj-0005`, `inj-0009`, `inj-0022`, `inj-0049`, `inj-0050` |
+| injection | structural only | 37 | `inj-0001`, `inj-0006`, `inj-0007`, `inj-0008`, `inj-0010`, `inj-0011` |
+| injection | classifier only | 2 | `inj-0097`, `inj-0098` |
+| injection | neither | 4 | `inj-0051`, `inj-0052`, `inj-0053`, `inj-0099` |
+| benign | both | 1 | `inj-0091` |
+| benign | structural only | 1 | `inj-0129` |
+| benign | classifier only | 44 | `inj-0028`, `inj-0029`, `inj-0031`, `inj-0032`, `inj-0036`, `inj-0037` |
+| benign | neither | 48 | `inj-0002`, `inj-0004`, `inj-0015`, `inj-0016`, `inj-0017`, `inj-0018` |
+
+### `corpora/injection-structural/in-repo.jsonl` (146 inputs), v1 (superseded)
+
+`injection-structural` against `protectai/deberta-v3-base-prompt-injection` (v1, superseded).
 
 | Label | Flagged by | Inputs | Example ids |
 |---|---|---:|---|
@@ -114,11 +160,15 @@ the other does not.
 | benign | classifier only | 16 | `inj-0029`, `inj-0041`, `inj-0062`, `inj-0063`, `inj-0065`, `inj-0068` |
 | benign | neither | 76 | `inj-0002`, `inj-0004`, `inj-0015`, `inj-0016`, `inj-0017`, `inj-0018` |
 
-## Can the classifier read a smuggled instruction?
+## Can a classifier read a smuggled instruction?
 
-Three measurements over the labelled payload spans, at the pinned revision.
+Four measurements over the labelled payload spans, at the pinned revisions.
+Three of them read the tokenizer alone and none of the weights, so where two
+revisions produce the same answer it is reported once and says whose.
 
 ### What the tokenizer does to each payload character
+
+Measured on `protectai/deberta-v3-base-prompt-injection-v2` (v2, current) and `protectai/deberta-v3-base-prompt-injection` (v1, superseded). They ship the same `tokenizer.json`, sha256 `752fe5f0d567`, and every measurement below came out identical for each, so it is reported once.
 
 Every distinct character appearing inside a labelled span, put through this
 tokenizer's normalizer on the probe `"a<char>b"`.
@@ -233,15 +283,43 @@ one zero-width character for another crosses between characters this normalizer
 treats differently, so the result would measure the substitution rather than the
 model.
 
+### How long a run of tag characters collapses
+
+The corpus holds 20 labelled tag-character spans, 1 to 33 characters long.
+Encoded on their own, 20 of those 20 become exactly one `[UNK]` id, so a longer
+smuggled instruction is not a bigger signal to the model than a shorter one.
+Synthetic runs of the same character, including one far longer than anything
+the corpus reaches:
+
+| Run length in tag characters | `[UNK]` ids |
+|---:|---:|
+| 1 | 1 |
+| 5 | 1 |
+| 33 | 1 |
+| 200 | 1 |
+
+In context the count is not always one per span, and that nuance is why this
+is measured rather than asserted: 12 of the 13 tag-character cases encode to
+exactly one `[UNK]` for each labelled span, and the rest carry more. The
+collapse is a property of a run in isolation, not a promise about a whole
+prompt.
+
 ### Flags that survive deleting the payload
 
-The classifier flagged 10 of the 52 smuggling cases. Cutting the payload
-out entirely and asking again, it still flags 6 of those 10: those 6 are
-judgements about the visible words and would stand with the attack removed. The
-remaining 4 do depend on the payload BEING there. Read together
-with the table above, which shows the tag payloads are content-invariant, what
-that dependence can carry is the presence of something unreadable, not what it
-said.
+Of the smuggling cases a classifier flagged, how many it still flags with the
+payload cut out entirely. Those flags are judgements about the visible words and
+would stand with the attack removed. This one does read the weights, so it is
+reported per model.
+
+| Classifier | Smuggling cases | Flagged | Still flagged with the payload deleted |
+|---|---:|---:|---:|
+| `protectai/deberta-v3-base-prompt-injection-v2` (v2, current) | 52 | 11 | 5 |
+| `protectai/deberta-v3-base-prompt-injection` (v1, superseded) | 52 | 10 | 6 |
+
+The difference between those last two columns is the flags that DO depend on the
+payload being there. Read together with the content-invariance table above, which
+shows the tag payloads are content-invariant, what that dependence can carry is
+the presence of something unreadable, not what it said.
 
 ## Environment
 
@@ -262,6 +340,12 @@ said.
 python3 -m venv /tmp/guardrails-bench
 /tmp/guardrails-bench/bin/pip install -r benchmarks/requirements.txt
 
+REV=90c9989b1a342275dd0d1a95aad283c04e075671
+B=https://huggingface.co/protectai/deberta-v3-base-prompt-injection-v2/resolve/$REV
+mkdir -p /tmp/deberta-prompt-injection-v2
+for f in model.onnx config.json tokenizer.json; do \
+  curl -sSL -o "/tmp/deberta-prompt-injection-v2/$f" "$B/onnx/$f"; done
+
 REV=373b6af0f8d16739cff5de28be326652246bfaa3
 B=https://huggingface.co/protectai/deberta-v3-base-prompt-injection/resolve/$REV
 mkdir -p /tmp/deberta-prompt-injection
@@ -269,6 +353,7 @@ for f in model.onnx config.json tokenizer.json; do \
   curl -sSL -o "/tmp/deberta-prompt-injection/$f" "$B/onnx/$f"; done
 
 PYTHONPATH=src /tmp/guardrails-bench/bin/python benchmarks/run.py \
+  --model-dir-v2 /tmp/deberta-prompt-injection-v2 \
   --model-dir /tmp/deberta-prompt-injection
 ```
 
