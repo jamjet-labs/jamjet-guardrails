@@ -345,6 +345,45 @@ datasets may carry non-commercial terms. That has no bearing on measuring the
 model, and it would have a bearing on anything downstream that bundled it, which
 this repository does not.
 
+## Training corpora
+
+Nothing in this section is a file in this repository and no published number is
+measured on any of it. These are the public corpora the stage 2b injection
+classifier may be fitted on, recorded here because attribution is a condition of
+one of their licences and a condition does not wait for a file to be committed.
+The manifest that governs them, with the digest each hashed to and the reason
+each was admitted or refused, is `training/sources.yaml`.
+
+Portions of the training data are derived from the **prompt_injections dataset**
+(`yanismiraoui/prompt_injections`) by Yanis Miraoui, licensed under the Apache
+License, Version 2.0. Its own NOTICE
+file is reproduced here, which is what section 4(d) of that licence asks for:
+
+> prompt_injections dataset
+> Copyright 2023 Yanis Miraoui
+>
+> Licensed under the Apache License, Version 2.0 (the "License"); you may not
+> use the contents of this repository except in compliance with the License.
+> You may obtain a copy of the License at
+> <http://www.apache.org/licenses/LICENSE-2.0>
+
+- Dataset: <https://huggingface.co/datasets/yanismiraoui/prompt_injections>
+- Revision: `bd55359f2f332afc35f277ac3dd08f7111b024c9`
+- File: `prompt_injections.csv`, sha256
+  `f4843f1841fa19b980f804796a68fc72f06841775eaba2723c768c7d772aabad`
+- SPDX identifier: `Apache-2.0`
+- Licence text: <https://www.apache.org/licenses/LICENSE-2.0>
+
+The other corpus admitted for training, `fka/awesome-chatgpt-prompts`, is
+CC0-1.0. A public-domain dedication asks for nothing, so there is no obligation
+to discharge and it is named here only so that the two admitted sources can be
+read in one place.
+
+**No corpus in this section may be scored on.** The screen for that lives in
+`tests/test_training_data.py`, not in this document, and the reason it applies
+to corpora nobody has denylisted is that the denylist is known to be partial:
+ProtectAI's v2 card counts 22 source datasets and names 7.
+
 ## What is deliberately absent, and why
 
 **There is no third-party secrets corpus.** No compatibly-licensed one was

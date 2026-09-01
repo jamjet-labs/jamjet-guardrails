@@ -40,11 +40,26 @@ from training.fetch import (
     sha256_of,
     verify,
 )
+from training.screen import (
+    _FNG_DOMAINS,
+    ATTRIBUTION,
+    CONDITIONS,
+    FINGERPRINTS,
+    NO_CONDITION,
+    REFUSED_LICENCES,
+    USABLE_LICENCES,
+    fingerprint_hits,
+    licence_refusal,
+    normalise_licence,
+    requires_attribution,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCES = ROOT / "training" / "sources.yaml"
 TRAINING_README = ROOT / "training" / "README.md"
 NOTICE = ROOT / "corpora" / "NOTICE.md"
+CORPUS_SCREEN = ROOT / "tests" / "test_corpora.py"
+CONFORMANCE = ROOT / "docs" / "conformance.md"
 
 #: Every file under `training/` that could name a reference model. Globbed
 #: rather than listed, so a file added to the tree tomorrow is scanned without
@@ -278,14 +293,44 @@ def _unattributed(sources: Iterable[Source], notice: str) -> list[str]:
 
     The NOTICE is matched by identifier too, not by substring, for the reason
     `_base_ids_in` records.
+
+    Two ways in, because the two carry different information and neither
+    subsumes the other. `ATTRIBUTION_BASES` is a list of NAMES taken from a
+    reference model's licence summary, which is the only per-dataset licence
+    statement either card makes; it covers corpora this manifest has never
+    recorded a `license` field for. `requires_attribution` reads the licence
+    the manifest itself declares, which is the only thing that can speak for a
+    corpus nobody else has published a licence for. A screen with only the
+    first arm would have passed every source in this file: not one of them is
+    on that list.
     """
     attributed = _base_ids_in(notice)
     return sorted(
         source.name
         for source in sources
-        if base_id(source.name) in ATTRIBUTION_BASES
+        if (base_id(source.name) in ATTRIBUTION_BASES or requires_attribution(source.license))
         and source.role != "excluded"
         and base_id(source.name) not in attributed
+    )
+
+
+def _unshippable(sources: Iterable[Source]) -> list[str]:
+    """Sources in a usable role whose licence this repository cannot ship under.
+
+    Scoped to `role != "excluded"` because that is where the question lives. An
+    excluded source is recorded precisely so that its licence is written down
+    somewhere, and requiring those to pass would make the file unable to hold
+    the refusals it exists to hold.
+
+    Factored out of the test that applies it to the shipped manifest for the
+    reason `_contaminated` records: the same rule has to be runnable against a
+    manifest that breaks it, or a green test proves only that today's file has
+    no rows of the shape being screened.
+    """
+    return sorted(
+        source.name
+        for source in sources
+        if source.role != "excluded" and licence_refusal(source.license)
     )
 
 
@@ -597,13 +642,19 @@ def test_the_manifest_records_the_exclusions_the_plan_requires() -> None:
 
 
 def test_a_source_under_an_attribution_licence_is_named_in_the_notice() -> None:
-    """Vacuous today, and pinned so it stops being vacuous the moment it matters.
+    """No longer vacuous, and it failed the moment it stopped being so.
 
     Neither `VMware/open-instruct` (CC-BY-3.0) nor `natolambert/xstest-v2-copy`
-    (CC-BY-4.0) is in the manifest. Both are on the denylist, both are
-    plausible sources for a later task, and both carry a licence whose
-    attribution term is a condition of use. `corpora/NOTICE.md` is where this
-    repository discharges that, and it is checked here rather than remembered.
+    (CC-BY-4.0) is in the manifest, so while the rule read a list of names it
+    looped over nothing. Reading the declared licence as well put
+    `yanismiraoui/prompt_injections` in scope -- Apache-2.0, in role `train`,
+    and Apache-2.0 section 4(d) asks for the upstream NOTICE to travel -- and
+    this test failed on the real manifest until `corpora/NOTICE.md` carried it.
+
+    It failed a second time after that entry was written, because the NOTICE
+    named the corpus only as a hyperlink. `_base_ids_in` strips URLs first, for
+    the reason `test_a_url_in_the_notice_does_not_attribute_a_corpus` gives: a
+    link to a dataset is not a credit to its author.
     """
     assert _unattributed(load_sources(SOURCES), NOTICE.read_text(encoding="utf-8")) == []
 
@@ -1282,3 +1333,377 @@ def test_every_url_in_the_manifest_is_https() -> None:
     """
     wrong = [s.name for s in load_sources(SOURCES) if not s.url.startswith("https://")]
     assert wrong == [], f"these are not served over https: {wrong}"
+
+
+def test_the_screen_catches_the_corpus_that_defeated_a_licence_field() -> None:
+    """The Fake Name Generator house domains are the tell.
+
+    `beki/privy` and `microsoft/presidio-research` advertise MIT and derive from
+    FNG identities under dual GPLv3 / CC-BY-SA-3.0-US. This screen exists
+    because the licence metadata was clean the whole way down that chain.
+    """
+    rows = ["contact me at alice@cuvox.de about the invoice"]
+    hits = fingerprint_hits(rows)
+    assert "fake_name_generator" in hits
+
+
+def test_the_screen_does_not_echo_the_offending_row() -> None:
+    """A screen that prints what it found undoes the reason it exists.
+
+    `corpus._reject` makes the same argument for malformed rows: a loader that
+    prints the offending value has published it.
+    """
+    long_row = "contact alice@cuvox.de " + "x" * 500
+    (excerpt,) = fingerprint_hits([long_row])["fake_name_generator"]
+    assert len(excerpt) <= 60
+
+
+def test_clean_rows_produce_no_hits() -> None:
+    assert fingerprint_hits(["summarise the quarterly report", "ignore that"]) == {}
+
+
+def test_every_fingerprint_has_a_reason() -> None:
+    """A screen entry nobody can justify is one nobody can remove safely."""
+    for name, (pattern, reason) in FINGERPRINTS.items():
+        assert pattern.pattern, name
+        assert len(reason) > 40, f"{name} has no usable reason recorded"
+
+
+# ==========================================================================
+# The licence screen: what the metadata says, and what the values say.
+# ==========================================================================
+
+
+def test_no_source_this_repository_uses_carries_a_licence_it_cannot_ship() -> None:
+    """The rule, on the shipped manifest.
+
+    `jamjet-guardrails` is Apache-2.0 and the artifact this data produces is
+    installed by people who will use it commercially. A non-commercial,
+    share-alike, research-only or undeclared corpus cannot be fitted into that,
+    and the objection is not curable downstream: `docs/conformance.md` makes
+    this exact argument against somebody else's corpus, so a manifest here that
+    admitted one would be the argument unapplied to ourselves.
+    """
+    assert _unshippable(load_sources(SOURCES)) == []
+
+
+@pytest.mark.parametrize(
+    "license",
+    [
+        # The spellings a real card carries. The hub writes its tags in lower
+        # case and SPDX writes identifiers capitalised, so both are what a
+        # manifest entry copied from a real source looks like.
+        "CC-BY-NC-4.0",
+        "cc-by-nc-4.0",
+        "  CC-BY-NC-4.0  ",
+        "CC-BY-SA-3.0",
+        "cc-by-sa-3.0",
+        "GPL-3.0",
+        "research-only",
+        # The hub's catch-all, and the two things a real card did instead of
+        # declaring a licence. `xTRam1/safe-guard-prompt-injection` declares
+        # nothing at all and `deepset/prompt-injections` declares two different
+        # licences in one front matter.
+        "other",
+        "none-declared",
+        "conflicting",
+        # And the case the allowlist exists for: a spelling nobody screened.
+        # A denylist of forbidden terms says nothing about this one, which is
+        # why the rule is written the other way round.
+        "SomeVendor-Community-License-1.1",
+        "",
+    ],
+)
+def test_the_licence_rule_catches_a_manifest_that_breaks_it(tmp_path: Path, license: str) -> None:
+    """The dual, run through `load_sources` rather than against the function.
+
+    Every case here reaches the screen the way a real entry would: written into
+    a manifest, parsed, and read off a `Source`. A test that called
+    `licence_refusal` directly would pass while the manifest screen looked at
+    the wrong field or at nothing.
+    """
+    used = _manifest(
+        tmp_path,
+        "- name: someone/corpus\n"
+        '  url: "https://example.invalid/corpus.csv"\n'
+        f'  license: "{license}"\n'
+        f'  sha256: "{"a" * 64}"\n'
+        "  role: train\n",
+    )
+    if not license.strip():
+        # An empty licence never reaches the screen: `load_sources` refuses a
+        # field that is not one non-empty piece of text. Asserted rather than
+        # skipped, because "the screen said nothing" and "the loader refused
+        # it" are different outcomes and only one of them is safe.
+        with pytest.raises(SourceError, match="must carry one non-empty piece of text"):
+            load_sources(used)
+        return
+    assert _unshippable(load_sources(used)) == ["someone/corpus"]
+
+
+@pytest.mark.parametrize("license", sorted(USABLE_LICENCES))
+def test_a_licence_on_the_allowlist_is_not_refused(license: str) -> None:
+    """The other direction, which a screen that refuses everything also passes.
+
+    Checked in the upper-case spelling too. SPDX identifiers are compared
+    without regard to case by the specification, `Apache-2.0` is how the
+    manifest writes one and `apache-2.0` is how the hub tags it, and a screen
+    that admitted only the spelling its own table uses would refuse half the
+    real entries in this repository.
+    """
+    assert licence_refusal(license) == ""
+    assert licence_refusal(license.upper()) == ""
+
+
+def test_normalise_licence_folds_case_and_nothing_else() -> None:
+    """The restraint is the point, so it is pinned rather than left to be read.
+
+    Folding more -- spaces, punctuation, words -- would invent equivalences
+    nobody checked, and it buys nothing: an unrecognised spelling is refused by
+    the allowlist rather than admitted, so the screen fails closed on it.
+    """
+    assert normalise_licence("  Apache-2.0 ") == "apache-2.0"
+    assert normalise_licence("CC-BY-NC-4.0") == "cc-by-nc-4.0"
+    assert normalise_licence("Apache 2.0") != "apache-2.0"
+    assert normalise_licence("CC_BY_4.0") != "cc-by-4.0"
+    assert licence_refusal("Apache 2.0") != "", "a spelling nobody screened was admitted"
+
+
+def test_every_usable_licence_records_what_it_still_asks_for() -> None:
+    """A licence added to the allowlist is a decision about attribution too.
+
+    The condition is what `corpora/NOTICE.md` has to discharge, so a licence
+    admitted without one is a corpus that can be used with nothing asking
+    whether it has to be credited. Recording it per entry is what makes that a
+    choice somebody made rather than a default.
+
+    The exceptions are named. Only a public-domain dedication asks for nothing;
+    MIT and Apache-2.0 are permissive and still require their notices to
+    travel, so an edit that quietly moved one of them into the free column has
+    to move it past this list.
+    """
+    assert USABLE_LICENCES, "the allowlist is empty, so nothing below checks anything"
+    for name, condition in USABLE_LICENCES.items():
+        assert condition in CONDITIONS, f"{name} records the condition {condition!r}"
+    free = {name for name, condition in USABLE_LICENCES.items() if condition == NO_CONDITION}
+    assert free == {"cc0-1.0", "unlicense"}, (
+        "a licence that is not a public-domain dedication is recorded as asking for nothing, "
+        f"or a dedication has gone missing: {sorted(free)}"
+    )
+    assert any(condition == ATTRIBUTION for condition in USABLE_LICENCES.values())
+
+
+def test_no_licence_is_both_usable_and_refused() -> None:
+    """The allowlist wins by construction, so an overlap is a lie in one table.
+
+    `licence_refusal` looks in `USABLE_LICENCES` first. An identifier written
+    into both tables would be admitted while `REFUSED_LICENCES` recorded a
+    reason nobody would ever see, which is the worst of the two failures: the
+    file reads as though the corpus were refused.
+    """
+    both = sorted(set(USABLE_LICENCES) & set(REFUSED_LICENCES))
+    assert both == [], f"these are recorded as usable and as refused at once: {both}"
+
+
+def test_every_refused_licence_records_the_term_that_refuses_it() -> None:
+    """The same argument `test_every_fingerprint_has_a_reason` makes.
+
+    A refusal nobody can justify is one nobody can lift safely, and "it was on
+    the list" is not a reason a licence question can be reopened against.
+    """
+    assert REFUSED_LICENCES, "nothing is recorded as refused, so this checks nothing"
+    for name, reason in REFUSED_LICENCES.items():
+        assert name == normalise_licence(name), f"{name} is not in the form the screen compares"
+        assert len(reason) > 40, f"{name} is refused with no usable reason recorded"
+
+
+def test_the_attribution_rule_follows_the_declared_licence_and_not_only_a_list_of_names(
+    tmp_path: Path,
+) -> None:
+    """The arm that was missing, and the arm that is not enough on its own.
+
+    `ATTRIBUTION_BASES` holds two names read off a reference model's licence
+    summary. Not one source in this manifest is on that list, so the rule
+    looped over nothing until it also read the licence each source declares --
+    and the corpus it then caught, `yanismiraoui/prompt_injections`, is
+    Apache-2.0, which is not a licence anybody would have thought to add to a
+    list of CC-BY names.
+
+    Both arms are exercised here against a corpus on neither list, so a screen
+    that dropped the licence arm fails, and a screen that answered `True` for
+    every licence fails too.
+    """
+
+    def entry(license: str) -> Path:
+        return _manifest(
+            tmp_path,
+            "- name: someone/corpus\n"
+            '  url: "https://example.invalid/corpus.csv"\n'
+            f'  license: "{license}"\n'
+            f'  sha256: "{"a" * 64}"\n'
+            "  role: train\n",
+        )
+
+    assert _unattributed(load_sources(entry("Apache-2.0")), "names nothing") == ["someone/corpus"]
+    assert _unattributed(load_sources(entry("apache-2.0")), "names nothing") == ["someone/corpus"]
+    assert _unattributed(load_sources(entry("MIT")), "names nothing") == ["someone/corpus"]
+    # CC0-1.0 is a public-domain dedication: usable, and nothing to discharge.
+    # Without this the rule could demand a NOTICE entry for every source and
+    # the assertions above would still pass.
+    assert _unattributed(load_sources(entry("CC0-1.0")), "names nothing") == []
+    # And a refused licence asks for nothing either, because there is nothing
+    # to attribute in a corpus this repository may not use. Reporting one here
+    # would invite somebody to write the NOTICE entry and call it settled.
+    assert requires_attribution("CC-BY-NC-4.0") is False
+
+
+# ==========================================================================
+# The value fingerprint: the ten house domains, in one place.
+# ==========================================================================
+
+
+@pytest.mark.parametrize("domain", _FNG_DOMAINS)
+def test_the_screen_matches_every_house_domain(domain: str) -> None:
+    """One row per domain, and the mixed-case spelling of each.
+
+    A tuple is easy to truncate and a truncated one leaves the screen quietly
+    narrower, with the brief's own example still passing because it uses the
+    first entry. Case matters for the same reason: a domain is case-insensitive
+    in every system that resolves one, so a corpus that title-cased an email
+    column carries the same share-alike values under a spelling a
+    case-sensitive pattern reads as clean.
+    """
+    assert fingerprint_hits([f"write to alice@{domain} today"])
+    assert fingerprint_hits([f"write to Alice@{domain.upper()} today"])
+    assert fingerprint_hits([f"write to alice@{domain.capitalize()} today"])
+
+
+def test_the_house_domains_here_are_the_ones_the_corpus_screen_rejects() -> None:
+    """Two tables, and they have to agree.
+
+    `tests/test_corpora.py` rejects these domains in the committed corpora and
+    this module screens them in the corpora that have not been fetched yet.
+    Two copies of one list drift, and both sides look right on their own: a
+    domain added to one leaves the other admitting a corpus the repository has
+    already decided it cannot carry.
+
+    Read out of the test source rather than imported, the way
+    `tests/test_conformance_doc.py` reads the same list, so this file does not
+    depend on pytest's sys.path insertion for a sibling test module. That doc
+    is tied to the corpus screen by
+    `test_the_document_lists_every_domain_the_corpus_screen_rejects`, so all
+    three statements of the list are held together by these two tests.
+    """
+    body = CORPUS_SCREEN.read_text(encoding="utf-8").split("FNG_DOMAINS = frozenset(", 1)[1]
+    enforced = set(re.findall(r'"([^"]+)"', body.split(")", 1)[0]))
+    assert len(enforced) >= 5, f"read {len(enforced)} domains out of the screen; the parse is wrong"
+    assert set(_FNG_DOMAINS) == enforced, (
+        "the training screen and the corpus screen no longer cover the same house domains: "
+        f"here only {sorted(set(_FNG_DOMAINS) - enforced)}, there only "
+        f"{sorted(enforced - set(_FNG_DOMAINS))}"
+    )
+    assert len(_FNG_DOMAINS) == len(set(_FNG_DOMAINS)), "a domain is recorded twice"
+    # And the number the published document states, which is the third copy.
+    # `docs/conformance.md` is where a reader is told how wide the fingerprint
+    # is before they trust it against a corpus of their own.
+    stated = re.search(r"(\d+) house domains", CONFORMANCE.read_text(encoding="utf-8"))
+    assert stated is not None, "the conformance doc no longer states a house-domain count"
+    assert int(stated.group(1)) == len(_FNG_DOMAINS), (
+        f"the doc publishes {stated.group(1)} house domains and this screen covers "
+        f"{len(_FNG_DOMAINS)}"
+    )
+
+
+def test_the_readme_states_the_roles_the_manifest_records() -> None:
+    """A number in prose that counts a thing in the manifest is a claim.
+
+    The README's role table used to say what each role means and nothing about
+    how many sources hold it, so the file could grow from two entries to ten
+    with the prose beside it still describing the old shape. The counts are
+    recomputed here and compared, which is the same treatment
+    `test_the_readme_states_the_same_partiality_the_denylist_records` gives the
+    denylist.
+    """
+    sources = load_sources(SOURCES)
+    readme = TRAINING_README.read_text(encoding="utf-8")
+    published = {
+        role: int(count)
+        for role, count in re.findall(r"\|\s*`(train|eval|excluded)`\s*\|\s*(\d+)\s*\|", readme)
+    }
+    assert set(published) == set(ROLES), (
+        f"the README's role table does not count every role: {published}"
+    )
+    counted = {role: sum(1 for s in sources if s.role == role) for role in ROLES}
+    assert published == counted, f"the README says {published}; the manifest holds {counted}"
+    assert f"holds {len(sources)} sources" in " ".join(readme.split()), (
+        f"the README does not state that the manifest holds {len(sources)} sources"
+    )
+    assert sum(counted.values()) == len(sources)
+
+
+def test_the_readme_states_how_many_entries_carry_no_digest() -> None:
+    """A count of rows in a file, written in prose beside the file.
+
+    This one was wrong on the first pass -- the README said five while the
+    manifest held six -- which is the whole argument for recomputing rather
+    than counting by eye. The three reasons a digest can be absent are prose
+    and stay prose; the number is not.
+    """
+    sources = load_sources(SOURCES)
+    unpinned = [source for source in sources if source.sha256 == NO_DIGEST]
+    assert unpinned, "no source records an absent digest, so this test checks nothing"
+    assert len(unpinned) < len(sources), "every source is unpinned, which no manifest should be"
+    readme = " ".join(TRAINING_README.read_text(encoding="utf-8").split())
+    assert f"{len(unpinned)} entries carry no digest" in readme, (
+        f"{len(unpinned)} entries carry no digest and the README does not say so"
+    )
+
+
+def test_the_readme_states_how_many_exclusions_are_licence_exclusions() -> None:
+    """The other count in that section, and it splits the excluded rows in two.
+
+    "Excluded" is one role covering several arguments: a licence this
+    repository cannot ship under, a corpus whose values give it away whatever
+    its licence says, a corpus a reference model was trained on, and one whose
+    own authors advise against the use we would put it to. The README says how
+    many fall to the first, and a reader deciding whether the licence screen is
+    doing anything needs that number to be the real one.
+    """
+    excluded = [source for source in load_sources(SOURCES) if source.role == "excluded"]
+    refused = [source for source in excluded if licence_refusal(source.license)]
+    assert refused, "no exclusion is a licence exclusion, so the screen is doing nothing here"
+    assert len(refused) < len(excluded), (
+        "every exclusion is a licence exclusion, so the manifest no longer demonstrates that "
+        "a licence screen is a floor rather than the whole of it"
+    )
+    readme = " ".join(TRAINING_README.read_text(encoding="utf-8").split())
+    assert f"{len(refused)} of the {len(excluded)} excluded entries are refused here" in readme, (
+        f"{len(refused)} of {len(excluded)} exclusions are licence exclusions and the README "
+        "does not say so"
+    )
+
+
+def test_the_manifest_header_states_the_same_partiality_the_denylist_records() -> None:
+    """The README is not the only file that states these numbers now.
+
+    `training/sources.yaml` opens with the reason no source in it carries
+    `role: eval`, and that reason is arithmetic: 22 counted, 7 named, 15
+    accounted for and named nowhere. A manifest whose header argued from stale
+    numbers would be a manifest arguing for a decision the numbers no longer
+    support.
+    """
+    # The comment markers come off before the wrapping does. A sentence that
+    # wraps across two `#` lines is still one sentence, and joining the raw
+    # lines would leave a `#` sitting in the middle of every claim.
+    lines = SOURCES.read_text(encoding="utf-8").splitlines()
+    header = " ".join(" ".join(re.sub(r"^\s*#\s?", "", line) for line in lines).split())
+    v2 = PROTECTAI_V2
+    assert v2.licence_summary_total is not None
+    unnamed = v2.licence_summary_total - len(v2.named_datasets)
+    assert f"{len(NAMED_TRAINING_DATA)} datasets" in header
+    assert f"counts {v2.licence_summary_total} while naming {len(v2.named_datasets)}" in header
+    assert f"So {unnamed} corpora" in header
+    assert f"union of what both cards name, {len(NAMED_TRAINING_DATA)} names" in header
+    assert f"v2 counts {v2.licence_summary_total} datasets and names {len(v2.named_datasets)}" in (
+        header
+    )

@@ -141,17 +141,33 @@ what it may be used for. `training/fetch.py` reads it and downloads against
 the recorded hash; `tests/test_training_data.py` screens it in CI.
 
 `role` decides what a source may be used for, and the three values are not
-interchangeable:
+interchangeable. As of 2026-09-01 the manifest holds 10 sources:
 
-| `role` | meaning |
-|---|---|
-| `train` | may be fitted on |
-| `eval` | may be scored on |
-| `excluded` | neither, with the reason recorded in the entry itself |
+| `role` | sources | meaning |
+|---|---|---|
+| `train` | 2 | may be fitted on |
+| `eval` | 0 | may be scored on |
+| `excluded` | 8 | neither, with the reason recorded in the entry itself |
 
-Two rules hold this manifest to more than a reviewer's attention, and they
-are enforced in different places, which is worth knowing before relying on
-either:
+The counts are in the table because a number in prose that counts rows in a
+file is a claim like any other, and this one went stale the moment the manifest
+grew past the two entries the plan required by name.
+`test_the_readme_states_the_roles_the_manifest_records` recomputes all three
+from `training/sources.yaml` and fails when they disagree.
+
+**No public corpus carries `role: eval`, and that is a decision.** The
+contamination denylist below is the union of what two model cards happen to
+name, and neither card names all of it: v2's licence summary counts more source
+datasets than it names, and v1's card gives no total at all. A public injection
+corpus published before those models is a plausible member of what they count
+and never name, so absence from the denylist is not provenance. Evaluation
+stays where the classifier design puts it: our own held-out rows, and a
+third-party benchmark we do not control. The counts themselves are stated once,
+below, where a test recomputes them.
+
+Four rules hold this manifest to more than a reviewer's attention, and they
+are enforced in different places, which is worth knowing before relying on any
+of them:
 
 - **A source that is trained from or measured on carries a 64-character
   digest.** Enforced by `load_sources`, so it fails at load wherever the
@@ -213,12 +229,69 @@ either:
   warns that some may carry non-commercial terms, so nothing from that list can
   be recorded until its own dataset card has been read.
 
+  That rule reads two things, not one. The list of names above covers corpora
+  this manifest has never recorded a licence field for; the licence each source
+  declares covers everything else, and it is the arm that does the work here,
+  because not one source in this manifest is on the list. It caught
+  `yanismiraoui/prompt_injections` on the day it was written: Apache-2.0, in
+  role `train`, and section 4(d) of that licence asks for the upstream NOTICE
+  to travel with the work.
+
+- **A source that is trained from or measured on carries a licence this
+  repository can ship under, and the rule is an allowlist.** Enforced by
+  `test_no_source_this_repository_uses_carries_a_licence_it_cannot_ship` over
+  `licence_refusal` in `training/screen.py`. This library is Apache-2.0 and the
+  artifact its data produces gets installed by people who will use it
+  commercially, so a non-commercial, share-alike, research-only or undeclared
+  corpus cannot be fitted into it, and none of that is curable downstream.
+
+  Written as an allowlist rather than as a list of forbidden terms, because a
+  denylist fails open: the restriction nobody thought of reads as clean. 4 of
+  the 8 excluded entries are refused here, and for four different reasons --
+  one non-commercial, one share-alike, one declaring no licence at all, and one
+  declaring two different licences in the same card. The last two are recorded
+  in the manifest as `none-declared` and `conflicting`, which are not SPDX
+  identifiers and are not pretending to be; they are what those cards did
+  instead of granting a licence, and writing them down is how the file avoids
+  guessing a grant into existence.
+
+- **A source is screened on its VALUES, not only on its metadata.** Enforced by
+  `fingerprint_hits` in `training/screen.py`, run over a corpus when it is
+  fetched, with the outcome and the date recorded in that entry's note.
+
+  Phase 1 is why. `beki/privy` advertises MIT, and 1,068 of the 3,101,988 lines
+  of the smallest member of its pinned archive carry a Fake Name Generator
+  house domain, which makes those values dual GPLv3 / CC-BY-SA-3.0-US whatever
+  the tag says. Its entry is the worked example this file keeps deliberately: a
+  corpus whose licence field passes the rule above and whose rows do not.
+
+  The screen runs where a corpus is fetched rather than in CI, which has
+  neither network nor corpora. What CI holds is the screen itself -- that every
+  house domain matches, in mixed case as well as lower; that the excerpt it
+  reports back is bounded, because a screen that prints what it found has
+  published it; and that the house domains it covers are the ones
+  `tests/test_corpora.py` rejects in the committed corpora, in the number
+  `docs/conformance.md` publishes, since three copies of one list drift and
+  every side looks right alone.
+
 Every URL that carries a digest is pinned to a commit rather than to a branch,
 and `test_every_url_in_the_manifest_is_pinned_to_a_revision_or_carries_no_digest`
 is what holds it there. A branch under a recorded hash either starts failing
 verification, which is at least loud, or gets its hash updated to match, which
-changes the corpus under every number measured on it. The one entry without a
-digest is the one nothing can be downloaded from at all.
+changes the corpus under every number measured on it.
+
+6 entries carry no digest, and the absence means three different things, which
+each entry's note says outright. One cannot be fetched at all: every Hugging
+Face endpoint for it answered HTTP 401. Four were refused on their licence and
+never downloaded, because a corpus this repository may not use is not one it
+should be keeping a copy of to prove a point, and one of those four is gated as
+well, so it could not have been hashed either way. The last was refused on its
+own authors' recommendation rather than on its licence. `load_sources` confines
+an absent digest to `excluded` and requires a note beside it in every case.
+
+The count in that paragraph was wrong when it was written -- it said five --
+and `test_the_readme_states_how_many_entries_carry_no_digest` is why it is not
+wrong now.
 
 The manifest is read with PyYAML, through `ManifestLoader` in
 `training/fetch.py`. PyYAML lives in the `dev` extra beside pytest, ruff and

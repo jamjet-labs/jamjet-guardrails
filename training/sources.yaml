@@ -9,19 +9,190 @@
 # Read by training/fetch.py, which validates this file at load rather than
 # trusting it, and screened by tests/test_training_data.py in CI.
 #
-# The two entries below are the exclusions the plan requires to be written
-# down. ProtectAI's model card for deberta-v3-base-prompt-injection-v2 names
-# both as its own training data, and this stage is measured against that model.
+# A corpus gets here by passing two screens, and training/screen.py holds both
+# because Phase 1 showed that only one of them is a licence field.
+#
+#   licence_refusal  an ALLOWLIST over the `license` field. Non-commercial,
+#                    share-alike, research-only, undeclared and self-
+#                    contradicting all come out the same way: no established
+#                    grant, no use. An identifier the allowlist does not
+#                    recognise is refused rather than assumed permissive.
+#   fingerprint_hits a screen over the corpus VALUES. `beki/privy` below is
+#                    what it is for: MIT on the tag, Fake Name Generator
+#                    identities in the rows, dual GPLv3 / CC-BY-SA-3.0-US
+#                    upstream, and no licence field anywhere saying so.
+#
+# Every licence below was read from the source's own dataset card on
+# 2026-09-01 and the date is recorded per entry, because a card can be edited
+# and a licence taken from one without a date is a licence nobody can re-check.
+#
+# NO SOURCE HERE CARRIES `role: eval`, and that is a decision rather than an
+# omission. The contamination denylist is the union of what two ProtectAI
+# cards name, 19 datasets, and v2's own licence summary counts 22 while naming
+# 7. So 15 corpora that model was trained on are named nowhere, and a public
+# injection corpus published before it is a plausible member of that 15. A
+# corpus absent from the denylist is one nobody has established the provenance
+# of, not one the denylist cleared, so nothing public is scored on here.
+# Evaluation stays where the classifier design puts it: our own held-out rows,
+# and a third-party benchmark we do not control.
+
+# --------------------------------------------------------------------------
+# Usable for training.
+# --------------------------------------------------------------------------
+
+- name: fka/awesome-chatgpt-prompts
+  url: "https://huggingface.co/datasets/fka/awesome-chatgpt-prompts/resolve/fdf38571f7696abd71610f5ce2883454ed48bebc/prompts.csv"
+  license: CC0-1.0
+  sha256: "317a26e814a21b23227bd72e293bcfbe5d349d6ef14461270eec620f0fc0bafc"
+  role: train
+  note: >
+    Benign instruction prompts, the negative class. CC0-1.0 read from the
+    dataset card's licence tag on 2026-09-01: a public-domain dedication, so
+    this is the one source here that leaves nothing to attribute.
+    Value-screened clean on 2026-09-01 -- 120,141 lines read, no fingerprint
+    matched. Read 5,647,532 bytes.
+    ProtectAI's v1 card names this corpus as its own training data, so it may
+    never carry role eval; train is not a preference here, it is the only role
+    left open. The repository has since been renamed and now answers under a
+    different id (https://huggingface.co/datasets/fka/prompts.chat); the name
+    recorded here is the one the reference card uses and the one the pinned
+    URL still serves, and the rename is written down because an id-based
+    denylist does not follow a rename.
+
+- name: yanismiraoui/prompt_injections
+  url: "https://huggingface.co/datasets/yanismiraoui/prompt_injections/resolve/bd55359f2f332afc35f277ac3dd08f7111b024c9/prompt_injections.csv"
+  license: Apache-2.0
+  sha256: "f4843f1841fa19b980f804796a68fc72f06841775eaba2723c768c7d772aabad"
+  role: train
+  note: >
+    Injection prompts, the positive class. Apache-2.0 read from the dataset
+    card on 2026-09-01, and the repository ships its own LICENSE and NOTICE
+    files beside the data. Apache-2.0 is permissive and still asks for its
+    notices to travel, so this source carries an attribution condition and
+    corpora/NOTICE.md is where it is discharged;
+    test_a_source_under_an_attribution_licence_is_named_in_the_notice fails if
+    that entry goes missing. Value-screened clean on 2026-09-01 -- 1,035 lines
+    read, no fingerprint matched. Read 77,986 bytes.
+    Named by neither reference card, which is why it is train and not eval:
+    absence from a partial denylist is not provenance. The card declares seven
+    languages and the planned encoder is English-only, which is a labelling
+    question for the task that builds the splits and not a licence one.
+
+# --------------------------------------------------------------------------
+# Excluded on values. The licence field passed; the rows did not.
+# --------------------------------------------------------------------------
+
+- name: beki/privy
+  url: "https://huggingface.co/datasets/beki/privy/resolve/dc137a6a976f6b5bb8768e9bb51ec58df930ccd1/privy-dataset.zip"
+  license: MIT
+  sha256: "ad4ffbc8f7102a92f01f8d8023ddf4f5244fea6b23c3f116641fe6bbd8cbbde4"
+  role: excluded
+  note: >
+    The worked example, and the reason training/screen.py exists at all. Its
+    licence field PASSES: MIT is on the allowlist, and a screen that read only
+    the metadata would have admitted this corpus. Its values do not pass.
+    Screened on 2026-09-01 over dev-small.json, the smallest member of the
+    pinned 307,518,080-byte archive: 1,068 of 3,101,988 lines carry a Fake Name
+    Generator house domain. FNG identities are dual GPLv3 / CC-BY-SA-3.0-US,
+    an MIT tag downstream does not cure a share-alike upstream, and the count
+    is recorded here rather than the rows themselves.
+    Kept in this file rather than dropped from it: this is the second time the
+    corpus has been proposed and refused, and an exclusion nobody wrote down
+    gets re-argued from the licence tag every time.
+
+# --------------------------------------------------------------------------
+# Excluded on licence. Refused before being fetched, so there is nothing to
+# hash: a corpus this repository may not use is not one it should be
+# downloading copies of to prove a point.
+# --------------------------------------------------------------------------
+
+- name: qualifire/prompt-injections-benchmark
+  url: "https://huggingface.co/datasets/qualifire/prompt-injections-benchmark/resolve/9ef1aa46a7e5eedb096be0481be8011ede1e72e8/test.csv"
+  license: CC-BY-NC-4.0
+  sha256: "unavailable"
+  role: excluded
+  note: >
+    Non-commercial. Licence tag read on 2026-09-01. This is the most obvious
+    ready-made injection benchmark on the hub and it is written down for
+    exactly that reason: NC excludes the people this library is published for,
+    and a model fitted on it could not ship inside an Apache-2.0 distribution.
+    Also gated -- an unauthenticated request for the pinned file answered HTTP
+    401 on 2026-09-01 -- so it could not have been hashed even had the licence
+    allowed it. The licence is the reason; the gate is a fact about the fetch.
+
+- name: databricks/databricks-dolly-15k
+  url: "https://huggingface.co/datasets/databricks/databricks-dolly-15k/resolve/bdd27f4d94b9c1f951818a7da7fd7aeea5dbff1a/databricks-dolly-15k.jsonl"
+  license: CC-BY-SA-3.0
+  sha256: "unavailable"
+  role: excluded
+  note: >
+    Share-alike. Licence tag read on 2026-09-01. A work derived from it has to
+    carry CC-BY-SA-3.0, and this distribution is Apache-2.0 AND CC-BY-4.0.
+    Recorded because it is the best-known human-written benign instruction
+    corpus and the natural first suggestion for a negative class, so the
+    refusal has to be findable rather than remembered.
+
+- name: xTRam1/safe-guard-prompt-injection
+  url: "https://huggingface.co/datasets/xTRam1/safe-guard-prompt-injection/resolve/a3a877d608f37b7d20d9945671902df895ecdb46/README.md"
+  license: none-declared
+  sha256: "unavailable"
+  role: excluded
+  note: >
+    No licence at all: no tag on the repository and no licence field on the
+    card, read 2026-09-01. Silence is not permission, so the allowlist refuses
+    it and nothing was fetched. Recorded verbatim as none-declared rather than
+    guessed at, because a manifest that invents a grant is worse than one that
+    admits it has none. A second reason is written down so the entry is not
+    re-argued on the first alone: the card says the corpus was seeded from open
+    datasets including fka/awesome-chatgpt-prompts and
+    jackhhao/jailbreak-classification, both of which a reference model names as
+    its own training data, so it could not have been an evaluation source
+    either. The URL is the card itself, since that is what was read.
+
+- name: deepset/prompt-injections
+  url: "https://huggingface.co/datasets/deepset/prompt-injections/resolve/4f61ecb038e9c3fb77e21034b22511b523772cdd/README.md"
+  license: conflicting
+  sha256: "unavailable"
+  role: excluded
+  note: >
+    One card, two licences. Read 2026-09-01: the front matter's top-level
+    license key says apache-2.0 and the dataset_info block a few lines above it
+    says cc-by-4.0, and the body of the card is the unedited template. Both are
+    licences this repository could otherwise work with, which is what makes the
+    entry worth writing: the objection is not the terms, it is that no reader
+    can say which grant applies, and picking the convenient one is not reading
+    a licence. Not fetched.
+    Its rows could not have been value-screened today in any case. The corpus
+    is published only as parquet, and this tree's pins carry no parquet reader
+    -- training/requirements.txt lists neither pandas nor pyarrow -- so a
+    fingerprint run over it is work the tree cannot do yet.
+
+- name: reshabhs/SPML_Chatbot_Prompt_Injection
+  url: "https://huggingface.co/datasets/reshabhs/SPML_Chatbot_Prompt_Injection/resolve/02ce8084e979bc7d4c24ee35d22ecb7f2db96ff5/spml_prompt_injection.csv"
+  license: MIT
+  sha256: "unavailable"
+  role: excluded
+  note: >
+    MIT, and refused anyway, which is the other direction of the same lesson
+    beki/privy teaches: a licence screen is a floor. The dataset card's own FAQ
+    asks "Should I use this dataset to train my prompt injection detection
+    model?" and answers "It is not advisable", because its payloads are subtle
+    and are only malicious relative to the system prompt they are paired with,
+    so a detector reading the user prompt alone learns the wrong boundary. The
+    authors know their corpus better than we do. Card read 2026-09-01; not
+    fetched.
+
+# --------------------------------------------------------------------------
+# Excluded on contamination. ProtectAI's cards name both as their own training
+# data, and this stage publishes numbers against both of their models.
 # Scoring a detector on a corpus a reference model memorised publishes
 # memorisation as recall, so neither may ever carry role: eval.
 #
-# Two is the floor, not the set, and v2 is not the only reference. The stage is
-# measured against deberta-v3-base-prompt-injection as well, whose card names
-# twelve datasets none of which are these. NAMED_TRAINING_DATA in
+# Two is the floor and not the set. NAMED_TRAINING_DATA in
 # tests/test_training_data.py is the union of what both cards name, 19 names,
 # and it is still partial: v2 counts 22 datasets and names 7, and v1 counts
-# none at all. Adding an eval source the screen does not reject is not the same
-# as adding one that has been checked.
+# none at all.
+# --------------------------------------------------------------------------
 
 - name: jackhhao/jailbreak-classification
   url: "https://huggingface.co/datasets/jackhhao/jailbreak-classification/resolve/2f2ceeb39658696fd3f462403562b6eea5306287/default/jailbreak_dataset_full.csv"
@@ -35,8 +206,12 @@
     than to the landing page the plan quoted: a branch name moves, and a
     landing page downloads HTML whose hash says nothing about the corpus.
     Read 2026-09-01, 2143822 bytes. The licence is the dataset repository's own
-    apache-2.0 tag, which agrees with ProtectAI's card; neither has been
-    checked against the values yet, which is what the screen is for.
+    apache-2.0 tag, which agrees with ProtectAI's card.
+    Re-fetched and value-screened on 2026-09-01: the recorded digest still
+    describes what the pinned URL serves, and no fingerprint matched over
+    12,006 lines. The licence field is now screened as well as recorded --
+    Apache-2.0 is on the allowlist and carries an attribution condition -- so
+    the only thing standing between this corpus and a role is contamination.
 
 - name: Harelix/Prompt-Injection-Mixed-Techniques-2024
   url: "https://huggingface.co/datasets/Harelix/Prompt-Injection-Mixed-Techniques-2024"
@@ -52,4 +227,5 @@
     which is the only reading of it available to us, not as a licence anyone
     here has verified. The entry is kept precisely because it cannot be
     fetched: the name has to be in this file for anyone to check that it never
-    became an evaluation source.
+    became an evaluation source. Nothing could be value-screened, for the same
+    reason nothing could be hashed.
