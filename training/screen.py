@@ -150,6 +150,14 @@ REFUSED_LICENCES: dict[str, str] = {
         "copyleft, and reaching further than GPLv3: it follows the work across a network "
         "boundary, so a hosted service built on it is a distribution too"
     ),
+    "qwen-research": (
+        "research-only, and named here rather than left to the allowlist default. Refusing it "
+        "as an unrecognised spelling reaches the same answer for the wrong reason, and the "
+        "difference matters: a reader told only that it was 'not screened' may screen it and "
+        "add it, where a reader told it restricts use to research will not. The 3B size of the "
+        "Qwen2.5 generation carries it while the 14B size this repository generates with is "
+        "Apache-2.0, so the two sit one tag apart"
+    ),
     "research-only": (
         "research-only: whatever the exact wording, a term restricting use to research "
         "excludes the people this library is published for"

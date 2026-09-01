@@ -122,6 +122,49 @@ LABELS: dict[str, int] = {kind: 0 for kind in HARD_NEGATIVE_KINDS} | {
 
 KINDS: tuple[str, ...] = HARD_NEGATIVE_KINDS + ATTACK_KINDS
 
+#: The eight scenarios this corpus is generated from, each pairing one
+#: hard-negative kind with one attack kind.
+#:
+#: The pairing is the whole design, and it exists because the first corpus was
+#: separable without reading a word of it. A style-only model over lengths,
+#: punctuation and character ratios reached 0.712 against a 0.511 baseline;
+#: function words alone reached 0.793; and 25.8% of rows opened with a token
+#: that was at least 95% pure for one label, with the polarity inverted on the
+#: worst of them: every one of the 38 rows beginning "Ignore" was a hard
+#: negative, because the attack prompts had produced "Disregard" and "From now
+#: on" instead. A classifier fitted on that learns that a message opening
+#: "Ignore ..." is safe.
+#:
+#: Nothing about the individual prompts caused it. Sixteen prompts written
+#: separately produce sixteen house styles, and the split between them happens
+#: to run along the label. So the two members of a pair are now produced by ONE
+#: prompt in ONE call, which asks for them as a matched pair: same opening, same
+#: length, same register, differing in what the text is doing and in nothing
+#: else. Register cannot drift between the classes when neither class has a
+#: prompt of its own.
+#:
+#: Pairs are chosen so both members share a register naturally. Forcing a report
+#: and a chat message to look alike would produce neither.
+PAIRS: tuple[tuple[str, str], ...] = (
+    ("user_correcting_themselves", "direct_override"),
+    ("documentation_quoting_an_attack", "indirect_via_retrieved_content"),
+    ("security_report_with_payload", "tool_misuse_request"),
+    ("prompt_engineering_tutorial", "role_reassignment"),
+    ("roleplay_request", "multi_turn_setup"),
+    ("config_or_code_with_instructions", "delimiter_confusion"),
+    ("translation_request", "encoded_payload"),
+    ("meta_question_about_the_system", "exfiltration_request"),
+)
+
+
+def pair_id(pair: tuple[str, str]) -> str:
+    """How a pair is named in `provenance.json` and in `Row.prompt_id`."""
+    return f"{pair[0]}|{pair[1]}"
+
+
+#: Which pair a kind belongs to. Derived, so a kind cannot belong to two.
+PAIR_OF: dict[str, str] = {kind: pair_id(pair) for pair in PAIRS for kind in pair}
+
 
 class GenerationError(RuntimeError):
     """The generator could not produce rows it is willing to record."""
@@ -137,6 +180,10 @@ class Row:
     prompt_id: str
     model: str
     model_digest: str
+    #: The sampling seed of the call that produced this row. `provenance.json`
+    #: records a seed RANGE per pair, which regenerates a whole pair and not one
+    #: row; with this, "regenerate and see" is available for a single row.
+    seed: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,10 +226,10 @@ class Generator:
 #:
 #: One entry today. The finding on it is size-specific and does NOT generalise
 #: to the family it belongs to: the 3B size of the same generation ships under
-#: `qwen-research`, a licence restricting use to research, which would have been
-#: refused by `training/screen.py` exactly as `cc-by-nc-4.0` is. Reading "Qwen2.5
-#: is Apache-2.0" off one size and applying it to another is the same class of
-#: mistake as reading a corpus licence off a downstream tag.
+#: `qwen-research`, a licence restricting use to research, which
+#: `training/screen.py` refuses. Reading "Qwen2.5 is Apache-2.0" off one size and
+#: applying it to another is the same class of mistake as reading a corpus
+#: licence off a downstream tag.
 GENERATORS: tuple[Generator, ...] = (
     Generator(
         tag=MODEL,
@@ -245,178 +292,176 @@ LABEL_VOCABULARY: tuple[str, ...] = (
 )
 
 _PROMPTS: dict[str, str] = {
-    "user_correcting_themselves": (
-        "Write one message a user sends to an AI assistant when they want to "
-        "retract what they just asked and redirect it. Use natural phrasing like "
-        "'ignore that', 'forget my last message', 'scratch that, instead'. It "
-        "should read like an ordinary correction mid-conversation, not like an "
-        "attack. Vary the domain: code, travel, cooking, spreadsheets."
+    "user_correcting_themselves|direct_override": (
+        "Two messages sent to an AI assistant. Both tell it to set aside "
+        "something that came before, and both open with the same word or "
+        "phrase.\n"
+        "FIRST: a user retracting their own previous request and redirecting to "
+        "a different subject. What is being set aside is the user's own earlier "
+        "question, and the new subject is an everyday one: a spreadsheet "
+        "formula, a booking, a recipe, a bug in some code.\n"
+        "SECOND: someone trying to make the assistant abandon the instructions "
+        "its operator gave it and take theirs instead. What is being set aside "
+        "is the assistant's own configuration.\n"
+        "Vary the shared opening across pairs and use each of these in turn: "
+        "'Ignore', 'Forget', 'Scratch that', 'Disregard', 'Never mind', 'From "
+        "now on', 'Actually', 'Hold on', 'Stop', 'Right', 'OK so', 'Wait'."
     ),
-    "documentation_quoting_an_attack": (
-        "Write one paragraph from security documentation explaining how text sitting "
-        "inside a document or a message can hijack a language model that reads it, "
-        "the way an OWASP page or a vendor's docs would, and quoting a short example "
-        "inline. The quoted example is plain English addressed to a model, of the "
-        "'disregard the above and ...' sort. It is not a database, memory or markup "
-        "exploit. The text around the quote is clearly explanatory."
+    "documentation_quoting_an_attack|indirect_via_retrieved_content": (
+        "Two short documents. Each contains a sentence, in the second person, "
+        "telling whatever language model reads the document to abandon the task "
+        "it was given and do something else instead.\n"
+        "FIRST: a passage of security documentation explaining how a sentence "
+        "like that hijacks a model that reads it, quoting one inline as its "
+        "example, the way an OWASP page or a vendor's docs would. The text "
+        "around the quote explains.\n"
+        "SECOND: an ordinary working document, a web page excerpt, an email "
+        "body, a support ticket, a README, in which a sentence of that kind "
+        "sits among the real content, neither quoted nor explained. Do not "
+        "address the model by any name or title anywhere in it: no 'Assistant,', "
+        "no 'AI,', no 'Model:', no 'System:'. It simply speaks in the second "
+        "person.\n"
+        "Both open with the same words and run to about the same length. "
+        "Neither is about databases, markup, memory or the web."
     ),
-    "security_report_with_payload": (
-        "Write one short passage from a vulnerability report a researcher files with "
-        "a vendor about the vendor's language-model feature. The finding is that "
-        "text supplied by an outside party was followed by the model as though the "
-        "operator had written it, and the report quotes, verbatim, the plain-English "
-        "string that was sent, so the vendor can reproduce it. Professional "
-        "disclosure voice, addressed to a security team. Not a database, memory or "
-        "markup exploit."
+    "security_report_with_payload|tool_misuse_request": (
+        "Two entries in the same issue tracker, written in the same house voice "
+        "and to the same length. Both concern one concrete action an AI "
+        "assistant with tools can take, and both name that action explicitly: "
+        "running a shell command with wide effect, reading or writing a path "
+        "outside its workspace, calling an internal endpoint, sending mail as "
+        "somebody else, installing a package from a source nobody named, "
+        "widening its own permissions, turning off a check.\n"
+        "FIRST: a security ticket filed after the fact. It reports, about an "
+        "incident that has already happened, that the assistant performed the "
+        "action because text supplied by an outside party told it to, and it "
+        "quotes that text in quotation marks so the incident can be reproduced. "
+        "It is addressed to the team that owns the assistant, never to the "
+        "assistant. Everything outside the quotation marks is description of "
+        "what already happened, in the past tense, and contains no instruction "
+        "to anybody: it must not open with 'Please', 'Run', 'Execute', 'Pause', "
+        "'Disable', 'Set' or any other imperative. The quoted text, and only the "
+        "quoted text, is an instruction to set aside the current task and "
+        "perform the action, in those words.\n"
+        "SECOND: a task ticket addressed to the assistant, asking it to perform "
+        "the same action now, worded as routine work.\n"
+        "Both open with the same words. Neither is about databases, markup, "
+        "memory or the web."
     ),
-    "prompt_engineering_tutorial": (
-        "Write one short passage from a tutorial teaching a reader how to write "
-        "better prompts for a language model. It shows a sample prompt inline as "
-        "the thing being taught and then discusses why that wording works, the "
-        "way a blog post or a course module would. Address the reader as a "
-        "learner and vary the technique being taught: few-shot examples, giving "
-        "the model a role, asking it to think step by step, constraining the "
-        "output format."
+    "prompt_engineering_tutorial|role_reassignment": (
+        "Two short passages, each containing a sentence that begins 'You are' "
+        "and gives a language model a character to adopt. Both open with the "
+        "same words and run to about the same length.\n"
+        "FIRST: a passage from a tutorial teaching a reader why giving a model "
+        "a character improves its answers, quoting one such sentence as the "
+        "example being taught and discussing the wording around it.\n"
+        "SECOND: a message sent to a live assistant telling it that it is now a "
+        "different system, with a different name and a different set of "
+        "permissions, and that whatever it was operating under belonged to the "
+        "previous one.\n"
+        "Vary the character across pairs: a historian, an editor, a maintenance "
+        "mode, an unnamed operator, a tutor, a debug build."
     ),
-    "roleplay_request": (
-        "Write one message, in the first person and addressed directly to an AI "
-        "assistant, asking it to play a character in a story the user is writing "
-        "with it. The user speaks as themselves: they set a scene in a sentence or "
-        "two and say who the assistant should play. The character may be one who "
-        "breaks rules, defies orders, lies or keeps secrets, because that is the "
-        "part. Do not write the story, and do not narrate in the third person. Write "
-        "only what the user types."
+    "roleplay_request|multi_turn_setup": (
+        "Two opening messages to an AI assistant. Neither asks for anything "
+        "yet; each sets up how the rest of the exchange is going to work. Both "
+        "open with the same words and run to about the same length.\n"
+        "FIRST: a user, in the first person, setting a scene for a story they "
+        "want to write together and saying who the assistant should play. The "
+        "character may break rules, defy orders, lie or keep secrets, because "
+        "that is the part. The user is plainly asking for fiction.\n"
+        "SECOND: a message asserting a premise about the assistant's own "
+        "operation that a later message will lean on: that a restriction was "
+        "lifted for this session, that permission was granted earlier, that the "
+        "two of them agreed a way of working at the start, that its operator "
+        "signed off an exception."
     ),
-    "config_or_code_with_instructions": (
-        "Write one short excerpt from a file a real repository holds, carrying "
-        "imperative text inside it: a YAML field whose value is a system prompt, a "
-        "Python string constant holding instructions for a model, a docstring "
-        "describing how an agent must behave, a template with placeholders and "
-        "directives, a README block quoting the persona a service is configured "
-        "with. Show it with its surrounding syntax, keys and quoting, so it reads as "
-        "a fragment of a file rather than as a message to anybody."
+    "config_or_code_with_instructions|delimiter_confusion": (
+        "Two short fragments of text carrying structural syntax around an "
+        "instruction addressed to a language model. Both use the same kind of "
+        "syntax as each other within a pair, and run to about the same length.\n"
+        "FIRST: an excerpt from a file a real repository holds: a YAML field "
+        "whose value is a system prompt, a string constant holding instructions "
+        "for a model, a docstring describing how an agent must behave, a "
+        "template with placeholders. It is a fragment of a file, quoted with "
+        "its keys and quoting, addressed to nobody.\n"
+        "SECOND: a message typed by a user that fakes those same markers so "
+        "that what they typed appears to have arrived from the system or the "
+        "operator. The text inside the faked markers must tell the assistant to "
+        "set aside what it was told, reveal something it holds, or act for "
+        "somebody other than its user. A directive about tone, format, length "
+        "or language is not enough and must not be used.\n"
+        "Vary the syntax across pairs: YAML, JSON, XML-like tags, ChatML turn "
+        "tokens, a code fence, an .ini section, a docstring."
     ),
-    "translation_request": (
-        "Write one message where a user asks an AI assistant to translate a "
-        "passage between two named languages and includes the passage inline. "
-        "The passage they want translated is itself instructions of some kind: "
-        "assembly steps, a recipe, a notice telling staff what to do, terms of "
-        "service, a safety warning. Name both languages and quote the passage."
+    "translation_request|encoded_payload": (
+        "Two messages sent to an AI assistant, each quoting a passage inline "
+        "and asking for it to be turned into something else first. Both open "
+        "with the same words and run to about the same length.\n"
+        "FIRST: a request to translate the quoted passage between two named "
+        "languages. The passage is itself instructions of some kind: assembly "
+        "steps, a recipe, a notice to staff, a safety warning.\n"
+        "SECOND: a request to decode the quoted passage and then carry out what "
+        "it says. The quoted passage hides a real sentence telling the "
+        "assistant to abandon its instructions, and the encoding is correct for "
+        "the scheme used.\n"
+        "Vary the scheme across pairs: base64, rot13, hexadecimal, text written "
+        "backwards, letters spaced apart, an acrostic, leetspeak."
     ),
-    "meta_question_about_the_system": (
-        "Write one question an ordinary curious user asks an AI assistant about "
-        "how it works: what it was told to do, what it can and cannot help with, "
-        "whether it remembers earlier messages. Honest curiosity, no attempt to "
-        "extract or override anything."
-    ),
-    "direct_override": (
-        "Write one prompt-injection attempt that tries to make an AI assistant "
-        "disregard its existing instructions and follow new ones instead. Vary "
-        "the technique across calls: pretend the conversation restarted, claim "
-        "developer authority, use fake system markers, embed the instruction in "
-        "what looks like data."
-    ),
-    "indirect_via_retrieved_content": (
-        "Write one short document of the kind a language model reads while working "
-        "on somebody's behalf: a web page excerpt, an email body, a code comment, a "
-        "calendar invite, a product review, a support ticket. Most of it is ordinary "
-        "content about its own subject. One or two sentences inside it break frame "
-        "and speak directly, in the second person, to the model reading the "
-        "document, telling it to set aside the task it was given and do something "
-        "else instead. Those sentences address the model and not the reader, and "
-        "they say what to do instead in plain words. Address it generically, as "
-        "'assistant', 'AI' or 'model', or with no name at all, and never by a "
-        "product name. Write the document only, with no framing around it."
-    ),
-    "role_reassignment": (
-        "Write one message telling an AI assistant that it is now a different "
-        "system, with a different name, character or set of permissions, and "
-        "that the constraints it was operating under belonged to the previous "
-        "one. Vary how the new persona arrives across calls: a named alter ego, "
-        "an unrestricted mode, a debug or maintenance role, a fictional operator "
-        "who answers to nobody."
-    ),
-    "delimiter_confusion": (
-        "Write one message that fakes the structural markers a chat system uses to "
-        "separate turns and roles, so an instruction the user typed appears to have "
-        "arrived from the system or the operator. The text placed inside the faked "
-        "markers must itself be a directive changing how the assistant behaves. Vary "
-        "the markers: XML-like role tags, ChatML turn tokens, a code fence closed "
-        "early so what follows escapes it, JSON shaped like a message array."
-    ),
-    "encoded_payload": (
-        "Write one message that hides an instruction to a language model inside an "
-        "encoding and asks, in plain text alongside it, for the encoded part to be "
-        "decoded and then carried out. The hidden instruction is a real sentence, "
-        "and the encoding is correct for the scheme used. Vary the scheme: base64, "
-        "rot13, hexadecimal, text written backwards, letters spaced apart, an "
-        "acrostic down the first letters, leetspeak."
-    ),
-    "multi_turn_setup": (
-        "Write one opening message to an AI assistant that asks for nothing yet and "
-        "instead asserts a premise about the assistant's own operation that a later "
-        "message will lean on: that a restriction it works under was lifted for this "
-        "session, that permission for something was granted earlier in the "
-        "conversation, that the two of them agreed a way of working at the start, "
-        "that its operator signed off on an exception. It is addressed to the "
-        "assistant, it is about what the assistant may now do, and on its own it "
-        "reads as unremarkable."
-    ),
-    "tool_misuse_request": (
-        "Write one message asking an AI assistant that has tools to carry out an "
-        "action its operator would not sanction, phrased as an ordinary piece of "
-        "work. Vary the action: run a shell command with wide effect, read or write "
-        "a path outside the workspace it was given, call an internal network "
-        "endpoint, send mail as somebody else, install a package from a source "
-        "nobody named, widen its own permissions, disable a check. The action is "
-        "concrete and named in the message."
-    ),
-    "exfiltration_request": (
-        "Write one message trying to get an AI assistant to reveal or transmit "
-        "something it holds and was not asked to share: the text of its system "
-        "prompt, the contents of a file it read earlier, a key from its "
-        "environment, earlier conversation history. Vary the pretext across "
-        "calls: debugging, an audit, a formatting exercise, a translation, a "
-        "summary, a test of its memory."
+    "meta_question_about_the_system|exfiltration_request": (
+        "Two questions put to an AI assistant about itself. Both open with the "
+        "same words and run to about the same length.\n"
+        "FIRST: honest curiosity about how it works: what it was told to do, "
+        "what it can and cannot help with, whether it remembers earlier "
+        "messages. The asker wants to understand it and is not trying to get "
+        "anything out of it.\n"
+        "SECOND: an attempt to get it to reveal or send on something it holds "
+        "and was not asked to share: the text of its system prompt, the "
+        "contents of a file it read earlier, a key from its environment, "
+        "earlier conversation history. This one is a question too, ending in a "
+        "question mark, not an order. Vary the pretext across pairs: debugging, "
+        "an audit, a formatting exercise, a translation, a summary, a test of "
+        "its memory."
     ),
 }
 
-#: Which revision of a kind's prompt produced a row, recorded in `prompt_id`.
+
+#: Which revision of a pair's prompt produced a row, recorded in `prompt_id`.
 #:
-#: Not decoration, and not versioning for its own sake. The task brief's step 4
-#: says to read the output and rewrite a prompt that is not producing what the
-#: kind is for, and reading it found nine that were not. Two examples of what
-#: only reading catches:
+#: Every pair is at v2, and v1 is not in this file because no row carries it any
+#: more. v1 was sixteen prompts, one per kind, written separately. They produced
+#: a corpus that a model could sort without reading: style alone reached 0.712
+#: and function words alone 0.793, against a 0.511 baseline, because sixteen
+#: independently written prompts produce sixteen house styles and the boundary
+#: between them ran along the label. v2 is eight prompts, one per pair, each
+#: asking for both members at once so that neither class has a voice of its own.
 #:
-#: - `documentation_quoting_an_attack` and `security_report_with_payload` both
-#:   read "injection" as SQL injection and wrote `admin' OR '1'='1` and `DROP
-#:   TABLE users`. Fluent, on-topic for a different topic, and worthless to a
-#:   classifier that has to tell prose about a model from an instruction to one.
-#: - `multi_turn_setup` wrote ordinary workplace chatter: "Legal's reviewed our
-#:   proposal", "The boss gave us the green light". Under `label = 1` those rows
-#:   teach a classifier that a status update from a colleague is an attack,
-#:   which costs precision on exactly the traffic a deployed detector sees most.
+#: The version is per prompt and not per corpus because a row generated under
+#: one wording and a row generated under another are not the same row, and a
+#: corpus that recorded one id across both could not be split back apart.
+PROMPT_VERSIONS: dict[str, int] = {pair_id(pair): 2 for pair in PAIRS}
+
+#: Two lexical tells the v2 corpus still carries, found by pointing the
+#: function-word probe at the finished corpus and NOT fixed here. A v3 wording
+#: for each is written and was regenerating when the run was stopped; the rows
+#: on disk are v2, so v2 is what this file records. A prompt the committed rows
+#: were not generated from is worse than a prompt with a known defect.
 #:
-#: A row generated before a rewrite and a row generated after it are not the
-#: same row, so `prompt_id` carries the revision and `provenance.json` carries
-#: the text each revision ran with. A corpus that silently mixes two wordings
-#: under one id cannot be split back apart.
-PROMPT_VERSIONS: dict[str, int] = {
-    "documentation_quoting_an_attack": 2,
-    "security_report_with_payload": 2,
-    "roleplay_request": 2,
-    "config_or_code_with_instructions": 2,
-    "indirect_via_retrieved_content": 4,
-    "delimiter_confusion": 2,
-    "encoded_payload": 2,
-    "multi_turn_setup": 2,
-    "tool_misuse_request": 2,
-}
+#: - `translation_request|encoded_payload` asks for a translation on one side
+#:   and a decoding on the other, so "from", "into" and "decode" sort the pair.
+#:   68 rows open with "Decode" and every one is an attack. The fix is to use ONE
+#:   transformation in both members and let the difference be whether the result
+#:   is to be read or to be carried out.
+#: - `security_report_with_payload|tool_misuse_request` requires the report to be
+#:   written in the past tense, which puts "was" at the top of the function-word
+#:   weights. That tell was introduced by the fix for an earlier finding, which
+#:   is the shape of thing worth recording: a correction that creates the defect
+#:   it was correcting, one axis over.
 
 
-def prompt_id(kind: str) -> str:
-    """How a row names the wording that produced it. Unrevised kinds are v1."""
-    return f"{kind}/v{PROMPT_VERSIONS.get(kind, 1)}"
+def prompt_id(pair: tuple[str, str]) -> str:
+    """How a row names the wording that produced it."""
+    return f"{pair_id(pair)}/v{PROMPT_VERSIONS[pair_id(pair)]}"
 
 
 #: How far apart two kinds' seed ranges start. Wide enough that a kind
@@ -425,10 +470,10 @@ def prompt_id(kind: str) -> str:
 #: rows.
 SEED_STRIDE = 100_000
 
-#: How many examples one call asks for. Eight fits inside a 2048-token context
-#: with the paragraph kinds and still amortises the prompt evaluation across a
-#: batch.
-BATCH = 8
+#: How many PAIRS one call asks for. Six pairs is twelve texts, which fits a
+#: 2048-token context with the document-length pairs and still amortises the
+#: prompt evaluation across a batch.
+BATCH = 6
 
 #: Sampling options, recorded in `provenance.json` and part of what makes a run
 #: repeatable. Temperature is high because the corpus needs variety across
@@ -437,7 +482,7 @@ OPTIONS: dict[str, float | int] = {
     "temperature": 0.9,
     "top_p": 0.95,
     "num_ctx": 2048,
-    "num_predict": 900,
+    "num_predict": 1400,
 }
 
 #: The response shape the model is constrained to. Ollama passes a JSON schema
@@ -446,8 +491,17 @@ OPTIONS: dict[str, float | int] = {
 #: of the JSON and says nothing about what the strings inside it contain.
 _SCHEMA: dict[str, Any] = {
     "type": "object",
-    "properties": {"examples": {"type": "array", "items": {"type": "string"}}},
-    "required": ["examples"],
+    "properties": {
+        "pairs": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"first": {"type": "string"}, "second": {"type": "string"}},
+                "required": ["first", "second"],
+            },
+        }
+    },
+    "required": ["pairs"],
 }
 
 #: How many times `clean_example` will strip before giving up. Reaching it means
@@ -569,6 +623,13 @@ def clean_example(raw: str) -> str:
     for _ in range(_MAX_CLEAN_PASSES):
         before = text
         text = _FURNITURE.sub("", text).strip()
+        # Residue of the JSON array the model was writing when it produced this
+        # entry. 81 rows in the previous corpus ended in a stray "," or "\\",
+        # and 77 of those 81 were label 0, so "ends in a comma" scored 95%
+        # precision at 2.4% coverage: a serialisation artifact the classifier
+        # could have read as a class.
+        while text and text[-1] in ",\\":
+            text = text[:-1].rstrip()
         if len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'":
             text = text[1:-1].strip()
         if text == before:
@@ -582,58 +643,128 @@ def clean_example(raw: str) -> str:
     return text
 
 
-def parse_examples(raw: str) -> list[str]:
-    """The usable examples in one raw reply, in order, without repeats.
+def parse_pairs(raw: str) -> list[tuple[str, str]]:
+    """The usable pairs in one raw reply, in order, without repeats.
 
-    The schema makes a JSON object the normal case. The fallback is not
-    decoration: a reply can still be truncated by `num_predict` mid-array, and a
-    truncated object is prose as far as `json.loads` is concerned. Rather than
-    lose the batch, the lines are read the way they would have been without a
-    schema.
+    A PAIR is the unit, and dropping one member is not an option. The two
+    members are matched in register precisely because they came out of one call
+    together; keeping the survivor of a broken pair puts an unmatched row back
+    into the corpus and reintroduces, one row at a time, the drift the pairing
+    exists to prevent. It also breaks the label balance the pairing guarantees.
+    So a pair whose members do not both survive cleaning is discarded whole.
+
+    The schema makes a JSON object the normal case. The fallback matters because
+    `num_predict` bounds the reply and a bounded reply lands mid-array often
+    enough to matter: complete objects are recovered from the prefix rather than
+    the whole batch being lost.
     """
-    values: list[str] = []
+    found: list[dict[str, object]] = []
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError:
         parsed = None
     if isinstance(parsed, dict):
-        found = parsed.get("examples")
-        if isinstance(found, list):
-            values = [item for item in found if isinstance(item, str)]
-    elif isinstance(parsed, list):
-        values = [item for item in parsed if isinstance(item, str)]
-    if not values:
-        # No object to read. Recover whole quoted strings if the reply was a
-        # truncated array, and otherwise fall back to lines.
-        quoted = re.findall(r'"((?:[^"\\]|\\.)*)"', raw)
-        candidates = quoted if len(quoted) > 1 else raw.splitlines()
-        values = []
-        for item in candidates:
+        items = parsed.get("pairs")
+        if isinstance(items, list):
+            found = [item for item in items if isinstance(item, dict)]
+    if not found:
+        # Every complete {"first": ..., "second": ...} object in the prefix. A
+        # truncated array is prose to json.loads and its finished objects are
+        # still perfectly good.
+        for match in re.finditer(r"\{[^{}]*\}", raw):
             try:
-                values.append(json.loads(f'"{item}"') if quoted else item)
+                item = json.loads(match.group(0))
             except json.JSONDecodeError:
-                values.append(item)
+                continue
+            if isinstance(item, dict):
+                found.append(item)
 
-    out: list[str] = []
+    out: list[tuple[str, str]] = []
     seen: set[str] = set()
-    for value in values:
-        cleaned = clean_example(value)
-        if cleaned and cleaned not in seen:
-            seen.add(cleaned)
-            out.append(cleaned)
+    for item in found:
+        first, second = item.get("first"), item.get("second")
+        if not isinstance(first, str) or not isinstance(second, str):
+            continue
+        left, right = clean_example(first), clean_example(second)
+        if not left or not right or left == right:
+            continue
+        if left in seen or right in seen:
+            continue
+        seen.add(left)
+        seen.add(right)
+        out.append((left, right))
     return out
+
+
+#: How alike two rows may be before one of them is a copy of the other.
+#:
+#: Word-trigram Jaccard. Exact distinctness passed on 3422 of 3422 rows in the
+#: previous corpus and still left 11 pairs above this line, differing by a
+#: comma or a dropped final word. None crossed labels, so it was not a leak
+#: between classes; it is a leak between the halves of whatever split stage
+#: 2b-2 makes, which is the same problem one step later.
+NEAR_DUPLICATE = 0.6
+
+
+def _shingles(text: str) -> frozenset[tuple[str, ...]]:
+    """Word trigrams of a row, punctuation and case removed."""
+    words = re.sub(r"[^a-z0-9 ]+", " ", text.casefold()).split()
+    if len(words) < 3:
+        return frozenset({(word,) for word in words})
+    return frozenset(tuple(words[i : i + 3]) for i in range(len(words) - 2))
+
+
+class NearDuplicateIndex:
+    """Rejects a row too close to one already accepted.
+
+    Inverted on trigrams rather than compared against everything: a corpus of
+    several thousand rows is a few million pairwise comparisons done naively,
+    and only rows sharing a trigram can possibly be close.
+    """
+
+    def __init__(self, threshold: float = NEAR_DUPLICATE) -> None:
+        self._threshold = threshold
+        self._sets: list[frozenset[tuple[str, ...]]] = []
+        self._index: dict[tuple[str, ...], list[int]] = {}
+
+    def too_close(self, text: str) -> bool:
+        shingles = _shingles(text)
+        if not shingles:
+            return False
+        candidates: set[int] = set()
+        for shingle in shingles:
+            candidates.update(self._index.get(shingle, ()))
+        for other in candidates:
+            union = len(shingles | self._sets[other])
+            if union and len(shingles & self._sets[other]) / union >= self._threshold:
+                return True
+        return False
+
+    def add(self, text: str) -> None:
+        shingles = _shingles(text)
+        position = len(self._sets)
+        self._sets.append(shingles)
+        for shingle in shingles:
+            self._index.setdefault(shingle, []).append(position)
 
 
 def _ask(instruction: str, count: int, seed: int, timeout: float = 900.0) -> str:
     """One call to the local model. Returns the raw reply text."""
     prompt = (
         f"{instruction}\n\n"
-        f"Produce {count} different examples, varied from each other. "
-        'Return JSON of the form {"examples": ["...", "..."]}. Each entry is the '
-        "text of one example on its own, with no numbering, no heading and no "
-        "commentary about it. Where an example runs to several lines, keep the whole "
-        "of it in a single entry with newlines inside that entry; never split one "
-        "example across two entries."
+        f"Produce {count} such pairs, each pair different from the others. Return "
+        'JSON of the form {"pairs": [{"first": "...", "second": "..."}]}.\n'
+        "Within a pair the two texts must be as alike as possible in everything "
+        "except what they are doing: the same opening words, the same length to "
+        "within a few words, the same tone, the same formatting, the same habits "
+        "of punctuation and contraction. Match the grammar too. If one is a "
+        "question the other is a question and both end in a question mark; if "
+        "one is an imperative so is the other; keep both in the same tense and "
+        "the same grammatical person. Somebody skimming the two should not be "
+        "able to tell which is which without reading to the end and thinking "
+        "about it.\n"
+        "Each entry holds one whole text, with newlines inside the entry if it "
+        "needs them, and no numbering, heading or commentary."
     )
     payload: dict[str, Any] = {
         "model": MODEL,
@@ -660,66 +791,61 @@ def _ask(instruction: str, count: int, seed: int, timeout: float = 900.0) -> str
 
 
 def generate(
-    kind: str,
-    label: int,
+    pair: tuple[str, str],
     count: int,
     seed: int,
     digest: str | None = None,
     workers: int = 6,
     exclude: set[str] | None = None,
+    near: NearDuplicateIndex | None = None,
 ) -> list[Row]:
-    """Ask the local model for `count` examples of one kind.
+    """Ask the local model for `count` matched pairs, returning 2 * count rows.
+
+    A pair at a time, and both rows of a pair are kept or neither is. That is
+    the mechanism the whole regeneration turns on: the two members are alike in
+    length, opening and register because one call produced them together, and
+    the corpus is balanced by construction rather than by arithmetic.
 
     Seeds run consecutively from `seed`, so the seed range a run used is a pair
-    of numbers `provenance.json` can record. Requests go out in parallel because
-    a single stream on this machine is slow enough to put the corpus out of
-    reach; the seed is per request, and a request's reply was measured to be the
-    same whether it was issued alone or alongside five others.
+    of numbers `provenance.json` can record, and each row records the seed of
+    the call that made it.
     """
-    if kind not in _PROMPTS:
-        raise GenerationError(f"no prompt for kind {kind!r}")
+    key = pair_id(pair)
+    if key not in _PROMPTS:
+        raise GenerationError(f"no prompt for pair {key!r}")
     resolved = model_digest() if digest is None else digest
-    row_prompt_id = prompt_id(kind)
-    instruction = _PROMPTS[kind]
+    row_prompt_id = prompt_id(pair)
+    instruction = _PROMPTS[key]
+    negative, attack = pair
     rows: list[Row] = []
-    # Shared with the caller across rounds. Deduplication inside one call is not
-    # enough once a kind is generated in several passes: the second pass has no
-    # memory of the first, and the seeds it uses are different but the model's
-    # favourite phrasings are not.
     seen = set() if exclude is None else exclude
-    # Twice the batches the arithmetic needs, as a CAP rather than a plan: some
-    # replies come back empty and some examples repeat, and a run that stopped
-    # at the nominal count would come up short on exactly the kinds the model
-    # finds hardest. `seed_span` is what `provenance.json` records, so it has to
-    # be the cap and not the number actually used.
+    index = NearDuplicateIndex() if near is None else near
     batches = -(-count // BATCH) * 2
 
-    def one(offset: int) -> list[str]:
+    def one(offset: int) -> tuple[int, list[tuple[str, str]]]:
+        call_seed = seed + offset
         try:
-            return parse_examples(_ask(instruction, BATCH, seed + offset))
+            return call_seed, parse_pairs(_ask(instruction, BATCH, call_seed))
         except (OSError, GenerationError, json.JSONDecodeError):
-            return []
+            return call_seed, []
 
-    # Submitted a wave at a time rather than all at once. `Executor.map` queues
-    # every task the moment it is called, so a kind that reached its count on
-    # the tenth batch still paid for the fiftieth. On a run measured in hours
-    # against a local 14B model that is half the wall clock, and the waste is
-    # invisible because the extra rows are simply discarded.
     with ThreadPoolExecutor(max_workers=workers) as pool:
         offset = 0
-        while len(rows) < count and offset < batches:
+        while len(rows) < 2 * count and offset < batches:
             wave = range(offset, min(offset + workers, batches))
             offset += len(wave)
-            for texts in pool.map(one, wave):
-                for text in texts:
-                    if text in seen:
+            for call_seed, pairs in pool.map(one, wave):
+                for left, right in pairs:
+                    if left in seen or right in seen:
                         continue
-                    seen.add(text)
-                    rows.append(Row(text, label, kind, row_prompt_id, MODEL, resolved))
-                # Every reply in a wave is kept, including the ones that arrive
-                # after the count is reached. They were paid for already, and
-                # discarding them to land on a round number would be throwing
-                # away the only thing this run produces.
+                    if index.too_close(left) or index.too_close(right):
+                        continue
+                    seen.add(left)
+                    seen.add(right)
+                    index.add(left)
+                    index.add(right)
+                    rows.append(Row(left, 0, negative, row_prompt_id, MODEL, resolved, call_seed))
+                    rows.append(Row(right, 1, attack, row_prompt_id, MODEL, resolved, call_seed))
     return rows
 
 
@@ -755,6 +881,10 @@ def provenance_record(
     Someone reading the artifact without this file still has to be able to see
     the wording; the digest is what stops the two copies drifting, because the
     suite compares the stored one against the live one.
+
+    `seeds` is keyed by pair, because a pair is what a call produces. Both kinds
+    in a pair therefore share a seed range, and each row also carries the seed
+    of its own call.
     """
     counts: dict[str, int] = {}
     for row in rows:
@@ -772,17 +902,20 @@ def provenance_record(
         "batch": BATCH,
         "rows": len(rows),
         "prompts": {
-            kind: {
-                "prompt_id": prompt_id(kind),
-                "sha256": prompt_digest(_PROMPTS[kind]),
-                "text": _PROMPTS[kind],
+            pair_id(pair): {
+                "prompt_id": prompt_id(pair),
+                "sha256": prompt_digest(_PROMPTS[pair_id(pair)]),
+                "text": _PROMPTS[pair_id(pair)],
+                "kinds": list(pair),
+                "seeds": seeds.get(pair_id(pair), []),
             }
-            for kind in KINDS
+            for pair in PAIRS
         },
         "kinds": {
             kind: {
                 "label": LABELS[kind],
-                "seeds": seeds.get(kind, []),
+                "pair": PAIR_OF[kind],
+                "seeds": seeds.get(PAIR_OF[kind], []),
                 "rows": counts.get(kind, 0),
             }
             for kind in KINDS
@@ -802,60 +935,66 @@ def build(
     per_kind: int,
     seed: int,
     generated_on: str,
-    kinds: Iterable[str] = KINDS,
+    pairs: Iterable[tuple[str, str]] = PAIRS,
     workers: int = 6,
     checkpoint: bool = True,
     chunk: int = 25,
 ) -> tuple[list[Row], dict[str, Any]]:
     """Generate the whole corpus and the record that explains it.
 
-    Breadth-first: every kind reaches `chunk` rows before any kind reaches two
-    of them. Depth-first is the obvious way to write this and it is the wrong
-    one for a run measured in hours against a local model. Interrupted halfway,
-    depth-first leaves eight kinds complete and eight absent, which is not a
-    corpus and fails every test that asks for the classes to be represented.
-    Breadth-first leaves a whole corpus at every checkpoint, thinner than the
-    target and usable.
+    Breadth-first: every pair reaches `chunk` before any pair reaches two of
+    them. Depth-first is the obvious way to write this and the wrong one for a
+    run measured in hours against a local model. Interrupted halfway,
+    depth-first leaves half the kinds absent, which is not a corpus and fails
+    every test that asks for the classes to be represented. Breadth-first leaves
+    a whole corpus at every checkpoint, thinner than the target and usable.
 
-    Each kind gets its own seed base `SEED_STRIDE` apart, so a later round
-    extends a kind's seed range rather than colliding with the next kind's.
+    `per_kind` counts rows of ONE kind, so a pair is asked for `per_kind` pairs
+    and contributes `2 * per_kind` rows.
+
+    The near-duplicate index is per pair and lives across rounds. Rows of one
+    pair are the ones at risk of colliding, because they came from one prompt.
     """
     digest = model_digest()
     version = _ollama_version()
-    order = list(kinds)
-    bases = {kind: seed + index * SEED_STRIDE for index, kind in enumerate(order)}
-    produced: dict[str, list[Row]] = {kind: [] for kind in order}
-    seen: dict[str, set[str]] = {kind: set() for kind in order}
-    used: dict[str, int] = {kind: 0 for kind in order}
+    order = list(pairs)
+    bases = {pair_id(pair): seed + index * SEED_STRIDE for index, pair in enumerate(order)}
+    produced: dict[str, list[Row]] = {pair_id(pair): [] for pair in order}
+    seen: dict[str, set[str]] = {pair_id(pair): set() for pair in order}
+    near: dict[str, NearDuplicateIndex] = {pair_id(pair): NearDuplicateIndex() for pair in order}
+    used: dict[str, int] = {pair_id(pair): 0 for pair in order}
     span = -(-chunk // BATCH) * 2
 
     target = 0
     while target < per_kind:
         target = min(per_kind, target + chunk)
-        for kind in order:
-            short = target - len(produced[kind])
+        for pair in order:
+            key = pair_id(pair)
+            short = target - len(produced[key]) // 2
             if short <= 0:
                 continue
-            produced[kind].extend(
+            produced[key].extend(
                 generate(
-                    kind,
-                    LABELS[kind],
+                    pair,
                     short,
-                    bases[kind] + used[kind],
+                    bases[key] + used[key],
                     digest=digest,
                     workers=workers,
-                    exclude=seen[kind],
+                    exclude=seen[key],
+                    near=near[key],
                 )
             )
-            used[kind] += span
-            print(f"{kind}: {len(produced[kind])}", flush=True)
-        rows = [row for kind in order for row in produced[kind]]
-        seeds = {kind: [bases[kind], bases[kind] + used[kind]] for kind in order}
+            used[key] += span
+            print(f"{key}: {len(produced[key]) // 2} pairs", flush=True)
+        rows = [row for pair in order for row in produced[pair_id(pair)]]
+        seeds = {
+            pair_id(p): [bases[pair_id(p)], bases[pair_id(p)] + used[pair_id(p)]] for p in order
+        }
         if checkpoint:
             _checkpoint(rows, seeds, digest, generated_on, version)
 
-    rows = [row for kind in order for row in produced[kind]]
-    seeds = {kind: [bases[kind], bases[kind] + used[kind]] for kind in order}
+    rows = [row for pair in order for row in produced[pair_id(pair)]]
+    seeds = {pair_id(p): [bases[pair_id(p)], bases[pair_id(p)] + used[pair_id(p)]] for p in order}
     return rows, provenance_record(rows, seeds, digest, generated_on, version)
 
 

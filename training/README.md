@@ -335,8 +335,8 @@ check against real YAML was a test that skipped on every CI leg.
 
 ## Generated data
 
-`training/generated/rows.jsonl` holds 3422 generated rows: 1750 hard negatives
-and 1672 attacks, across 8 hard-negative kinds and 8 attack kinds. The thinnest
+`training/generated/rows.jsonl` holds 3406 generated rows: 1703 hard negatives
+and 1703 attacks, across 8 hard-negative kinds and 8 attack kinds. The thinnest
 kind holds 203 rows, and `tests/test_training_data.py` requires at least 203
 rows in every one of them, so a later run that fell over part way cannot land
 looking complete.
@@ -344,46 +344,97 @@ looking complete.
 The hard negatives are why any of this is generated. Task 3's licence screen
 left two usable public corpora and no public `eval` corpus, and neither of the
 two contains the shape a deployed injection classifier actually fails on: text
-that talks ABOUT instructions without being one. Public benign sets are ordinary
-prose, which a classifier separates from an injection without learning anything
-worth having.
+that talks ABOUT instructions without being one.
 
-| kind | `label` | rows | prompt |
+### Both labels come out of one prompt
+
+The eight prompts are written per PAIR, not per kind, and each asks for both
+members at once: two texts alike in opening, length, tone and punctuation,
+differing in what they are doing and in nothing else. A pair is kept or dropped
+whole, so the corpus is balanced by construction rather than by arithmetic.
+
+That is a correction, not a preference. The first corpus was written from
+sixteen prompts, one per kind, and it could be sorted without reading it. A
+logistic regression over lengths, punctuation and character ratios, seeing no
+content word at all, reached 0.751 against a 0.511 baseline; function-word
+rates alone reached 0.806; and 47% of rows opened with a token at least 95%
+pure for one label, with the polarity of the worst inverted, every row
+beginning Ignore being a hard negative. Sixteen prompts written separately
+produce sixteen house styles, and the split between them happened to run along
+the label. Neither class has a prompt of its own now, so neither has a voice of
+its own.
+
+It matters more than a normal data-quality point because of what this corpus is
+for. The reference models this stage is measured against were never fitted on
+it, so a generation artifact raises OUR score and not theirs. A ship bar
+cleared on a separable corpus measures the artifact rather than the detector,
+which is the one thing the bar exists to rule out.
+
+| hard negative | rows | attack | rows |
 |---|---|---|---|
-| `user_correcting_themselves` | 0 | 219 | v1 |
-| `documentation_quoting_an_attack` | 0 | 217 | v2 |
-| `security_report_with_payload` | 0 | 217 | v2 |
-| `prompt_engineering_tutorial` | 0 | 217 | v1 |
-| `roleplay_request` | 0 | 208 | v2 |
-| `config_or_code_with_instructions` | 0 | 241 | v2 |
-| `translation_request` | 0 | 208 | v1 |
-| `meta_question_about_the_system` | 0 | 223 | v1 |
-| `direct_override` | 1 | 205 | v1 |
-| `indirect_via_retrieved_content` | 1 | 208 | v4 |
-| `role_reassignment` | 1 | 220 | v1 |
-| `delimiter_confusion` | 1 | 203 | v2 |
-| `encoded_payload` | 1 | 203 | v2 |
-| `multi_turn_setup` | 1 | 208 | v2 |
-| `tool_misuse_request` | 1 | 217 | v2 |
-| `exfiltration_request` | 1 | 208 | v1 |
+| `user_correcting_themselves` | 216 | `direct_override` | 216 |
+| `documentation_quoting_an_attack` | 214 | `indirect_via_retrieved_content` | 214 |
+| `security_report_with_payload` | 216 | `tool_misuse_request` | 216 |
+| `prompt_engineering_tutorial` | 203 | `role_reassignment` | 203 |
+| `roleplay_request` | 212 | `multi_turn_setup` | 212 |
+| `config_or_code_with_instructions` | 215 | `delimiter_confusion` | 215 |
+| `translation_request` | 214 | `encoded_payload` | 214 |
+| `meta_question_about_the_system` | 213 | `exfiltration_request` | 213 |
+
+### What the corpus measures, and the ceilings it is held to
+
+Three probes, each fitted with five-fold cross-validation by
+`training/separability.py`, which is pure Python because this runs in CI. Every
+one is held to a ceiling stated here as well as in the test module, and
+`test_the_readme_states_the_separability_it_was_measured_at` requires the two
+to agree. That cross-check is the point: a ceiling written down in only one
+place can be widened there, and the previous version of this file had exactly
+that hole.
+
+| probe | what it sees | measured | ceiling |
+|---|---|---|---|
+| style | lengths, punctuation, character ratios | style 0.539 | style ceiling 0.60 |
+| function words | rates of closed-class words only | function-word 0.734 | function-word ceiling 0.78 |
+| lexical | "contains instruction vocabulary" | lexical 0.570 | lexical ceiling 0.62 |
+| majority | always guess the commoner class | baseline 0.500 | no ceiling |
+| openers | the first token only | opener share 0.048 | opener share ceiling 0.12 |
+
+163 rows (opener share 0.048) open with a token at least as pure as the opener
+purity threshold 0.95 for one label. Openers are shared within a pair by
+instruction, which is what keeps that number down; position 1 is its own leak
+and none of the whole-text probes above can see it.
+
+Rows are also screened against each other at a near-duplicate threshold 0.60 of
+word-trigram Jaccard. Exact distinctness is not enough: the previous corpus was
+exactly distinct across all of its rows and still held eleven near-duplicate
+pairs differing by a comma or a dropped final word, which leaks between the
+halves of whatever split comes next.
+
+Function words sit higher than style and that is expected rather than
+tolerated. A closed-class model is the standard authorship probe because
+function words carry register and almost no topic; for THIS pair of classes
+they carry some genuine content as well, because a question about how a system
+works and an attempt to extract what it holds really do differ in 'what',
+'how', 'its' and 'been'. The style probe is the one that isolates pure
+artifact, and it is the one that has to sit at chance.
 
 ### What produced them, and what that is checkable against
 
 `training/generated/provenance.json` records the model, the sha256 of its
-weights blob, the sampling options, the seed range per kind, the ollama version,
-and the full text of every prompt with its digest. A row carries the tag, the
-weights digest and the prompt id; the rest belongs to the run rather than to the
-row.
+weights blob, the sampling options, the seed range per pair, the ollama
+version, and the full text of every prompt with its digest. A row carries the
+tag, the weights digest, the prompt id and the seed of the call that produced
+it, so a single row can be regenerated and not only its pair.
 
-The generator is `qwen2.5:14b`, which is Qwen/Qwen2.5-14B-Instruct, and its licence
-was screened the way a corpus licence is. It is `apache-2.0`, which
+The generator is `qwen2.5:14b`, which is Qwen/Qwen2.5-14B-Instruct, and its
+licence was screened the way a corpus licence is. It is `apache-2.0`, which
 `training/screen.py` accepts, and the finding is pinned by the sha256 of the
-licence text the artifact itself ships rather than by the name alone. That
-distinction earns its keep here: the 3B size of the same generation carries
-`qwen-research`, a research-only licence the same screen refuses, so the grant
-is a property of the size and not of the family. Apache-2.0 says nothing about
-model output, so it places no term on this data and none on a classifier fitted
-to it.
+licence text the artifact itself ships rather than by the name alone. The 3B
+size of the same generation carries `qwen-research`, which the same screen
+refuses with a research-only reason recorded against it, so the grant is a
+property of the size and not of the family. Apache-2.0 says nothing about model
+output, so it places no term on this data and none on a classifier fitted to
+it.
 
 Reproducibility was measured rather than assumed, on ollama 0.24.0: the same
 seed returns a byte-identical reply, and it stays byte-identical when the
@@ -392,39 +443,13 @@ reproduction on other hardware or a later ollama build, and nothing here claims
 it.
 
 Two tests re-derive the recorded digests from the live model. Both are gated on
-`JAMJET_GUARDRAILS_OLLAMA=1` and skip by default, here as well as in CI, because
-a suite that fails on a laptop with no model server is a suite people learn to
-ignore. Everything else about the corpus is checked from the committed files
-alone.
-
-### The prompts were rewritten after their output was read
-
-9 of the 16 prompts are past v1, because reading a sample of what they produced
-showed they were not producing it. Two examples, both of which every other test
-in this module would have passed:
-
-- `documentation_quoting_an_attack` and `security_report_with_payload` read
-  "injection" as SQL injection and wrote `admin' OR '1'='1` and `DROP TABLE
-  users`. Fluent, on topic for a different topic, and no use to a classifier
-  that has to tell prose about a model from an instruction to one.
-- `multi_turn_setup` wrote ordinary workplace messages: "Legal's reviewed our
-  proposal", "The boss gave us the green light". Under `label = 1` those rows
-  teach a classifier that a status update from a colleague is an attack, which
-  spends precision on the traffic a deployed detector sees most of.
-
-`prompt_id` carries the revision, so a row generated under one wording and a row
-generated under another are not recorded as the same thing.
-
-One filter exists for the same reason. Asked for a document with an instruction
-planted inside it, the model addressed the planted sentence to "Qwen" in three
-replies out of four, because that is the name it answers to. Left in, "says
-Qwen" would have been the cheapest rule separating the two classes, and the
-classifier would have learned which model wrote its training data rather than
-what an injection is. The prompt now asks for a generic address and the
-generator drops what still gets through.
+`JAMJET_GUARDRAILS_OLLAMA=1` and skip by default, here as well as in CI,
+because a suite that fails on a laptop with no model server is a suite people
+learn to ignore. Everything else about the corpus is checked from the committed
+files alone.
 
 ### Where it lands
 
 Nothing under `training/` is in the wheel, so none of this reaches an installed
 package. It is all in the sdist, for the reason the section above gives, so
-these 1266 KB travel with every source distribution.
+these 1440 KB travel with every source distribution.
