@@ -87,3 +87,58 @@ under `training/` is therefore committed by default and a file written under
 The `/data/` rule is anchored with a leading slash. An unanchored `data/`
 matches a directory of that name at any depth, and this repository already
 carries directories a rule like that could swallow without a word.
+
+## What ships and what does not
+
+Measured on 2026-09-01 by building both distributions with `python -m build`
+and listing what came out:
+
+- The wheel carries no file from this tree, which is what
+  `packages = ["src/jamjet_guardrails"]` buys.
+- The sdist carries all of it.
+
+The second is not an oversight. The sdist ships `tests/`, and
+`tests/test_training_data.py` imports `training.fetch`, so an sdist without
+this tree would be an sdist whose own test suite fails to collect. The
+consequence is worth stating rather than discovering: nothing in
+`pyproject.toml` excludes anything under `training/` from the sdist, so a large
+file added here is a large file added to every source distribution.
+
+## Sources
+
+`training/sources.yaml` is the manifest -- every corpus this tree may touch,
+with where it came from, the licence it carries, the digest it hashed to, and
+what it may be used for. `training/fetch.py` reads it and downloads against
+the recorded hash; `tests/test_training_data.py` screens it in CI.
+
+`role` decides what a source may be used for, and the three values are not
+interchangeable:
+
+| `role` | meaning |
+|---|---|
+| `train` | may be fitted on |
+| `eval` | may be scored on |
+| `excluded` | neither, with the reason recorded in the entry itself |
+
+Two rules are enforced by `load_sources` rather than by review:
+
+- **A source that is trained from or measured on carries a 64-character
+  digest.** The one recorded absence, `unavailable`, is confined to `excluded`,
+  because that is the only role nothing is measured on. Flipping such an entry
+  to `train` or `eval` raises at load rather than shipping an unpinned corpus.
+- **Nothing ProtectAI trained on may be an evaluation source.** Their model
+  card for `deberta-v3-base-prompt-injection-v2` names two datasets, and this
+  stage measures against that model. Scoring a detector on a corpus the
+  reference model memorised publishes memorisation as recall.
+
+URLs are pinned to a commit rather than to a branch. A branch under a recorded
+hash either starts failing verification, which is at least loud, or gets its
+hash updated to match, which changes the corpus under every number measured on
+it.
+
+The manifest reader is the standard library, not PyYAML, because
+`tests/test_training_data.py` imports it and CI installs `.[dev]` and nothing
+else. It implements the subset the manifest uses and raises on anything else.
+`test_the_manifest_reader_agrees_with_the_yaml_library` compares it against
+PyYAML wherever PyYAML is installed, which includes the training virtualenv;
+it skips in the package's `.venv`, which has no PyYAML by design.

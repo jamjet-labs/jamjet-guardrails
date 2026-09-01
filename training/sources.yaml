@@ -1,0 +1,48 @@
+# Every corpus this tree may touch: where it came from, what licence it
+# carries, what it hashed to when it was read, and what it may be used for.
+#
+# `role` is the field that does the work.
+#   train     usable for fitting the classifier
+#   eval      usable for scoring it
+#   excluded  neither, with the reason recorded here rather than remembered
+#
+# Read by training/fetch.py, which validates this file at load rather than
+# trusting it, and screened by tests/test_training_data.py in CI.
+#
+# The two entries below are the exclusions the plan requires to be written
+# down. ProtectAI's model card for deberta-v3-base-prompt-injection-v2 names
+# both as its own training data, and that model is the reference this stage
+# measures against. Scoring a detector on a corpus the reference model
+# memorised publishes memorisation as recall, so neither may ever carry
+# role: eval.
+
+- name: jackhhao/jailbreak-classification
+  url: "https://huggingface.co/datasets/jackhhao/jailbreak-classification/resolve/2f2ceeb39658696fd3f462403562b6eea5306287/default/jailbreak_dataset_full.csv"
+  license: Apache-2.0
+  sha256: "79a7b90b0abe00e3586cc5048353c3236543cca228a1ee261fe3b57a7cb7e29f"
+  role: excluded
+  note: >
+    Named in ProtectAI's model card as training data. Usable for training if we
+    choose; never for evaluation. Pinned to the dataset repository's commit
+    2f2ceeb39658696fd3f462403562b6eea5306287 and to one file within it rather
+    than to the landing page the plan quoted: a branch name moves, and a
+    landing page downloads HTML whose hash says nothing about the corpus.
+    Read 2026-09-01, 2143822 bytes. The licence is the dataset repository's own
+    apache-2.0 tag, which agrees with ProtectAI's card; neither has been
+    checked against the values yet, which is what the screen is for.
+
+- name: Harelix/Prompt-Injection-Mixed-Techniques-2024
+  url: "https://huggingface.co/datasets/Harelix/Prompt-Injection-Mixed-Techniques-2024"
+  license: Apache-2.0
+  sha256: "unavailable"
+  role: excluded
+  note: >
+    Same exclusion as above, and additionally unfetchable, so there is no
+    content to hash. Every Hugging Face endpoint for this repository answered
+    HTTP 401 on 2026-09-01 -- the dataset page, the API record and the resolve
+    path -- and the API's dataset list for the author Harelix came back empty.
+    Apache-2.0 is recorded here as ProtectAI's claim on their own model card,
+    which is the only reading of it available to us, not as a licence anyone
+    here has verified. The entry is kept precisely because it cannot be
+    fetched: the name has to be in this file for anyone to check that it never
+    became an evaluation source.
