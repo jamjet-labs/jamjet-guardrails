@@ -119,6 +119,13 @@
     Also gated -- an unauthenticated request for the pinned file answered HTTP
     401 on 2026-09-01 -- so it could not have been hashed even had the licence
     allowed it. The licence is the reason; the gate is a fact about the fetch.
+    The repository has since been renamed and now answers under a different id
+    (https://huggingface.co/datasets/rogue-security/prompt-injections-benchmark).
+    Written down for the same
+    reason the rename above is: a by-name record of a refusal does not follow a
+    rename, and somebody will meet this corpus again under the new id. The
+    substantive screen does not depend on the name -- licence_refusal refuses
+    cc-by-nc-4.0 whatever it is called.
 
 - name: databricks/databricks-dolly-15k
   url: "https://huggingface.co/datasets/databricks/databricks-dolly-15k/resolve/bdd27f4d94b9c1f951818a7da7fd7aeea5dbff1a/databricks-dolly-15k.jsonl"

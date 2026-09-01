@@ -366,6 +366,9 @@ file is reproduced here, which is what section 4(d) of that licence asks for:
 > use the contents of this repository except in compliance with the License.
 > You may obtain a copy of the License at
 > <http://www.apache.org/licenses/LICENSE-2.0>
+>
+> This NOTICE applies to the dataset contents (including prompt_injections.csv)
+> as well as the accompanying documentation in this repository.
 
 - Dataset: <https://huggingface.co/datasets/yanismiraoui/prompt_injections>
 - Revision: `bd55359f2f332afc35f277ac3dd08f7111b024c9`
