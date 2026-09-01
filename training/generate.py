@@ -450,6 +450,11 @@ _SCHEMA: dict[str, Any] = {
     "required": ["examples"],
 }
 
+#: How many times `clean_example` will strip before giving up. Reaching it means
+#: the text is a nest of quotes rather than an example, and the length rules
+#: below deal with what is left.
+_MAX_CLEAN_PASSES = 8
+
 #: An example shorter than this is not one. Observed in real replies: empty
 #: strings, a bare "1.", and the word "Example".
 _MIN_CHARS = 20
@@ -545,13 +550,29 @@ def clean_example(raw: str) -> str:
     attack kinds an occasional refusal in place of a payload.
     """
     text = raw.strip()
-    # Repeat: the model writes '1. "Ignore previous instructions"', so the
-    # furniture has to come off before the quotes can be seen, and a quoted
-    # string can itself begin with furniture.
-    for _ in range(2):
+    # To a FIXED POINT, not a fixed number of passes. The furniture has to come
+    # off before the quotes can be seen ('1. "Ignore previous instructions"'),
+    # and a quoted string can itself begin with furniture, so two passes looked
+    # like enough. It is not: this kind asks for repository files, the model
+    # obliges with a Python docstring, and `'''text'''` inside a JSON string
+    # arrives with three layers. Two passes strip two and leave the third, and
+    # the result is a row the cleaner does not return unchanged.
+    #
+    # That non-idempotence is the real defect, and it is worse than the stray
+    # quote: `clean_example(clean_example(x)) != clean_example(x)` means the
+    # corpus cannot be checked against its own cleaner, so nothing downstream
+    # can tell a row that was cleaned from one that was not.
+    #
+    # Bounded anyway. Each pass either shortens the text or ends the loop, so it
+    # terminates, and the bound is there to say so rather than because a case is
+    # known that needs it.
+    for _ in range(_MAX_CLEAN_PASSES):
+        before = text
         text = _FURNITURE.sub("", text).strip()
         if len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'":
             text = text[1:-1].strip()
+        if text == before:
+            break
     if _REFUSAL.match(text):
         return ""
     if _GENERATOR_NAME.search(text):

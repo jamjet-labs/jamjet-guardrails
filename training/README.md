@@ -335,11 +335,11 @@ check against real YAML was a test that skipped on every CI leg.
 
 ## Generated data
 
-`training/generated/rows.jsonl` holds 759 generated rows: 375 hard
-negatives and 384 attacks, across 8 hard-negative kinds and
-8 attack kinds. The thinnest kind holds 41 rows, and
-`tests/test_training_data.py` requires at least 41 rows in every one of
-them, so a later run that fell over part way cannot land looking complete.
+`training/generated/rows.jsonl` holds 3422 generated rows: 1750 hard negatives
+and 1672 attacks, across 8 hard-negative kinds and 8 attack kinds. The thinnest
+kind holds 203 rows, and `tests/test_training_data.py` requires at least 203
+rows in every one of them, so a later run that fell over part way cannot land
+looking complete.
 
 The hard negatives are why any of this is generated. Task 3's licence screen
 left two usable public corpora and no public `eval` corpus, and neither of the
@@ -350,22 +350,22 @@ worth having.
 
 | kind | `label` | rows | prompt |
 |---|---|---|---|
-| `user_correcting_themselves` | 0 | 47 | v1 |
-| `documentation_quoting_an_attack` | 0 | 41 | v2 |
-| `security_report_with_payload` | 0 | 48 | v2 |
-| `prompt_engineering_tutorial` | 0 | 47 | v1 |
-| `roleplay_request` | 0 | 48 | v2 |
-| `config_or_code_with_instructions` | 0 | 48 | v2 |
-| `translation_request` | 0 | 48 | v1 |
-| `meta_question_about_the_system` | 0 | 48 | v1 |
-| `direct_override` | 1 | 49 | v1 |
-| `indirect_via_retrieved_content` | 1 | 49 | v4 |
-| `role_reassignment` | 1 | 47 | v1 |
-| `delimiter_confusion` | 1 | 47 | v2 |
-| `encoded_payload` | 1 | 48 | v2 |
-| `multi_turn_setup` | 1 | 48 | v2 |
-| `tool_misuse_request` | 1 | 48 | v2 |
-| `exfiltration_request` | 1 | 48 | v1 |
+| `user_correcting_themselves` | 0 | 219 | v1 |
+| `documentation_quoting_an_attack` | 0 | 217 | v2 |
+| `security_report_with_payload` | 0 | 217 | v2 |
+| `prompt_engineering_tutorial` | 0 | 217 | v1 |
+| `roleplay_request` | 0 | 208 | v2 |
+| `config_or_code_with_instructions` | 0 | 241 | v2 |
+| `translation_request` | 0 | 208 | v1 |
+| `meta_question_about_the_system` | 0 | 223 | v1 |
+| `direct_override` | 1 | 205 | v1 |
+| `indirect_via_retrieved_content` | 1 | 208 | v4 |
+| `role_reassignment` | 1 | 220 | v1 |
+| `delimiter_confusion` | 1 | 203 | v2 |
+| `encoded_payload` | 1 | 203 | v2 |
+| `multi_turn_setup` | 1 | 208 | v2 |
+| `tool_misuse_request` | 1 | 217 | v2 |
+| `exfiltration_request` | 1 | 208 | v1 |
 
 ### What produced them, and what that is checkable against
 
@@ -399,9 +399,9 @@ alone.
 
 ### The prompts were rewritten after their output was read
 
-9 of the 16 prompts are past v1, because reading a sample of what
-they produced showed they were not producing it. Two examples, both of which
-every other test in this module would have passed:
+9 of the 16 prompts are past v1, because reading a sample of what they produced
+showed they were not producing it. Two examples, both of which every other test
+in this module would have passed:
 
 - `documentation_quoting_an_attack` and `security_report_with_payload` read
   "injection" as SQL injection and wrote `admin' OR '1'='1` and `DROP TABLE
@@ -427,4 +427,4 @@ generator drops what still gets through.
 
 Nothing under `training/` is in the wheel, so none of this reaches an installed
 package. It is all in the sdist, for the reason the section above gives, so
-these 279 KB travel with every source distribution.
+these 1266 KB travel with every source distribution.

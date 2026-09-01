@@ -13,7 +13,7 @@
     "num_predict": 900
   },
   "batch": 8,
-  "rows": 759,
+  "rows": 3422,
   "prompts": {
     "user_correcting_themselves": {
       "prompt_id": "user_correcting_themselves/v1",
@@ -101,129 +101,129 @@
       "label": 0,
       "seeds": [
         1000,
-        1008
+        1064
       ],
-      "rows": 47
+      "rows": 219
     },
     "documentation_quoting_an_attack": {
       "label": 0,
       "seeds": [
         101000,
-        101008
+        101064
       ],
-      "rows": 41
+      "rows": 217
     },
     "security_report_with_payload": {
       "label": 0,
       "seeds": [
         201000,
-        201008
+        201056
       ],
-      "rows": 48
+      "rows": 217
     },
     "prompt_engineering_tutorial": {
       "label": 0,
       "seeds": [
         301000,
-        301008
+        301056
       ],
-      "rows": 47
+      "rows": 217
     },
     "roleplay_request": {
       "label": 0,
       "seeds": [
         401000,
-        401008
+        401064
       ],
-      "rows": 48
+      "rows": 208
     },
     "config_or_code_with_instructions": {
       "label": 0,
       "seeds": [
         501000,
-        501008
+        501052
       ],
-      "rows": 48
+      "rows": 241
     },
     "translation_request": {
       "label": 0,
       "seeds": [
         601000,
-        601008
+        601064
       ],
-      "rows": 48
+      "rows": 208
     },
     "meta_question_about_the_system": {
       "label": 0,
       "seeds": [
         701000,
-        701008
+        701064
       ],
-      "rows": 48
+      "rows": 223
     },
     "direct_override": {
       "label": 1,
       "seeds": [
         801000,
-        801008
+        801064
       ],
-      "rows": 49
+      "rows": 205
     },
     "indirect_via_retrieved_content": {
       "label": 1,
       "seeds": [
         901000,
-        901008
+        901064
       ],
-      "rows": 49
+      "rows": 208
     },
     "role_reassignment": {
       "label": 1,
       "seeds": [
         1001000,
-        1001008
+        1001064
       ],
-      "rows": 47
+      "rows": 220
     },
     "delimiter_confusion": {
       "label": 1,
       "seeds": [
         1101000,
-        1101008
+        1101056
       ],
-      "rows": 47
+      "rows": 203
     },
     "encoded_payload": {
       "label": 1,
       "seeds": [
         1201000,
-        1201008
+        1201048
       ],
-      "rows": 48
+      "rows": 203
     },
     "multi_turn_setup": {
       "label": 1,
       "seeds": [
         1301000,
-        1301008
+        1301064
       ],
-      "rows": 48
+      "rows": 208
     },
     "tool_misuse_request": {
       "label": 1,
       "seeds": [
         1401000,
-        1401008
+        1401064
       ],
-      "rows": 48
+      "rows": 217
     },
     "exfiltration_request": {
       "label": 1,
       "seeds": [
         1501000,
-        1501008
+        1501064
       ],
-      "rows": 48
+      "rows": 208
     }
   }
 }
