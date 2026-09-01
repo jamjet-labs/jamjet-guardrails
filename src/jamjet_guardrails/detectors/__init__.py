@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 
 from jamjet_guardrails.chain import GuardrailChain
+from jamjet_guardrails.detectors.injection_structural import InjectionStructuralGuardrail
 from jamjet_guardrails.detectors.pii import PiiGuardrail
 from jamjet_guardrails.detectors.secrets import SecretsGuardrail
 from jamjet_guardrails.errors import GuardrailUnavailableError
@@ -12,6 +13,7 @@ from jamjet_guardrails.protocol import Guardrail
 from jamjet_guardrails.types import Direction
 
 AVAILABLE: dict[str, Callable[..., Guardrail]] = {
+    "injection-structural": InjectionStructuralGuardrail,
     "pii": PiiGuardrail,
     "secrets": SecretsGuardrail,
 }
@@ -222,4 +224,11 @@ def build_chain(names: Iterable[str]) -> GuardrailChain:
     return GuardrailChain(guardrails)
 
 
-__all__ = ["AVAILABLE", "PiiGuardrail", "SecretsGuardrail", "build", "build_chain"]
+__all__ = [
+    "AVAILABLE",
+    "InjectionStructuralGuardrail",
+    "PiiGuardrail",
+    "SecretsGuardrail",
+    "build",
+    "build_chain",
+]

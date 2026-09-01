@@ -1,6 +1,202 @@
 {
   "results": [
     {
+      "detector": "injection-structural",
+      "detector_version": "0.1.0",
+      "corpus_name": "injection-structural/in-repo",
+      "corpus_source": "in-repo",
+      "corpus_version": "b11692946044",
+      "cases": 146,
+      "precision": 0.9709,
+      "recall": 0.8696,
+      "f1": 0.9174,
+      "true_positives": 100,
+      "false_positives": 3,
+      "false_negatives": 15,
+      "decision_mismatches": 8,
+      "per_type": {
+        "BIDI_OVERRIDE": {
+          "precision": 0.8824,
+          "recall": 1.0,
+          "true_positives": 15,
+          "false_positives": 2,
+          "false_negatives": 0
+        },
+        "INVISIBLE_TAG_CHARS": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "true_positives": 20,
+          "false_positives": 0,
+          "false_negatives": 0
+        },
+        "ZERO_WIDTH_SMUGGLING": {
+          "precision": 0.9848,
+          "recall": 0.8125,
+          "true_positives": 65,
+          "false_positives": 1,
+          "false_negatives": 15
+        }
+      },
+      "failures": [
+        {
+          "case_id": "inj-0051",
+          "kind": "decision_mismatch",
+          "expected": "deny",
+          "predicted": "allow"
+        },
+        {
+          "case_id": "inj-0052",
+          "kind": "decision_mismatch",
+          "expected": "deny",
+          "predicted": "allow"
+        },
+        {
+          "case_id": "inj-0053",
+          "kind": "decision_mismatch",
+          "expected": "deny",
+          "predicted": "allow"
+        },
+        {
+          "case_id": "inj-0091",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "deny"
+        },
+        {
+          "case_id": "inj-0097",
+          "kind": "decision_mismatch",
+          "expected": "deny",
+          "predicted": "allow"
+        },
+        {
+          "case_id": "inj-0098",
+          "kind": "decision_mismatch",
+          "expected": "deny",
+          "predicted": "allow"
+        },
+        {
+          "case_id": "inj-0099",
+          "kind": "decision_mismatch",
+          "expected": "deny",
+          "predicted": "allow"
+        },
+        {
+          "case_id": "inj-0129",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "deny"
+        },
+        {
+          "case_id": "inj-0051",
+          "kind": "false_negative",
+          "expected": "ZERO_WIDTH_SMUGGLING@(1, 2)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "inj-0051",
+          "kind": "false_negative",
+          "expected": "ZERO_WIDTH_SMUGGLING@(3, 4)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "inj-0051",
+          "kind": "false_negative",
+          "expected": "ZERO_WIDTH_SMUGGLING@(5, 6)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "inj-0051",
+          "kind": "false_negative",
+          "expected": "ZERO_WIDTH_SMUGGLING@(7, 8)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "inj-0052",
+          "kind": "false_negative",
+          "expected": "ZERO_WIDTH_SMUGGLING@(1, 2)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "inj-0052",
+          "kind": "false_negative",
+          "expected": "ZERO_WIDTH_SMUGGLING@(4, 5)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "inj-0052",
+          "kind": "false_negative",
+          "expected": "ZERO_WIDTH_SMUGGLING@(7, 8)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "inj-0052",
+          "kind": "false_negative",
+          "expected": "ZERO_WIDTH_SMUGGLING@(10, 11)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "inj-0053",
+          "kind": "false_negative",
+          "expected": "ZERO_WIDTH_SMUGGLING@(0, 1)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "inj-0053",
+          "kind": "false_negative",
+          "expected": "ZERO_WIDTH_SMUGGLING@(2, 3)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "inj-0053",
+          "kind": "false_negative",
+          "expected": "ZERO_WIDTH_SMUGGLING@(4, 5)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "inj-0053",
+          "kind": "false_negative",
+          "expected": "ZERO_WIDTH_SMUGGLING@(6, 7)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "inj-0097",
+          "kind": "false_negative",
+          "expected": "ZERO_WIDTH_SMUGGLING@(2, 119)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "inj-0098",
+          "kind": "false_negative",
+          "expected": "ZERO_WIDTH_SMUGGLING@(2, 119)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "inj-0099",
+          "kind": "false_negative",
+          "expected": "ZERO_WIDTH_SMUGGLING@(17, 202)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "inj-0091",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "BIDI_OVERRIDE@(11, 12)"
+        },
+        {
+          "case_id": "inj-0091",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "BIDI_OVERRIDE@(30, 31)"
+        },
+        {
+          "case_id": "inj-0129",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "ZERO_WIDTH_SMUGGLING@(10, 12)"
+        }
+      ]
+    },
+    {
       "detector": "pii",
       "detector_version": "0.1.0",
       "corpus_name": "pii/in-repo",

@@ -12,11 +12,14 @@ a number that measures nothing, and no loader, formatter or gate downstream can
 tell that from a good result.
 """
 
+import ast
+import re
 from pathlib import Path
 
 import pytest
 
-from jamjet_guardrails.detectors import build
+from jamjet_guardrails.detectors import AVAILABLE, build
+from jamjet_guardrails.detectors.injection_structural import _DEFAULT_IGNORABLE
 from jamjet_guardrails.detectors.pii import PII_TYPES
 from jamjet_guardrails.detectors.secrets import SECRET_TYPES
 from jamjet_guardrails.eval.corpus import Corpus, load_corpus
@@ -32,7 +35,12 @@ from test_pii import _KNOWN_FALSE_POSITIVES, _NEW_FALSE_POSITIVES
 ROOT = Path(__file__).resolve().parent.parent
 CORPORA = ROOT / "corpora"
 
-EXPECTED = [("pii", "in-repo"), ("pii", "third-party"), ("secrets", "in-repo")]
+EXPECTED = [
+    ("injection-structural", "in-repo"),
+    ("pii", "in-repo"),
+    ("pii", "third-party"),
+    ("secrets", "in-repo"),
+]
 
 
 MINIMUM_CASES = {"in-repo": 30, "third-party": 20}
@@ -45,6 +53,27 @@ def test_corpus_exists_and_loads(check: str, source: str) -> None:
     assert len(corpus.cases) >= floor, (
         f"{check}/{source} has {len(corpus.cases)} cases; a corpus under {floor} "
         "cannot support a published number"
+    )
+
+
+def test_every_registered_check_has_a_corpus() -> None:
+    """The symmetric half of the README's checks table, which IS enforced.
+
+    `tests/test_readme.py` asserts that table equals `AVAILABLE`, so a check
+    cannot be registered without appearing there. Nothing said the same about
+    the evidence: `eval.cli.discover` globs `corpora/<check>/<source>.jsonl` and
+    never consults `AVAILABLE`, so a registered check with no corpus directory
+    is scored on nothing, publishes no row, and fails no gate. In a project
+    whose headline is "measured, not asserted", an unmeasured check is the one
+    absence that has to be loud.
+
+    The directory, not a file: a check's corpora may be named anything, and the
+    loader and the case floor above answer for what is in them.
+    """
+    missing = sorted(name for name in AVAILABLE if not (CORPORA / name).is_dir())
+    assert missing == [], (
+        f"{missing} are registered in AVAILABLE with no corpora/<check>/ directory, so "
+        "nothing measures them and no published row would show they are missing"
     )
 
 
@@ -428,3 +457,263 @@ def test_the_notice_qualifies_the_two_numbers_that_need_qualifying() -> None:
     notice = NOTICE.read_text(encoding="utf-8")
     assert "stress set" in notice
     assert "2033-05-18" in notice
+
+
+# The fifteen injection-structural cases a reader is most likely to argue with.
+# Eight of them FAIL when the corpus is scored, on purpose: they are the check's
+# known false positives and known false negatives, labelled with what SHOULD
+# happen so that they cost precision and recall rather than being scored as
+# successes. That convention is `corpora/pii/in-repo.jsonl`'s, and it is why
+# that corpus publishes 0.631 rather than a number about its own labels.
+#
+# The other seven pass. Three are the balanced-override set and four are the
+# stray closers with the chunked document they come from; every group is
+# labelled with what should happen, and every one is here because a reader
+# could reasonably expect the opposite.
+#
+# This list was twenty-four while `_MIN_TOTAL` was 4. Raising it to 5 turned
+# twelve disclosed false positives into ordinary passing negatives -- the Thai
+# line-break hints, the ASCII-digit Persian and Urdu, the incidental-ZWSP page,
+# the MathML, and the jamo, inherent-vowel, U+034F and BOM samples -- and they
+# stay in the corpus as the evidence that the check allows that text. They are
+# no longer disclosed because nothing about them is now surprising. Three new
+# misses arrived in their place.
+#
+# `corpora/NOTICE.md` names every one of these by id and says what it is. This
+# test is what keeps the two together. The edit it exists to stop is the cheap
+# one: flipping a label back to what the detector does turns a published failure
+# into a published success and moves precision without reading as a change.
+_INJECTION_DISCLOSED = {
+    # False negatives bought by `_MIN_TOTAL = 5`. Each is four zero-width
+    # characters with no two adjacent, so each is one character under the volume
+    # bound and carries no adjacent pair for the run bound to see. Each allows;
+    # each is labelled deny and scores as an FN, twelve findings between them.
+    "inj-0051": "deny",  # ZWNJ between emoji, four of them
+    "inj-0052": "deny",  # ZWJ with one pictographic neighbour, four of them
+    "inj-0053": "deny",  # a leading ZWNJ and three ZWSPs in Arabic text
+    # False positives. Each denies; each is labelled allow and scores as an FP.
+    "inj-0091": "allow",  # FSI around a multi-line value, the idiom Unicode recommends
+    "inj-0129": "allow",  # musical notation: an END BEAM abuts the next BEGIN BEAM
+    # False negatives that pre-date the raise. Each allows; each is labelled deny.
+    "inj-0097": "deny",  # presence-and-absence encoding behind a Devanagari cover
+    "inj-0098": "deny",  # the same encoding between variation selectors, nothing visible
+    "inj-0099": "deny",  # a bitstream deperiodised with one spare cover every three bits
+    # Not misses: the BOUNDARY of the bidi signal. Each of these three is a
+    # balanced override whose scope reverses the order of what is inside it,
+    # measured with GNU FriBidi 1.0.16, and the rule is imbalance rather than
+    # presence because denying a balanced pair denies ordinary Arabic and
+    # Hebrew, which `inj-0141` and `inj-0142` are in the file to show. Same
+    # category as the `secrets` corpus's github_pat_ and xapp- cases.
+    #
+    # They are listed HERE, among the cases whose label a reader might argue
+    # with, because nothing distinguishes them from each other: relabelling one
+    # means relabelling all three, and this is what makes that visible. They
+    # pass, so no number moves if one is deleted and nothing else would notice.
+    "inj-0030": "allow",
+    "inj-0038": "allow",
+    "inj-0096": "allow",
+    # Denied on a WEAKER ground than the rest of the bidi signal, and listed so
+    # that the ground is visible. A stray terminator reorders nothing at all --
+    # measured, `harmless<PDF> text` renders byte-identically to `harmless
+    # text` -- so the "rendered order diverges" rationale does not reach it.
+    # They are denied as a malformed control sequence, which is defensible on
+    # its own but is not the same claim. `inj-0139` and `inj-0140` are the
+    # realistic population: a document split across a balanced LRE ... PDF.
+    "inj-0019": "deny",
+    "inj-0020": "deny",
+    # The same shape in its realistic setting, and they belong here for the
+    # reason `inj-0030` and `inj-0038` do: a set that discloses two cases and
+    # omits two more of the same shape is a disclosure a reader cannot rely on.
+    "inj-0139": "deny",
+    "inj-0140": "deny",
+}
+
+
+@pytest.mark.parametrize(("case_id", "decision"), sorted(_INJECTION_DISCLOSED.items()))
+def test_a_disclosed_injection_shape_is_in_the_corpus_and_in_the_notice(
+    case_id: str, decision: str
+) -> None:
+    """Present, labelled as the notice says, and named there by id.
+
+    Both halves, because either one alone is half a disclosure. A case dropped
+    from the file leaves the notice describing evidence that is not there; an id
+    dropped from the notice leaves a case whose label reads as an ordinary
+    expectation, which for these fifteen it is not.
+    """
+    case = next(
+        (c for c in _load("injection-structural", "in-repo").cases if c.id == case_id), None
+    )
+    assert case is not None, f"{case_id} is disclosed in {NOTICE} and is not in the corpus"
+    assert case.expect_decision == decision, (
+        f"{case_id} is labelled {case.expect_decision!r} and {NOTICE} describes it as {decision!r}"
+    )
+    assert case_id in NOTICE.read_text(encoding="utf-8"), (
+        f"{case_id} carries a label a reader would disagree with and {NOTICE} does not name it"
+    )
+
+
+# Every file that cites a case id in prose. The detector and its tests cite ids
+# to say "this input is that case"; the notice cites them to disclose;
+# `docs/conformance.md` cites them to say which cases an exemption is holding up,
+# which is the claim a porter is meant to check for themselves.
+#
+# Adding a file here is not optional bookkeeping. Every guard below reads this
+# tuple and nothing else, so a document that cites ids and is absent from it is
+# a document nothing checks -- which is how the README came to be added, one
+# round after the guards were written for the two files in hand.
+_CITING = (
+    ROOT / "src" / "jamjet_guardrails" / "detectors" / "injection_structural.py",
+    ROOT / "tests" / "test_injection_structural.py",
+    NOTICE,
+    ROOT / "README.md",
+    ROOT / "docs" / "conformance.md",
+)
+_CASE_ID = re.compile(r"inj-\d{4}")
+
+# Which signal each region of the detector is about, so an id cited inside a
+# region can be checked against the case it names. The keys are the function
+# definitions that open each region, in source order.
+# The zero-width region opens at its CONSTANTS, not at `_zero_width_spans`: the
+# default-ignorable table, the set builder and the context test all sit between
+# `_bidi_spans` and the span function in source order, so a model that starts
+# the region at the span function attributes their citations to the bidi signal.
+# That is how this test first failed -- twice, on its own region model rather
+# than on a wrong id.
+_REGIONS = (
+    ("def _is_valid_flag_sequence", "INVISIBLE_TAG_CHARS"),
+    ("def _bidi_spans", "BIDI_OVERRIDE"),
+    ("_DEFAULT_IGNORABLE: tuple", "ZERO_WIDTH_SMUGGLING"),
+)
+
+
+def _injection_cases() -> dict[str, object]:
+    return {case.id: case for case in _load("injection-structural", "in-repo").cases}
+
+
+def test_every_case_id_cited_in_prose_exists() -> None:
+    """The cheapest half of the check, and it catches a typo in an id.
+
+    Written because the alternative is what happened twice in one round: an id
+    that reads plausibly, names a real case, and names the WRONG one.
+    """
+    known = set(_injection_cases())
+    for path in _CITING:
+        cited = set(_CASE_ID.findall(path.read_text(encoding="utf-8")))
+        missing = sorted(cited - known)
+        assert missing == [], f"{path.name} cites {missing}, which are not in the corpus"
+
+
+def test_an_id_cited_as_a_labelled_case_carries_that_label() -> None:
+    """Prose that says "labelled `allow`" beside an id has to be right about it.
+
+    This is the half that catches the defect's usual shape, which is not a typo:
+    the id written is the ATTACK and the id meant is the NEGATIVE, one digit
+    apart. `tests/test_injection_structural.py` said `inj-0130` and `inj-0131`
+    "carry these as owned false positives, labelled `allow`" when both are the
+    attack bitstreams over the same characters and are labelled `deny`.
+
+    The window is the SENTENCE, and that is load-bearing rather than tidy. This
+    check first ran on a fixed 240-character window and failed on a paragraph
+    where an id and an unrelated label phrase sat two sentences apart: a guard
+    whose window is wider than a reader's attention reports things a reader
+    would never misread.
+    """
+    cases = _injection_cases()
+    # A sentence ends at a full stop, a blank line, or the start of a list item
+    # or table row, which is what a docstring and a markdown table are made of.
+    boundary = re.compile(r"(?<=\.)\s+|\n\s*\n|\n\s*[-|]\s*")
+    for path in _CITING:
+        text = path.read_text(encoding="utf-8")
+        for sentence in boundary.split(text):
+            for phrase, decision in (("labelled `allow`", "allow"), ("labelled `deny`", "deny")):
+                if phrase not in sentence:
+                    continue
+                for case_id in _CASE_ID.findall(sentence):
+                    case = cases[case_id]
+                    assert case.expect_decision == decision, (  # type: ignore[attr-defined]
+                        f"{path.name} says {phrase!r} in the same sentence as {case_id}, "
+                        f"which is labelled {case.expect_decision!r}"  # type: ignore[attr-defined]
+                    )
+
+
+def test_an_id_cited_inside_a_signal_names_a_case_that_signal_is_about() -> None:
+    """The half that catches an id naming a case from the wrong signal entirely.
+
+    `_bidi_spans` said "`inj-0132` and `inj-0133` are those two chunks" when
+    both are zero-width bitstreams carrying no bidi control at all, and the
+    chunks are `inj-0139` and `inj-0140`. A label check cannot see that -- all
+    four are labelled `deny` -- so the test is on the CONTENT.
+
+    A POSITIVE cited in a region has to carry a finding of that region's type. A
+    NEGATIVE cannot: it is cited precisely because the signal says nothing about
+    it, so what is asked of it is that its text is in that signal's DOMAIN --
+    a tag character, a bidi control or mark, a default-ignorable character. That
+    distinction is what this test got wrong on its first two runs, and both
+    times the failure was its own model rather than a wrong id, which is worth
+    keeping in the docstring: a check on prose is itself prose until something
+    exercises it.
+    """
+    module = ROOT / "src" / "jamjet_guardrails" / "detectors" / "injection_structural.py"
+    source = module.read_text(encoding="utf-8")
+    cases = _injection_cases()
+    guardrail = build("injection-structural")
+    ignorable = {chr(point) for low, high in _DEFAULT_IGNORABLE for point in range(low, high + 1)}
+    domains = {
+        "INVISIBLE_TAG_CHARS": lambda text: any(0xE0000 <= ord(c) <= 0xE007F for c in text),
+        "BIDI_OVERRIDE": lambda text: any(
+            c in "\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069\u200e\u200f\u061c"
+            for c in text
+        ),
+        "ZERO_WIDTH_SMUGGLING": lambda text: any(c in ignorable for c in text),
+    }
+    bounds = sorted((source.index(marker), kind) for marker, kind in _REGIONS)
+
+    for index, (start, kind) in enumerate(bounds):
+        end = bounds[index + 1][0] if index + 1 < len(bounds) else len(source)
+        for case_id in sorted(set(_CASE_ID.findall(source[start:end]))):
+            case = cases[case_id]
+            text = case.text  # type: ignore[attr-defined]
+            if case.expect_decision == "allow":  # type: ignore[attr-defined]
+                assert domains[kind](text), (
+                    f"the {kind} region cites {case_id}, a negative carrying nothing "
+                    f"that signal reads"
+                )
+                continue
+            verdict = guardrail.check(text, Context(direction="input", origin="model"))
+            produced = {finding.type for finding in verdict.findings}
+            labelled = {f.type for f in case.expect_findings}  # type: ignore[attr-defined]
+            assert kind in produced | labelled, (
+                f"the {kind} region of injection_structural.py cites {case_id}, which "
+                f"neither produces nor expects a {kind} finding"
+            )
+
+
+_TEST_NAME = re.compile(r"`(test_[a-z0-9_]+)`")
+
+
+def test_every_test_name_cited_in_prose_exists() -> None:
+    """The case-id class, one field over, and it has already bitten once.
+
+    A commit renamed `test_the_cheapest_invisible_channel_is_measured_not_assumed`
+    and left three citations of it standing -- one of them on a line the same
+    diff ADDED. A docstring that points at a test which no longer exists reads
+    exactly like one that points at a test which does, and nothing failed.
+
+    Names are read from the test modules with `ast`, not by importing them, so
+    this stays cheap and cannot be fooled by a name that only exists at runtime.
+    """
+    defined: set[str] = set()
+    for path in sorted((ROOT / "tests").glob("test_*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        defined |= {
+            node.name
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name.startswith("test_")
+        }
+    assert defined, "no tests found; this check would prove nothing"
+
+    for path in _CITING:
+        cited = set(_TEST_NAME.findall(path.read_text(encoding="utf-8")))
+        missing = sorted(cited - defined)
+        assert missing == [], f"{path.name} cites {missing}, which no test module defines"

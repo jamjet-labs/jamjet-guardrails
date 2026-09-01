@@ -47,6 +47,7 @@ from jamjet_guardrails import (
     saw,
 )
 from jamjet_guardrails.detectors import AVAILABLE
+from jamjet_guardrails.detectors.injection_structural import INJECTION_TYPES
 from jamjet_guardrails.detectors.pii import PII_TYPES
 from jamjet_guardrails.detectors.secrets import SECRET_TYPES
 
@@ -62,7 +63,11 @@ DIST = "jamjet-guardrails"
 # The detector each check reports its findings under. Keyed by registry name so
 # that registering a new check makes the parametrised tests below demand an
 # entry here rather than quietly leaving the new row unchecked.
-TYPES: dict[str, frozenset[str]] = {"pii": PII_TYPES, "secrets": SECRET_TYPES}
+TYPES: dict[str, frozenset[str]] = {
+    "injection-structural": INJECTION_TYPES,
+    "pii": PII_TYPES,
+    "secrets": SECRET_TYPES,
+}
 
 BANNED = [
     "production-ready",
@@ -327,14 +332,38 @@ def test_the_row_count_the_readme_states_is_the_size_of_the_third_party_corpus()
     )
 
 
-def test_the_readme_says_the_secrets_numbers_are_self_graded_because_they_are() -> None:
+def test_the_readme_names_every_check_whose_numbers_are_self_graded() -> None:
     """The absent row is a claim too, and it is the one a reader will not
-    notice going stale in the direction that matters."""
+    notice going stale in the direction that matters.
+
+    EVERY registered check, derived, rather than `secrets` by name. This test
+    pinned one sentence about one check until `injection-structural` arrived
+    with no third-party corpus either, and that is how a hardcoded list fails:
+    the claim it guards stays true while it quietly stops covering the check
+    that needed it. The set is computed from `AVAILABLE` and the corpora, so
+    the next such check is covered the day it is registered.
+
+    One SENTENCE has to name them all, for the reason `tests/test_corpora.py`
+    requires a source and its licence on one row of the notice: "no third-party
+    corpus" in one paragraph and a check's name in another is two halves that
+    do not join up for a reader.
+    """
     third_party_checks = {path.parent.name for path in _third_party_corpora()}
-    assert "secrets" not in third_party_checks, (
-        "a third-party secrets corpus now exists; the README says there is none"
+    self_graded = sorted(set(AVAILABLE) - third_party_checks)
+    assert self_graded, "every check has a third-party corpus; this check would prove nothing"
+
+    sentences = [s for s in _flat(_text()).split(". ") if "no third-party corpus" in s.lower()]
+    assert sentences, "the README never says that any check has no third-party corpus"
+    naming = [s for s in sentences if all(f"`{name}`" in s for name in self_graded)]
+    assert naming, (
+        f"no single sentence of the README says that {self_graded} have no third-party "
+        "corpus, so at least one check is published as self-graded without saying so"
     )
-    assert "There is no third-party secrets corpus." in _flat(_text())
+    # The other direction, which is the one that goes stale silently: a check
+    # that GAINS a third-party corpus must stop being listed as self-graded.
+    for sentence in naming:
+        stale = [name for name in third_party_checks & set(AVAILABLE) if f"`{name}`" in sentence]
+        assert stale == [], f"{stale} now have a third-party corpus and the README denies it"
 
 
 # ==========================================================================
@@ -392,7 +421,12 @@ def test_the_no_network_claim_holds_over_every_module_that_ships() -> None:
 # The checks table: every column recomputed from the check it describes.
 # ==========================================================================
 
-_ROW = re.compile(r"^\|\s*`([a-z_]+)`\s*\|([^|]*)\|([^|]*)\|([^|]*)\|\s*$", re.MULTILINE)
+# The name class carries `-` as well as `_`. `injection-structural` is the first
+# registry key that is not a bare Python identifier, and the failure it caused is
+# the quiet kind: `[a-z_]+` did not reject that row, it matched nothing at all, so
+# the table test reported the check undocumented against a README that documented
+# it correctly. Widening the class is what keeps the parse and the eye agreeing.
+_ROW = re.compile(r"^\|\s*`([a-z_-]+)`\s*\|([^|]*)\|([^|]*)\|([^|]*)\|\s*$", re.MULTILINE)
 
 
 def _checks_table() -> dict[str, tuple[str, set[str], set[str]]]:
@@ -514,3 +548,50 @@ def test_an_empty_list_of_checks_is_refused_as_the_readme_says() -> None:
     with pytest.raises(GuardrailUnavailableError):
         build_chain([])
     assert "An empty list of checks is refused" in _flat(_section("## How it fails"))
+
+
+def test_the_readme_states_the_size_of_the_disclosed_set_the_notice_carries() -> None:
+    """The count is published in three places and drifted in one round.
+
+    `README.md` said thirteen while `corpora/NOTICE.md` said fifteen and
+    `_INJECTION_DISCLOSED` held fifteen, because a fix round added two ids to
+    the notice and the test and not to the README. Nothing read the number, so
+    nothing caught it.
+
+    Read from the test that owns the set rather than written down here, for the
+    reason `test_corpora.py` reads the false-positive lists out of
+    `test_pii.py`: a guard that repeats the thing it guards goes stale the first
+    time somebody adds to one copy. The spelled-out form is what the README
+    uses, so that is what is checked.
+    """
+    from test_corpora import _INJECTION_DISCLOSED
+
+    words = {
+        13: "Thirteen",
+        14: "Fourteen",
+        15: "Fifteen",
+        16: "Sixteen",
+        17: "Seventeen",
+        18: "Eighteen",
+        19: "Nineteen",
+        20: "Twenty",
+        21: "Twenty-one",
+        22: "Twenty-two",
+        23: "Twenty-three",
+        24: "Twenty-four",
+    }
+    count = len(_INJECTION_DISCLOSED)
+    spelled = words.get(count)
+    assert spelled is not None, f"{count} disclosed cases; add the word to this table"
+    text = _flat(_text())
+    # Both spellings, with no `or` between them. The disjunct that used to sit
+    # here accepted the lowercase word appearing ANYWHERE in the README, which a
+    # sentence about something else can satisfy; only the second assertion was
+    # really binding, and a guard that is carried by one of its two halves is a
+    # guard that quietly loses the other.
+    assert f"{spelled} `injection-structural`" in text, (
+        f"the README does not say how many disclosed cases there are; it is {count}"
+    )
+    assert f"All {spelled.lower()} are named by case id" in text, (
+        f"the README's 'all N are named by case id' sentence does not say {spelled.lower()}"
+    )

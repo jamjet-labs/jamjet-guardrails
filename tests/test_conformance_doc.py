@@ -39,9 +39,11 @@ from jamjet_guardrails import (
     Origin,
     Provenance,
     Verdict,
+    build,
     combine,
     saw,
 )
+from jamjet_guardrails.detectors.injection_structural import INJECTION_TYPES
 from jamjet_guardrails.eval.corpus import Case, Corpus, ExpectedFinding, load_corpus
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -55,6 +57,7 @@ REQUIRED_SECTIONS = [
     "## Single-pass rewriting",
     "## The saw hash",
     "## Corpus schema",
+    "## The injection-structural constraint",
     "## Third-party corpora",
     "## What is deliberately unspecified",
 ]
@@ -89,6 +92,25 @@ def test_conformance_doc_covers_every_required_section() -> None:
     text = _text()
     missing = [s for s in REQUIRED_SECTIONS if s not in text]
     assert missing == [], f"conformance doc is missing {missing}"
+
+
+def test_the_required_sections_appear_in_the_order_this_file_lists_them() -> None:
+    """The intro's contract boundary is positional, so position has to be checked.
+
+    It reads "everything above Third-party corpora is contract". That replaced
+    an ordinal -- "the first five sections" -- which was wrong the moment a
+    sixth contract section was added and which nothing had been checking. The
+    replacement is better because it cannot go stale by counting, and it can
+    still go stale by MOVING: a contract section dropped below the boundary
+    would be silently declared free. Presence alone cannot see that.
+    """
+    text = _text()
+    positions = [text.index(section) for section in REQUIRED_SECTIONS]
+    assert positions == sorted(positions), (
+        "the conformance doc's sections are out of order; the intro claims "
+        "everything above Third-party corpora is contract, which depends on it. "
+        f"Order found: {[s for _, s in sorted(zip(positions, REQUIRED_SECTIONS))]}"
+    )
 
 
 def test_no_design_spec_travels_with_the_code() -> None:
@@ -495,3 +517,252 @@ def test_the_third_party_section_points_at_the_notice_it_does_not_replace() -> N
     """CC BY 4.0 attribution lives in one file, so the two cannot fall out of step."""
     section = _section("## Third-party corpora")
     assert "corpora/NOTICE.md" in section
+
+
+# ==========================================================================
+# The injection-structural section: its types and its span vector, recomputed.
+# ==========================================================================
+
+INJECTION = "## The injection-structural constraint"
+INJECTION_CORPUS = ROOT / "corpora" / "injection-structural" / "in-repo.jsonl"
+# The case the document works its span vector out of.
+SPAN_VECTOR_CASE = "inj-0001"
+
+
+def _claim_region(phrase: str) -> str:
+    """The document text a single claim owns: from its opening phrase to the next bullet.
+
+    A whole-section search would let one bullet's ids answer for another's,
+    which is precisely the mistake the tests below exist to catch -- the five
+    claims cite twenty-nine cases between them and four of them share an id
+    with a neighbour.
+    """
+    text = _text()
+    assert phrase in text, f"the document makes no claim opening {phrase!r}"
+    rest = text.split(phrase, 1)[1]
+    stop = re.search(r"\n\s*-\s|\n#{2,3} ", rest)
+    return rest[: stop.start()] if stop else rest
+
+
+def _subsection(heading: str, sub: str) -> str:
+    """The body of one H3, up to the next H3 or the end of its H2."""
+    section = _section(heading)
+    assert sub in section, f"{heading} has no {sub!r} subsection"
+    return section.split(sub, 1)[1].split("\n### ", 1)[0]
+
+
+def test_the_document_lists_every_type_this_check_can_produce() -> None:
+    """Derived from `INJECTION_TYPES`, so a fourth signal is a red test here.
+
+    A type is contract by the rule this document already states: a finding
+    `type` has to match the label the corpus uses, because that is what a
+    prediction is matched against. A type added to the check and left out of
+    here is a piece of that a porter never learns, and both directions matter --
+    a type listed here and not produced makes the document overstate the check.
+    """
+    documented = set(
+        re.findall(r"`([A-Z][A-Z_]+)`", _subsection(INJECTION, "### Three finding types"))
+    )
+    assert documented == set(INJECTION_TYPES), (
+        f"the document lists {sorted(documented)}; the check produces {sorted(INJECTION_TYPES)}"
+    )
+
+
+def test_the_span_vector_the_document_publishes_is_the_case_it_names() -> None:
+    """All three renderings of one corpus span, recomputed from the case itself.
+
+    The document tells a porter that spans count CODE POINTS, and backs it with
+    one case rendered three ways. The numbers are the whole of the claim: quoted
+    wrongly, a porter checks their UTF-16 implementation against a UTF-16 figure
+    that was never measured and concludes it agrees.
+
+    The three renderings are asserted to DIFFER as well. If they ever coincide
+    the vector demonstrates nothing, and it would still be quotable.
+    """
+    corpus = load_corpus(INJECTION_CORPUS, name="injection-structural")
+    case = next((c for c in corpus.cases if c.id == SPAN_VECTOR_CASE), None)
+    assert case is not None, (
+        f"{SPAN_VECTOR_CASE} is the document's span vector and is not in the corpus"
+    )
+    (finding,) = case.expect_findings
+    assert finding.span is not None
+    start, end = finding.span
+
+    def utf8(index: int) -> int:
+        return len(case.text[:index].encode("utf-8"))
+
+    def utf16(index: int) -> int:
+        return len(case.text[:index].encode("utf-16-le")) // 2
+
+    spans = {
+        "code points": (start, end),
+        "UTF-8 bytes": (utf8(start), utf8(end)),
+        "UTF-16 code units": (utf16(start), utf16(end)),
+    }
+    assert len(set(spans.values())) == 3, (
+        f"the three renderings of {SPAN_VECTOR_CASE} coincide ({spans}), so the "
+        "document's worked vector distinguishes nothing"
+    )
+    section = _section(INJECTION)
+    for unit, (low, high) in spans.items():
+        assert f"`[{low}, {high}]`" in section, (
+            f"the document does not publish {SPAN_VECTOR_CASE} in {unit}, which is [{low}, {high}]"
+        )
+
+
+def test_every_case_in_the_injection_corpus_carries_the_direction_the_document_claims() -> None:
+    """The document says this check's direction is specified here and measured nowhere.
+
+    That rests on one fact about the corpus: every case is `input`, so a port
+    declaring `output` as well scores identically and the corpus cannot object.
+    Add one output case and the sentence becomes false, with nothing else in the
+    repository disagreeing.
+    """
+    corpus = load_corpus(INJECTION_CORPUS, name="injection-structural")
+    assert corpus.cases, "the injection corpus is empty; this check would prove nothing"
+    directions = {case.direction for case in corpus.cases}
+    assert directions == {"input"}, f"the corpus carries directions {sorted(directions)}"
+    assert "`direction: input`" in _section(INJECTION)
+
+
+# ==========================================================================
+# The exemptions: the case lists in the document are RE-MEASURED, not read.
+# ==========================================================================
+
+INJECTION_MODULE = ROOT / "src" / "jamjet_guardrails" / "detectors" / "injection_structural.py"
+SCORING = Context(direction="input", origin="model")
+
+# Each entry: the phrase that opens the document's own claim, and the single
+# source edit that switches that one exemption or exclusion off. The edits are
+# textual on purpose. If one stops applying, this fails with "no longer applies"
+# rather than silently measuring an unmutated module, and the right response is
+# to re-measure the claim rather than to repair the patch.
+_EXEMPTIONS: list[tuple[str, str, str]] = [
+    (
+        "Balanced bidi controls are allowed",
+        "    for index, char in enumerate(content):\n        if char in _EMBED_OPEN:",
+        (
+            "    for index, char in enumerate(content):\n"
+            "        if (\n"
+            "            char in _EMBED_OPEN\n"
+            "            or char in _ISOLATE_OPEN\n"
+            "            or char == _EMBED_CLOSE\n"
+            "            or char == _ISOLATE_CLOSE\n"
+            "        ):\n"
+            "            unbalanced.append(index)\n"
+            "            continue\n"
+            "        if char in _EMBED_OPEN:"
+        ),
+    ),
+    (
+        "The three RGI subdivision flag sequences are allowed",
+        "    if start == 0 or ord(content[start - 1]) != _FLAG_BASE:",
+        "    if True or start == 0 or ord(content[start - 1]) != _FLAG_BASE:",
+    ),
+    (
+        "The joiner exemption is contextual, by script",
+        "    char = content[index]\n    if char not in _CONTEXTUAL:",
+        "    char = content[index]\n    return False\n    if char not in _CONTEXTUAL:",
+    ),
+    (
+        "counting variation selectors denies",
+        '        and _VARIATION_SELECTOR not in unicodedata.name(chr(point), "")\n',
+        "",
+    ),
+    (
+        "dropping the exclusion for the directional format characters denies",
+        "        if not _is_directional(chr(point))\n        and ",
+        "        if ",
+    ),
+]
+
+
+def _allow_cases() -> list[Any]:
+    return [
+        c
+        for c in load_corpus(INJECTION_CORPUS, name="injection-structural").cases
+        if c.expect_decision == "allow"
+    ]
+
+
+def _flips(guardrail: Any, cases: list[Any]) -> set[str]:
+    """Which of these `allow` cases the given guardrail does not allow."""
+    return {c.id for c in cases if guardrail.check(c.text, SCORING).decision != "allow"}
+
+
+def _without(old: str, new: str, cases: list[Any]) -> set[str]:
+    """The `allow` cases one source edit costs, over and above the ones already failing.
+
+    The module is exec'd from a patched copy of its own source rather than
+    imported, which is what keeps this honest. Writing the patched file to disk
+    and re-importing it is the obvious alternative and it silently lies: two
+    patches applied in the same second that happen to produce the same file size
+    make CPython reuse the first one's cached bytecode, and the second
+    measurement comes back as the first one's. That happened while these numbers
+    were being taken, and it made two different exemptions report the same seven
+    cases. Nothing about the output said so.
+    """
+    source = INJECTION_MODULE.read_text(encoding="utf-8")
+    assert source.count(old) == 1, (
+        f"the mutation {old[:60]!r} no longer applies to the module "
+        f"({source.count(old)} matches); re-measure the claim rather than repairing the patch"
+    )
+    namespace: dict[str, Any] = {"__name__": "injection_structural_under_mutation"}
+    exec(compile(source.replace(old, new, 1), str(INJECTION_MODULE), "exec"), namespace)  # noqa: S102
+    mutant = namespace["InjectionStructuralGuardrail"]()
+    return _flips(mutant, cases) - _flips(build("injection-structural"), cases)
+
+
+@pytest.mark.parametrize(
+    ("phrase", "old", "new"), _EXEMPTIONS, ids=[e[0][:32].replace(" ", "-") for e in _EXEMPTIONS]
+)
+def test_every_case_list_the_exemptions_publish_is_the_list_the_measurement_gives(
+    phrase: str, old: str, new: str
+) -> None:
+    """The most perishable numbers in the section, derived instead of asserted.
+
+    Each bullet claims that switching one exemption off costs a named set of
+    `allow` cases. Nothing else in this repository re-runs that, so the lists
+    were true when they were written and would stay in the document unchanged
+    while the detector moved underneath them.
+
+    One of them was already wrong on the day it was written: the directional
+    bullet named the exclusion of every directional FORMAT character and
+    reported the result of counting only the three MARKS, which is one case
+    short. It was measured on four hand-picked ids rather than on the corpus,
+    and every id it named was correct, so nothing about it read as wrong.
+    """
+    region = _claim_region(phrase)
+    cited = set(re.findall(r"inj-\d{4}", region))
+    assert cited, f"the claim opening {phrase!r} cites no case ids"
+    measured = _without(old, new, _allow_cases())
+    assert cited == measured, (
+        f"the document says switching off {phrase!r} costs {sorted(cited)}; "
+        f"measured, it costs {sorted(measured)}"
+    )
+
+
+def test_the_count_of_allow_cases_riding_on_an_exemption_is_the_measured_union() -> None:
+    """Both numbers in the section's opening claim, and the union is not the sum.
+
+    `inj-0037` is held up by two of the five, so adding the bullet lists gives
+    30 where the union is 29. The sentence this guards replaced one that said
+    "most", which was true only if "turns on an exemption" is read as "contains
+    a character some exemption is about". Measured, that reading gives 68 of the
+    94 `allow` cases against 29 that depend on one, and NAMING THE SET IS THE
+    WHOLE OF IT: 68 is the union of the five exemptions' own character sets --
+    the nine bidi controls, the tag characters with U+1F3F4, the three
+    contextual joiners, the variation selectors, and the characters
+    `_is_directional` answers True for. A looser reading gives a different
+    number and neither is wrong on its own: every `Cf` character, which is not
+    what any exemption is about, gives 74. This note carried 73, which is
+    neither set.
+    """
+    cases = _allow_cases()
+    union: set[str] = set()
+    for _phrase, old, new in _EXEMPTIONS:
+        union |= _without(old, new, cases)
+    section = _section(INJECTION)
+    assert f"{len(union)} of its {len(cases)} `allow` cases" in section, (
+        f"the document does not state the measured figures, which are {len(union)} of {len(cases)}"
+    )
