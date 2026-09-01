@@ -4,35 +4,49 @@ A corpus that changes under a published number is the same failure as a model
 that changes under one: the figure stops describing the artifact and nothing
 says so. The hash is what makes a re-fetch either identical or loud.
 
-The manifest reader is written against the standard library rather than PyYAML,
-and the reason is that `tests/test_training_data.py` imports this module. That
-test is the licence and contamination screen, it runs in CI over committed
-data, and CI installs `.[dev]` and nothing else. A PyYAML import here would
-either add a dependency to a `[project]` table -- which the whole point of the
-`training/` tree is to avoid -- or turn the screen into a test that skips on
-every CI leg, which is the same as not having it.
-
-So the reader implements the subset of YAML `training/sources.yaml` actually
-uses: a top-level sequence of mappings, plain and quoted scalars, and folded
-(`>`) blocks for the notes. Anything outside that subset raises rather than
-being guessed at, and `test_the_manifest_reader_agrees_with_the_yaml_library`
-compares the result against PyYAML wherever PyYAML is installed.
+The manifest is read with `yaml.safe_load`. PyYAML sits in
+`[project.optional-dependencies].dev`, beside pytest, ruff and mypy, which is
+where a test-only dependency belongs. The property this tree exists to protect
+is `[project].dependencies = []`, and the two are distinguished mechanically
+rather than by care: `tests/test_packaging.py` reads the BUILT metadata and
+filters out `extra ==` markers, so a dev extra cannot become a runtime
+requirement without that test saying so. CI installs `.[dev]`, so the licence
+and contamination screens run on every leg, and nothing under `training/` is in
+the wheel either way.
 """
 
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import urllib.request
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Literal, get_args
 from urllib.parse import urlsplit
+
+import yaml
 
 Role = Literal["train", "eval", "excluded"]
 
 # Derived from the Literal rather than restated, so the two cannot drift.
 ROLES: tuple[Role, ...] = get_args(Role)
+
+#: The repository root. `training/` sits at the root rather than inside the
+#: package, so this file's grandparent is it.
+ROOT = Path(__file__).resolve().parent.parent
+
+#: Where a download lands unless a caller says otherwise. `.gitignore` carries
+#: `/data/`, anchored to the repository root, and this is that directory.
+DATA = ROOT / "data"
+
+#: The URL schemes `fetch` will open. `urllib.request.urlretrieve` also honours
+#: `ftp://` and, depending on the build, more than that, so the set is stated
+#: rather than inherited. `file` is here because the fetch tests need a local
+#: origin to stay hermetic with no network; every URL in the manifest is
+#: `https`, and `test_every_url_in_the_manifest_is_https` holds it there.
+FETCHABLE_SCHEMES = frozenset({"file", "https"})
 
 #: What a source records in `sha256` when there is no content to hash. Only an
 #: `excluded` source may carry it, and `fetch` refuses it outright: a download
@@ -46,22 +60,6 @@ HEX64 = re.compile(r"\A[0-9a-f]{64}\Z")
 
 _REQUIRED = ("name", "url", "license", "sha256", "role")
 _OPTIONAL = ("note",)
-
-# The three line shapes the manifest is allowed to use. A key is lower-case and
-# snake-cased because those are the dataclass's field names; a manifest that
-# reads `Name:` is a manifest whose author expected something this does not do.
-_ITEM = re.compile(r"\A- ([a-z][a-z0-9_]*):[ ]?(.*)\Z")
-_KEY = re.compile(r"\A {2}([a-z][a-z0-9_]*):[ ]?(.*)\Z")
-# Exactly four spaces, not "four or more". YAML keeps a more-indented line
-# inside a folded block literal instead of folding it, so accepting deeper
-# indentation here would agree with PyYAML on the shape and disagree with it on
-# the text. Rejecting it means the two never quietly differ.
-_FOLD = re.compile(r"\A {4}(\S.*)\Z")
-
-# Characters that open a YAML construct this reader does not implement. Listed
-# so an unsupported manifest fails on the line that introduced it, rather than
-# being read as a plain string that happens to start with a sigil.
-_UNSUPPORTED_OPENERS = ">|[{&*!%@`"
 
 
 class SourceError(Exception):
@@ -90,7 +88,7 @@ def load_sources(path: Path) -> list[Source]:
     entries = _read_manifest(path)
     if not entries:
         raise SourceError(f"{path} lists no sources")
-    sources = [_to_source(entry, path, lineno) for entry, lineno in entries]
+    sources = [_to_source(entry, path, index) for index, entry in enumerate(entries)]
     names = [source.name for source in sources]
     repeated = sorted({name for name in names if names.count(name) > 1})
     if repeated:
@@ -115,7 +113,7 @@ def verify(path: Path, expected_sha: str) -> None:
         )
 
 
-def fetch(source: Source, into: Path) -> Path:
+def fetch(source: Source, into: Path = DATA) -> Path:
     """Download a source if it is not already present, and verify it either way.
 
     The verification is outside the download branch on purpose. A file left in
@@ -128,14 +126,48 @@ def fetch(source: Source, into: Path) -> Path:
             f"{source.name} records no digest, so there would be nothing to check a "
             "download against; it cannot be fetched"
         )
+    scheme = urlsplit(source.url).scheme
+    if scheme not in FETCHABLE_SCHEMES:
+        raise SourceError(
+            f"{source.name} is served over {scheme!r}; this fetches "
+            f"{sorted(FETCHABLE_SCHEMES)} and nothing else"
+        )
+    _refuse_a_committed_destination(into)
     into.mkdir(parents=True, exist_ok=True)
     target = into / _filename(source)
     if not target.exists():
         # The URL comes from the manifest, which `load_sources` has already
-        # validated, and never from anything a caller passes in.
+        # validated, and its scheme has just been checked against the
+        # allowlist above.
         urllib.request.urlretrieve(source.url, target)
     verify(target, source.sha256)
     return target
+
+
+def _refuse_a_committed_destination(into: Path) -> None:
+    """A download must not land where git would commit it.
+
+    `.gitignore` anchors `/data/` to the repository root, so `training/data/`
+    is NOT ignored -- and `training/data/` is the natural thing for a later
+    script to write, because every other file this tree owns lives under
+    `training/`. `training/README.md` says where downloads go; this is the part
+    that survives someone not reading it.
+
+    Lexical, through `os.path.abspath`, rather than `Path.resolve()`:
+    `resolve()` raises `RuntimeError` on a symlink loop up to 3.12 and this
+    package's floor is 3.10, so a guard written with it turns a bad destination
+    into a traceback instead of a refusal. A destination outside the repository
+    is nothing this rule has an opinion about.
+    """
+    target = Path(os.path.abspath(into))
+    if target != ROOT and ROOT not in target.parents:
+        return
+    if target == DATA or DATA in target.parents:
+        return
+    raise SourceError(
+        f"{target} is inside the repository and outside {DATA}, the one directory "
+        ".gitignore keeps out of a commit; a corpus written there would be committed"
+    )
 
 
 def _filename(source: Source) -> str:
@@ -144,25 +176,55 @@ def _filename(source: Source) -> str:
     The extension is read from the URL rather than fixed at `.jsonl`. The
     sources pinned so far are CSV, and a CSV written to a `.jsonl` path is a
     file whose name tells the next stage to parse it the wrong way.
+
+    The result is checked with `PureWindowsPath`, which knows both separators,
+    so a name that would split into a path is refused on every platform rather
+    than only on the one where it would do damage. Replacing `/` alone is a
+    POSIX answer to a question that has two spellings.
     """
     suffix = PurePosixPath(urlsplit(source.url).path).suffix
-    return f"{source.name.replace('/', '__')}{suffix}"
+    name = f"{source.name.replace('/', '__')}{suffix}"
+    if name in (".", "..") or PureWindowsPath(name).name != name:
+        raise SourceError(
+            f"{source.name} and its URL give the local name {name!r}, which is a path "
+            "rather than a filename"
+        )
+    return name
 
 
-def _to_source(entry: dict[str, str], path: Path, lineno: int) -> Source:
-    where = f"{path}:{lineno}"
+def _to_source(entry: object, path: Path, index: int) -> Source:
+    where = f"{path}[{index}]"
+    if not isinstance(entry, dict):
+        raise SourceError(f"{where}: source is a {type(entry).__name__}, expected a mapping")
+
     missing = [key for key in _REQUIRED if key not in entry]
     if missing:
         raise SourceError(f"{where}: source is missing {missing}")
-    unknown = sorted(set(entry) - set(_REQUIRED) - set(_OPTIONAL))
+    unknown = sorted(str(key) for key in set(entry) - set(_REQUIRED) - set(_OPTIONAL))
     if unknown:
         raise SourceError(f"{where}: source carries unknown keys {unknown}")
 
-    role = entry["role"]
+    fields: dict[str, str] = {}
+    for key, value in entry.items():
+        # YAML types values, and the types it picks are not the ones a manifest
+        # means: `role: yes` is a bool, an all-digit digest is an int, and a
+        # key whose value is a nested list is a list. Each of those reaches a
+        # field the screens read as text, so each is refused here rather than
+        # coerced. A source with a silently retyped field is one every screen
+        # below walks straight past.
+        text = value.strip() if isinstance(value, str) else ""
+        if not isinstance(value, str) or not text:
+            raise SourceError(
+                f"{where}: {key} is {value!r}; every field a source declares must carry one "
+                "non-empty piece of text"
+            )
+        fields[str(key)] = text
+
+    role = fields["role"]
     if role not in ROLES:
         raise SourceError(f"{where}: role is {role!r}, expected one of {list(ROLES)}")
 
-    sha256 = entry["sha256"]
+    sha256 = fields["sha256"]
     if HEX64.match(sha256) is None:
         if sha256 != NO_DIGEST:
             raise SourceError(
@@ -171,115 +233,46 @@ def _to_source(entry: dict[str, str], path: Path, lineno: int) -> Source:
             )
         if role != "excluded":
             raise SourceError(
-                f"{where}: {entry['name']} records no digest and its role is {role!r}. "
+                f"{where}: {fields['name']} records no digest and its role is {role!r}. "
                 "Only an excluded source may go unpinned, because it is the only role "
                 "nothing is measured on or trained from"
             )
-        if not entry.get("note", "").strip():
+        if not fields.get("note", ""):
             raise SourceError(
-                f"{where}: {entry['name']} records no digest and no note saying why; "
+                f"{where}: {fields['name']} records no digest and no note saying why; "
                 "an unpinned source without a reason is one nobody can re-check"
             )
 
     return Source(
-        name=entry["name"],
-        url=entry["url"],
-        license=entry["license"],
+        name=fields["name"],
+        url=fields["url"],
+        license=fields["license"],
         sha256=sha256,
         # No cast. `ROLES` is annotated `tuple[Role, ...]`, so the membership
         # test above narrows `role` from `str` to the Literal on its own, and
         # mypy rejects a cast here as redundant. A `cast` would have accepted
         # any string the day the membership test was loosened.
         role=role,
-        note=entry.get("note", ""),
+        note=fields.get("note", ""),
     )
 
 
-def _read_manifest(path: Path) -> list[tuple[dict[str, str], int]]:
-    """The manifest as (mapping, line the item opened on) pairs, or an error.
+def _read_manifest(path: Path) -> list[object]:
+    """The manifest as a list of whatever YAML made of each entry.
 
-    The line number travels with the mapping so that a validation failure names
-    the entry a reader can go and look at, rather than an index into a list.
+    A parse failure is re-raised as a `SourceError` so that every way this file
+    can be wrong -- unreadable, the wrong shape, or a field that does not hold
+    up -- reaches a caller as one exception type. A caller catching
+    `yaml.YAMLError` separately is a caller that will forget to.
     """
-    entries: list[tuple[dict[str, str], int]] = []
-    entry: dict[str, str] = {}
-    entry_line = 0
-    fold_key = ""
-    fold_lines: list[str] = []
-
-    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        if fold_key:
-            folded = _FOLD.match(line)
-            if folded is not None:
-                fold_lines.append(folded.group(1).rstrip())
-                continue
-            # A line that is not part of the block ends it. A blank line inside
-            # a folded block is a paragraph break in YAML and this reader does
-            # not implement that: the block ends here, and any further indented
-            # line then fails to match `- ` or a key and raises below.
-            entry[fold_key] = " ".join(fold_lines)
-            fold_key = ""
-            fold_lines = []
-
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-
-        item = _ITEM.match(line)
-        key = _KEY.match(line)
-        if item is not None:
-            if entry_line:
-                entries.append((entry, entry_line))
-            entry = {}
-            entry_line = lineno
-            name, raw = item.group(1), item.group(2)
-        elif key is not None:
-            if not entry_line:
-                raise SourceError(f"{path}:{lineno}: a key appears before any `- ` item")
-            name, raw = key.group(1), key.group(2)
-        else:
-            raise SourceError(
-                f"{path}:{lineno}: this is not a `- key: value` item, a two-space "
-                "`key: value`, or a four-space folded continuation"
-            )
-
-        if name in entry:
-            raise SourceError(f"{path}:{lineno}: duplicate key {name!r}")
-        if raw.strip() == ">":
-            fold_key = name
-            fold_lines = []
-        else:
-            entry[name] = _scalar(raw, path, lineno)
-
-    if fold_key:
-        entry[fold_key] = " ".join(fold_lines)
-    if entry_line:
-        entries.append((entry, entry_line))
-    return entries
-
-
-def _scalar(raw: str, path: Path, lineno: int) -> str:
-    where = f"{path}:{lineno}"
-    value = raw.strip()
-    if not value:
-        raise SourceError(f"{where}: empty value; every field a source declares must carry one")
-    if value[0] in _UNSUPPORTED_OPENERS:
+    try:
+        document = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as error:
+        raise SourceError(f"{path} is not readable as YAML: {error}") from error
+    if document is None:
+        raise SourceError(f"{path} lists no sources")
+    if not isinstance(document, list):
         raise SourceError(
-            f"{where}: {value[0]!r} opens a YAML construct this reader does not implement"
+            f"{path} holds a {type(document).__name__}, and a manifest is a list of sources"
         )
-    if value[0] in "\"'":
-        quote = value[0]
-        if len(value) < 2 or value[-1] != quote:
-            raise SourceError(f"{where}: a value opened with {quote!r} is not closed")
-        inner = value[1:-1]
-        if quote in inner or "\\" in inner:
-            raise SourceError(
-                f"{where}: a quoted value containing {quote!r} or a backslash needs escape "
-                "handling this reader does not implement"
-            )
-        return inner
-    if " #" in value:
-        raise SourceError(
-            f"{where}: ' #' starts a comment inside a plain YAML scalar; quote the value "
-            "if the '#' is part of it"
-        )
-    return value
+    return document

@@ -17,8 +17,14 @@ somebody remembers:
 - The wheel is built from `packages = ["src/jamjet_guardrails"]`, so this
   directory is outside it. `tests/test_packaging.py` asserts the built
   distribution declares no runtime dependency.
-- The pins live in `training/requirements.txt`, which is not referenced by any
+- The pins live in `training/requirements.txt`, which is referenced by no
   `[project]` table in `pyproject.toml` and is never installed into `.venv`.
+  One name on that list, `pyyaml`, does also appear in the `dev` extra, because
+  `training/fetch.py` reads the manifest with it and the screens over that
+  manifest run in CI. A dev extra is not a runtime dependency and cannot become
+  one by accident: `tests/test_packaging.py` reads the built metadata and
+  filters out `extra ==` markers. The machine learning pins are in no
+  `[project]` table at all.
 
 `.venv` at the repository root is the *package's* environment: pytest, ruff,
 mypy and an editable install. Installing training dependencies into it would
@@ -39,6 +45,16 @@ name. Written out because the first draft of this file claimed the opposite,
 and a venv holding a gigabyte of torch is not something to find out about from
 `git status`.
 
+### From fetch to export
+
+There is no command sequence to write down yet. `training/fetch.py` is the only
+entry point this tree has, and nothing calls it. The scripts that build the
+splits, fine-tune the encoder, export to ONNX and score the ship bar arrive
+with the tasks that write them, and the sequence lands here when the commands
+it names exist. A sequence documented ahead of its scripts is a list of
+commands that do not run, which is the class of claim this repository spends
+most of its effort not making.
+
 ### Why 3.13 and not 3.14
 
 Wheel availability, read from the PyPI JSON API on 2026-09-01 for the exact
@@ -48,7 +64,7 @@ pins in `training/requirements.txt`:
 |---|---|---|
 | `torch==2.8.0` | cp310-cp313, macOS arm64 and manylinux x86\_64 | none |
 | `onnxruntime==1.23.0` | cp310-cp313, macOS arm64 and manylinux x86\_64 | none |
-| `onnx==1.19.0` | cp310-cp313 macOS universal2; cp310-cp314 manylinux | yes |
+| `onnx==1.19.0` | cp310-cp313 macOS universal2 and manylinux; cp314 manylinux aarch64 only | yes |
 | `scikit-learn==1.7.2` | cp310-cp314, macOS arm64 and manylinux x86\_64 | yes |
 | `transformers==4.57.1` | pure Python, one wheel for every interpreter | yes |
 | `pyyaml==6.0.3` | cp310-cp314, macOS arm64 and manylinux x86\_64 | yes |
@@ -83,10 +99,23 @@ under `training/` is therefore committed by default and a file written under
 - `training/` holds anything a published number is measured on or measured by.
   A number that describes an artifact nobody else can obtain is not a
   measurement.
+- `training/artifacts/` is therefore committed, and it is named here rather
+  than left to the general rule because it is the directory that makes the
+  published numbers reproducible: the exported model, its tokenizer and the
+  ship-bar record. It does not exist yet. The task that exports a model creates
+  it, and nothing in `.gitignore` reaches it.
 
 The `/data/` rule is anchored with a leading slash. An unanchored `data/`
-matches a directory of that name at any depth, and this repository already
-carries directories a rule like that could swallow without a word.
+matches a directory of that name at any depth, so it would also swallow one
+added later under `src/` or `corpora/`, without a word. No directory named
+`data` exists anywhere in the tree today -- `git ls-files` finds none -- which
+is the reason to write the rule for the one that does not exist yet rather
+than after it does.
+
+`fetch` will not write outside that directory. Its `into` argument defaults to
+the repository-root `data/`, and a destination inside the repository but
+outside it is refused rather than created: `training/data/` is the natural
+thing for a later script to type, and `.gitignore` does not reach it.
 
 ## What ships and what does not
 
@@ -120,25 +149,68 @@ interchangeable:
 | `eval` | may be scored on |
 | `excluded` | neither, with the reason recorded in the entry itself |
 
-Two rules are enforced by `load_sources` rather than by review:
+Two rules hold this manifest to more than a reviewer's attention, and they
+are enforced in different places, which is worth knowing before relying on
+either:
 
 - **A source that is trained from or measured on carries a 64-character
-  digest.** The one recorded absence, `unavailable`, is confined to `excluded`,
+  digest.** Enforced by `load_sources`, so it fails at load wherever the
+  manifest is read. The one recorded absence, `unavailable`, is confined to
+  `excluded`,
   because that is the only role nothing is measured on. Flipping such an entry
   to `train` or `eval` raises at load rather than shipping an unpinned corpus.
-- **Nothing ProtectAI trained on may be an evaluation source.** Their model
-  card for `deberta-v3-base-prompt-injection-v2` names two datasets, and this
-  stage measures against that model. Scoring a detector on a corpus the
-  reference model memorised publishes memorisation as recall.
+- **Nothing ProtectAI is named as having trained on may be an evaluation
+  source, and this screen cannot see all of it.** Enforced by
+  `tests/test_training_data.py` rather than by `load_sources`, because the rule
+  needs a list of names that is not part of the manifest. This stage measures
+  against
+  `deberta-v3-base-prompt-injection-v2`, and scoring a detector on a corpus
+  that model memorised publishes memorisation as recall. The `datasets:`
+  metadata on their model card names 7 datasets, and
+  `PROTECTAI_NAMES_AS_TRAINING_DATA` in `tests/test_training_data.py` carries
+  all 7. The same card's licence summary accounts for 22 source datasets --
+  1 CC-BY-3.0, 8 MIT, 1 CC0-1.0, 6 with no licence, 5 Apache-2.0, 1 CC-BY-4.0
+  -- so 15 are counted and never named anywhere.
 
-URLs are pinned to a commit rather than to a branch. A branch under a recorded
-hash either starts failing verification, which is at least loud, or gets its
-hash updated to match, which changes the corpus under every number measured on
-it.
+  What that makes the list is a known-partial denylist. A source it does not
+  match is not a source it cleared; it is a source whose provenance nobody has
+  established. A screen over a third party's training data cannot be
+  exhaustive when the third party did not publish that data, so choosing an
+  evaluation corpus means establishing its provenance separately and reading a
+  pass here as a floor rather than a guarantee. The two entries in
+  `training/sources.yaml` are the two the plan requires by name, not the whole
+  of what the reference model saw.
 
-The manifest reader is the standard library, not PyYAML, because
-`tests/test_training_data.py` imports it and CI installs `.[dev]` and nothing
-else. It implements the subset the manifest uses and raises on anything else.
-`test_the_manifest_reader_agrees_with_the_yaml_library` compares it against
-PyYAML wherever PyYAML is installed, which includes the training virtualenv;
-it skips in the package's `.venv`, which has no PyYAML by design.
+  Two names on the list carry attribution licences, per the same card:
+  `VMware/open-instruct` (CC-BY-3.0) and `natolambert/xstest-v2-copy`
+  (CC-BY-4.0). Neither is in the manifest. If either is ever recorded as a
+  source this repository uses, it needs an entry in `corpora/NOTICE.md`
+  alongside the one for `corpora/pii/third-party.jsonl`, because attribution
+  is a condition of those licences rather than a courtesy.
+  `test_a_source_under_an_attribution_licence_is_named_in_the_notice` fails if
+  it does not get one.
+
+Every URL that carries a digest is pinned to a commit rather than to a branch,
+and `test_every_url_in_the_manifest_is_pinned_to_a_revision_or_carries_no_digest`
+is what holds it there. A branch under a recorded hash either starts failing
+verification, which is at least loud, or gets its hash updated to match, which
+changes the corpus under every number measured on it. The one entry without a
+digest is the one nothing can be downloaded from at all.
+
+The manifest is read with `yaml.safe_load`. PyYAML lives in the `dev` extra
+beside pytest, ruff and mypy, so `pip install -e ".[dev]"` -- what every CI leg
+runs -- brings it in and the screens run everywhere. Values are still validated
+at the boundary rather than trusted: YAML types what it reads, and `role: yes`
+is a bool, so every field is required to be non-empty text before anything
+looks at what it says.
+
+An earlier revision of this tree hand-rolled a YAML subset parser here, on the
+belief that a PyYAML entry in any `[project]` table would break the package's
+zero-dependency promise. It would not. The promise is
+`[project].dependencies = []`, and
+`tests/test_packaging.py::test_the_installed_distribution_declares_no_runtime_dependencies`
+reads the built metadata and filters out `extra ==` markers, which is exactly
+how pytest, ruff and mypy already live in the `dev` extra. The parser cost 101
+lines at `b06b881` -- `_read_manifest`, `_scalar` and the three line-shape
+regexes, countable from `git show b06b881:training/fetch.py` -- and its only
+check against real YAML was a test that skipped on every CI leg.

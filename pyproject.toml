@@ -66,7 +66,19 @@ Issues = "https://github.com/jamjet-labs/jamjet-guardrails/issues"
 Benchmarks = "https://github.com/jamjet-labs/jamjet-guardrails/blob/main/BENCHMARKS.md"
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.11"]
+# Test-only, every one of them. The zero-dependency promise this package makes
+# is `dependencies = []` above, and it is checked against the BUILT metadata by
+# tests/test_packaging.py::test_the_installed_distribution_declares_no_runtime_dependencies,
+# which filters out `extra ==` markers. So an entry here cannot reach a
+# consumer's environment, and adding one is not a step towards a runtime
+# dependency; it is the mechanism that keeps the two apart.
+#
+# pyyaml reads training/sources.yaml. tests/test_training_data.py is the licence
+# and contamination screen over that manifest, CI installs `.[dev]`, so the
+# screen runs on every leg. types-PyYAML is what lets `mypy --strict` see the
+# library at all: PyYAML ships no py.typed, and without the stubs the bare
+# `import yaml` in training/fetch.py fails the gate.
+dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.11", "pyyaml>=6", "types-PyYAML>=6"]
 
 [project.scripts]
 jamjet-guardrails = "jamjet_guardrails.eval.cli:main"

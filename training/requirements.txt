@@ -2,9 +2,17 @@
 #
 # NOT the package's. `jamjet-guardrails` declares `dependencies = []` and the
 # wheel is built from `packages = ["src/jamjet_guardrails"]`, so nothing on this
-# list may be added to any `[project]` table in pyproject.toml. Install it into
-# a virtualenv of its own -- see training/README.md, which records why that
-# virtualenv runs CPython 3.13 and not the 3.14 the package's `.venv` uses.
+# list may be added to `[project].dependencies`. Install it into a virtualenv of
+# its own -- see training/README.md, which records why that virtualenv runs
+# CPython 3.13 and not the 3.14 the package's `.venv` uses.
+#
+# One name here, pyyaml, is ALSO in `[project.optional-dependencies].dev`, and
+# that is not a hole in the rule above. training/fetch.py reads the manifest
+# with it, and the licence and contamination screens over that manifest run in
+# CI, which installs `.[dev]`. A dev extra is not a runtime dependency:
+# tests/test_packaging.py reads the BUILT metadata and filters out `extra ==`
+# markers, so the two are told apart by a test rather than by care. The machine
+# learning pins are in no `[project]` table and are not going into one.
 #
 # Resolved as a set on 2026-09-01, macOS arm64, CPython 3.13.2:
 #   pip install --dry-run -r training/requirements.txt
