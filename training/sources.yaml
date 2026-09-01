@@ -11,17 +11,17 @@
 #
 # The two entries below are the exclusions the plan requires to be written
 # down. ProtectAI's model card for deberta-v3-base-prompt-injection-v2 names
-# both as its own training data, and that model is the reference this stage
-# measures against. Scoring a detector on a corpus the reference model
-# memorised publishes memorisation as recall, so neither may ever carry
-# role: eval.
+# both as its own training data, and this stage is measured against that model.
+# Scoring a detector on a corpus a reference model memorised publishes
+# memorisation as recall, so neither may ever carry role: eval.
 #
-# Two is the floor, not the set. That card's datasets: metadata names 7, and
-# its own licence summary accounts for 22 source datasets, so most of what the
-# reference model saw is named nowhere. PROTECTAI_NAMES_AS_TRAINING_DATA in
-# tests/test_training_data.py carries the 7 and says so; adding an eval source
-# that the screen does not reject is not the same as adding one that has been
-# checked.
+# Two is the floor, not the set, and v2 is not the only reference. The stage is
+# measured against deberta-v3-base-prompt-injection as well, whose card names
+# twelve datasets none of which are these. NAMED_TRAINING_DATA in
+# tests/test_training_data.py is the union of what both cards name, 19 names,
+# and it is still partial: v2 counts 22 datasets and names 7, and v1 counts
+# none at all. Adding an eval source the screen does not reject is not the same
+# as adding one that has been checked.
 
 - name: jackhhao/jailbreak-classification
   url: "https://huggingface.co/datasets/jackhhao/jailbreak-classification/resolve/2f2ceeb39658696fd3f462403562b6eea5306287/default/jailbreak_dataset_full.csv"

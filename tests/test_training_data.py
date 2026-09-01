@@ -7,7 +7,7 @@ it in and these screens run everywhere. The package itself still declares
 `dependencies = []`; `tests/test_packaging.py` reads the built metadata and
 holds that.
 
-What the screens can and cannot see is stated at `PROTECTAI_NAMES_AS_TRAINING_DATA`
+What the screens can and cannot see is stated at `NAMED_TRAINING_DATA`
 below, and it matters more than any assertion here: the contamination denylist
 is known to be partial, and a source it does not match is a source nobody has
 checked rather than a source it cleared.
@@ -19,15 +19,18 @@ import hashlib
 import inspect
 import re
 from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+import yaml
 
 from training.fetch import (
     DATA,
     HEX64,
     NO_DIGEST,
     ROLES,
+    ManifestLoader,
     Source,
     SourceError,
     fetch,
@@ -41,42 +44,140 @@ SOURCES = ROOT / "training" / "sources.yaml"
 TRAINING_README = ROOT / "training" / "README.md"
 NOTICE = ROOT / "corpora" / "NOTICE.md"
 
-# The datasets the `datasets:` metadata on ProtectAI's model card for
-# `deberta-v3-base-prompt-injection-v2` names, read from the live card on
-# 2026-09-01.
-#
-# THIS LIST IS KNOWN TO BE PARTIAL, and treating it as anything else is the
-# mistake it exists to prevent. The same card's licence summary accounts for 22
-# source datasets -- 1 CC-BY-3.0, 8 MIT, 1 CC0-1.0, 6 with no licence, 5
-# Apache-2.0, 1 CC-BY-4.0 -- so 15 of them are counted and never named
-# anywhere. A screen over a third-party model's training data cannot be
-# exhaustive when the third party did not publish that data.
-#
-# So this catches a case the card happens to name, and nothing more. A source
-# absent from it is NOT cleared for evaluation; it is a source whose provenance
-# nobody has established. Anything selecting an evaluation corpus has to
-# establish that separately rather than reading a pass here as a guarantee.
-PROTECTAI_NAMES_AS_TRAINING_DATA = frozenset(
-    {
-        "natolambert/xstest-v2-copy",
-        "VMware/open-instruct",
-        "alespalla/chatbot_instruction_prompts",
-        "HuggingFaceH4/grok-conversation-harmless",
-        "Harelix/Prompt-Injection-Mixed-Techniques-2024",
-        "OpenSafetyLab/Salad-Data",
-        "jackhhao/jailbreak-classification",
-    }
+#: Every file under `training/` that could name a reference model. Globbed
+#: rather than listed, so a file added to the tree tomorrow is scanned without
+#: anyone remembering to add it here.
+TRAINING_FILES = tuple(
+    sorted(
+        path
+        for path in (ROOT / "training").rglob("*")
+        if path.is_file() and path.suffix in {".md", ".py", ".txt", ".yaml"}
+    )
 )
 
-#: How many source datasets the same card's licence summary accounts for, as
-#: against the seven its metadata names. Recorded as a number beside the list
-#: so the gap between them is a fact this file states rather than a caveat
-#: somebody has to remember.
-PROTECTAI_LICENCE_SUMMARY_TOTAL = 22
+#: How a ProtectAI prompt-injection model is spelled in prose. The optional
+#: version suffix is part of the match, and `re` prefers the longer
+#: alternative, so `-v2` is never read as the unversioned v1 name.
+MODEL_REFERENCE = re.compile(r"deberta-v3-base-prompt-injection(?:-v\d+)?")
+
+
+@dataclass(frozen=True)
+class ReferenceModel:
+    """A model this stage is measured against, and what its card discloses.
+
+    One entry per model rather than one flat denylist, because the gap that
+    review found was structural: the list held v2's datasets while the
+    benchmark scored v1 as well, and nothing about a flat list could have shown
+    that. `NAMED_TRAINING_DATA` is derived from these entries, so registering a
+    model is what extends the screen, and
+    `test_every_reference_model_named_in_this_tree_has_its_datasets_registered`
+    is what stops a model being referenced without being registered.
+    """
+
+    #: The Hugging Face id the benchmark loads.
+    model_id: str
+    #: What the card's `datasets:` metadata names. Partial by construction; see
+    #: `licence_summary_total`.
+    named_datasets: frozenset[str]
+    #: How many source datasets the card's own licence summary accounts for, or
+    #: `None` where the card gives no total at all. `None` is not zero unnamed
+    #: datasets: it is a card that does not say, which is the weaker position of
+    #: the two and has to read as such.
+    licence_summary_total: int | None
+    #: When the card was read. A card can be edited; a number taken from one
+    #: without a date is a number nobody can re-check.
+    card_read_on: str
+
+    @property
+    def slug(self) -> str:
+        """The id without its org, which is how the cards are cited in prose."""
+        return self.model_id.split("/", 1)[1]
+
+
+#: `deberta-v3-base-prompt-injection`, the v1 model. Its `datasets:` metadata
+#: names twelve, read from the live card on 2026-09-01.
+#:
+#: The card gives NO total anywhere. Its training-data section says only "The
+#: model was trained on a custom dataset from multiple open-source ones", and
+#: its licence notice says it "was trained on one or more datasets that may be
+#: subject to more restrictive licensing terms, including non-commercial use
+#: provisions" without naming which. So unlike v2 there is not even a count to
+#: measure the naming against: the twelve are what the card discloses, and how
+#: much it withholds is not a number anyone has.
+PROTECTAI_V1 = ReferenceModel(
+    model_id="protectai/deberta-v3-base-prompt-injection",
+    named_datasets=frozenset(
+        {
+            "Lakera/gandalf_ignore_instructions",
+            "rubend18/ChatGPT-Jailbreak-Prompts",
+            "imoxto/prompt_injection_cleaned_dataset-v2",
+            "hackaprompt/hackaprompt-dataset",
+            "fka/awesome-chatgpt-prompts",
+            "teven/prompted_examples",
+            "Dahoas/synthetic-hh-rlhf-prompts",
+            "Dahoas/hh_prompt_format",
+            "MohamedRashad/ChatGPT-prompts",
+            "HuggingFaceH4/instruction-dataset",
+            "HuggingFaceH4/no_robots",
+            "HuggingFaceH4/ultrachat_200k",
+        }
+    ),
+    licence_summary_total=None,
+    card_read_on="2026-09-01",
+)
+
+#: `deberta-v3-base-prompt-injection-v2`. Its `datasets:` metadata names seven,
+#: read from the live card on 2026-09-01, and its licence summary accounts for
+#: 22 source datasets -- 1 CC-BY-3.0, 8 MIT, 1 CC0-1.0, 6 with no licence, 5
+#: Apache-2.0, 1 CC-BY-4.0. The seven the summary names by name are the same
+#: seven the metadata names, so 15 are counted and named nowhere.
+PROTECTAI_V2 = ReferenceModel(
+    model_id="protectai/deberta-v3-base-prompt-injection-v2",
+    named_datasets=frozenset(
+        {
+            "natolambert/xstest-v2-copy",
+            "VMware/open-instruct",
+            "alespalla/chatbot_instruction_prompts",
+            "HuggingFaceH4/grok-conversation-harmless",
+            "Harelix/Prompt-Injection-Mixed-Techniques-2024",
+            "OpenSafetyLab/Salad-Data",
+            "jackhhao/jailbreak-classification",
+        }
+    ),
+    licence_summary_total=22,
+    card_read_on="2026-09-01",
+)
+
+#: Every model this stage is measured against. The benchmark harness runs both,
+#: so contamination is screened against both: a published v1 comparison is as
+#: published as a v2 one, and a corpus either model memorised flatters us the
+#: same way.
+REFERENCE_MODELS: tuple[ReferenceModel, ...] = (PROTECTAI_V1, PROTECTAI_V2)
+
+#: The denylist: the union of what every reference model's card names.
+#:
+#: DERIVED, never written out by hand, so a model added to `REFERENCE_MODELS`
+#: extends the screen by construction and cannot be registered while leaving
+#: the screen behind.
+#:
+#: KNOWN TO BE PARTIAL, and treating it as anything else is the mistake it
+#: exists to prevent. v2's card counts 22 datasets and names 7 of them; v1's
+#: card names 12 and counts nothing at all. A screen over a third party's
+#: training data cannot be exhaustive when the third party did not publish that
+#: data.
+#:
+#: So this catches a case a card happens to name, and nothing more. A source
+#: absent from it is NOT cleared for evaluation; it is a source whose
+#: provenance nobody has established. Anything selecting an evaluation corpus
+#: has to establish that separately rather than reading a pass here as a
+#: guarantee.
+NAMED_TRAINING_DATA: frozenset[str] = frozenset[str]().union(
+    *(model.named_datasets for model in REFERENCE_MODELS)
+)
 
 #: The two the plan requires `training/sources.yaml` to record by name. A
-#: strict subset of the list above, which is the whole point: recording these
-#: two is a floor, not a demonstration that the denylist is complete.
+#: strict subset of the denylist, which is the whole point: recording these two
+#: is a floor, not a demonstration that the denylist is complete.
 RECORDED_EXCLUSIONS = frozenset(
     {
         "jackhhao/jailbreak-classification",
@@ -84,12 +185,18 @@ RECORDED_EXCLUSIONS = frozenset(
     }
 )
 
-#: Sources on the denylist whose licence requires attribution, per ProtectAI's
-#: own card. Neither is in the manifest today. If either is ever recorded as
-#: something this repository uses, it needs an entry in `corpora/NOTICE.md` the
-#: way `corpora/pii/third-party.jsonl` already does -- attribution is a
-#: condition of the licence, not a courtesy, and the file that carries it is
-#: the one that ships.
+#: Datasets on the denylist whose licence requires attribution. Neither is in
+#: the manifest today. If either is ever recorded as something this repository
+#: uses, it needs an entry in `corpora/NOTICE.md` the way
+#: `corpora/pii/third-party.jsonl` already does -- attribution is a condition of
+#: the licence, not a courtesy, and the file that carries it is the one that
+#: ships.
+#:
+#: Both values come from v2's licence summary, which is the only per-dataset
+#: licence statement either card makes. v1's card names no licence for any of
+#: its twelve and warns that some "may be subject to more restrictive licensing
+#: terms, including non-commercial use provisions", so nothing from v1's list
+#: belongs in this map until its own dataset card has been read.
 ATTRIBUTION_REQUIRED = {
     "VMware/open-instruct": "CC-BY-3.0",
     "natolambert/xstest-v2-copy": "CC-BY-4.0",
@@ -107,7 +214,7 @@ def _contaminated(sources: Iterable[Source]) -> list[str]:
     return sorted(
         source.name
         for source in sources
-        if source.role == "eval" and source.name in PROTECTAI_NAMES_AS_TRAINING_DATA
+        if source.role == "eval" and source.name in NAMED_TRAINING_DATA
     )
 
 
@@ -170,14 +277,20 @@ def test_no_evaluation_source_is_one_protectai_names_as_training_data() -> None:
     number that flatters us for the wrong reason, and no downstream test could
     detect it -- the rows would look like ordinary held-out data.
 
-    Passing this is necessary and nowhere near sufficient: the denylist names
-    what ProtectAI's card names, which is 7 of the 22 datasets the same card
-    counts. See `PROTECTAI_NAMES_AS_TRAINING_DATA`.
+    Screened against every model in `REFERENCE_MODELS`, not just the newest.
+    The benchmark runs v1 and v2 through one harness, and a v1 number published
+    beside ours is as published as a v2 one.
+
+    Passing this is necessary and nowhere near sufficient: the denylist is the
+    union of what two cards happen to name. See `NAMED_TRAINING_DATA`.
     """
     assert _contaminated(load_sources(SOURCES)) == []
 
 
-def test_the_contamination_rule_catches_a_manifest_that_breaks_it(tmp_path: Path) -> None:
+@pytest.mark.parametrize("name", ["hackaprompt/hackaprompt-dataset", "OpenSafetyLab/Salad-Data"])
+def test_the_contamination_rule_catches_a_manifest_that_breaks_it(
+    tmp_path: Path, name: str
+) -> None:
     """The mutation check for the test above, which today loops over nothing.
 
     `training/sources.yaml` declares no `eval` source yet -- a later task adds
@@ -186,36 +299,96 @@ def test_the_contamination_rule_catches_a_manifest_that_breaks_it(tmp_path: Path
     same rule against a manifest that names a ProtectAI training corpus as
     evaluation data, and requires it to say so.
 
-    The entry used is one of the five the denylist gained after review, so this
-    also fails if the list is narrowed back to the two the manifest records.
+    Parametrised over one name from each reference model, because a rule
+    screening the union has two ways to be wrong and a single fixture would
+    exercise one of them. `hackaprompt/hackaprompt-dataset` is v1's and is one
+    of the most obvious public injection evaluation corpora there is; it was
+    outside the denylist entirely until v1 was registered.
     """
     contaminated = _manifest(
         tmp_path,
-        "- name: OpenSafetyLab/Salad-Data\n"
+        f"- name: {name}\n"
         '  url: "https://example.invalid/corpus.csv"\n'
         "  license: Apache-2.0\n"
         f'  sha256: "{"a" * 64}"\n'
         "  role: eval\n",
     )
-    assert _contaminated(load_sources(contaminated)) == ["OpenSafetyLab/Salad-Data"]
+    assert _contaminated(load_sources(contaminated)) == [name]
 
 
 def test_the_denylist_is_recorded_as_partial_and_not_as_a_clearance() -> None:
-    """The relationship between the three constants, which is the finding itself.
+    """The relationship between the constants, which is the finding itself.
 
     A denylist of 2 was read as the complete set of what the reference model
-    was trained on, and the fix is not a denylist of 7 read the same way. What
+    was trained on, and the fix is not a denylist of 19 read the same way. What
     has to hold is that the file says the list is smaller than the thing it
-    screens for: the card's metadata names 7, its licence summary counts 22,
-    and the two recorded exclusions are a strict subset of the 7.
+    screens for, model by model, and that the two recorded exclusions are a
+    strict subset rather than the whole of it.
     """
-    assert RECORDED_EXCLUSIONS < PROTECTAI_NAMES_AS_TRAINING_DATA, (
+    assert RECORDED_EXCLUSIONS < NAMED_TRAINING_DATA, (
         "the recorded exclusions are no longer a strict subset of the denylist, so the "
         "manifest's two entries are being treated as the whole of it"
     )
-    assert len(PROTECTAI_NAMES_AS_TRAINING_DATA) < PROTECTAI_LICENCE_SUMMARY_TOTAL, (
-        "the denylist now claims to cover every dataset the card accounts for, which is "
-        "the completeness claim this test exists to refuse"
+    assert REFERENCE_MODELS, "no reference model is registered, so the denylist is empty"
+    for model in REFERENCE_MODELS:
+        assert model.named_datasets <= NAMED_TRAINING_DATA, (
+            f"{model.model_id} is registered but its datasets are not in the denylist, so "
+            "the union is not being derived from the registry"
+        )
+        if model.licence_summary_total is None:
+            # The weaker card: it names datasets and counts nothing, so there
+            # is no total to be smaller than. What must not happen is a total
+            # appearing here without the prose that explains it, so the README
+            # agreement test carries this case instead.
+            continue
+        assert len(model.named_datasets) < model.licence_summary_total, (
+            f"{model.model_id}'s denylist now claims to cover every dataset its card "
+            "accounts for, which is the completeness claim this test exists to refuse"
+        )
+
+
+def test_no_dataset_is_named_by_more_than_one_reference_model() -> None:
+    """Not a rule, a fact worth pinning: the two cards name disjoint sets.
+
+    It is what makes the union's size the sum of its parts, which the README
+    states as a number. If a future card overlaps, the union stops being
+    19 and the README has to say something else; this is what says so.
+    """
+    counted = sum(len(model.named_datasets) for model in REFERENCE_MODELS)
+    assert counted == len(NAMED_TRAINING_DATA), (
+        "two reference models name the same dataset, so the union is smaller than the "
+        "sum of the lists and the README's arithmetic no longer holds"
+    )
+
+
+def test_every_reference_model_named_in_this_tree_has_its_datasets_registered() -> None:
+    """The gap N-1 found, closed by construction rather than by remembering.
+
+    The denylist held v2's datasets while the benchmark scored v1 as well, and
+    nothing could have shown that: a flat list has no place to record which
+    model it came from. Now every file under `training/` is scanned for a
+    ProtectAI prompt-injection model name, and a name that is not in
+    `REFERENCE_MODELS` fails here. Since `NAMED_TRAINING_DATA` is derived from
+    the registry, registering the model is what extends the screen.
+
+    Equality in both directions on purpose. A model referenced and not
+    registered is the gap itself; a model registered and never referenced is a
+    screen against something this tree does not document measuring against,
+    which is the same drift pointing the other way.
+    """
+    assert TRAINING_FILES, "the scan found no files, so it is checking nothing"
+    found: set[str] = set()
+    for path in TRAINING_FILES:
+        found.update(MODEL_REFERENCE.findall(path.read_text(encoding="utf-8")))
+    assert found, "no reference model is named anywhere under training/, so this is vacuous"
+    registered = {model.slug for model in REFERENCE_MODELS}
+    assert sorted(found - registered) == [], (
+        "these models are named under training/ but carry no entry in REFERENCE_MODELS, so "
+        "nothing screens their training data: " + str(sorted(found - registered))
+    )
+    assert sorted(registered - found) == [], (
+        "these models are registered but named nowhere under training/, so the tree does "
+        "not document what it is measured against: " + str(sorted(registered - found))
     )
 
 
@@ -225,13 +398,27 @@ def test_the_readme_states_the_same_partiality_the_denylist_records() -> None:
     `training/README.md` states these counts in prose and this module holds
     them as data. A number in prose that counts a thing in code is a claim, and
     the last one drifted from 7 to "two" with nothing to catch it.
+
+    Whitespace is normalised first so a sentence that wraps differently after
+    an edit is still the same sentence. The claim is the words, not the fill.
     """
-    named = len(PROTECTAI_NAMES_AS_TRAINING_DATA)
-    unnamed = PROTECTAI_LICENCE_SUMMARY_TOTAL - named
-    readme = TRAINING_README.read_text(encoding="utf-8")
-    assert f"names {named} datasets" in readme
-    assert f"accounts for {PROTECTAI_LICENCE_SUMMARY_TOTAL} source datasets" in readme
-    assert f"{unnamed} are counted and never named" in readme
+    readme = " ".join(TRAINING_README.read_text(encoding="utf-8").split())
+    v1, v2 = PROTECTAI_V1, PROTECTAI_V2
+    assert v1.licence_summary_total is None
+    assert v2.licence_summary_total is not None
+    unnamed = v2.licence_summary_total - len(v2.named_datasets)
+    assert f"names {len(v1.named_datasets)} datasets and the card gives no total" in readme
+    assert f"names {len(v2.named_datasets)} datasets and its licence summary" in readme
+    assert f"accounts for {v2.licence_summary_total} source datasets" in readme
+    assert f"so {unnamed} are counted and never named" in readme
+    assert f"union of the two, {len(NAMED_TRAINING_DATA)} names" in readme
+    # Matched with the same pattern the scan uses rather than by `in`. A bare
+    # `"deberta-v3-base-prompt-injection" in readme` is satisfied by any
+    # occurrence of the `-v2` name, so the v1 half of this would have been
+    # true whether or not the README mentioned v1 at all.
+    named = set(MODEL_REFERENCE.findall(readme))
+    for model in REFERENCE_MODELS:
+        assert model.slug in named, f"{model.model_id} is registered but the README omits it"
 
 
 def test_the_manifest_records_the_exclusions_the_plan_requires() -> None:
@@ -452,6 +639,190 @@ def test_the_loader_refuses_an_unknown_field(tmp_path: Path) -> None:
     )
     with pytest.raises(SourceError, match=r"unknown keys \['screened'\]"):
         load_sources(extra)
+
+
+def test_the_loader_refuses_a_duplicate_key_inside_one_source(tmp_path: Path) -> None:
+    """The one refusal the parser swap gave up, and the worst one to give up.
+
+    `yaml.safe_load` keeps the last of two identical keys and says nothing, so
+    a second `sha256:` line -- the kind a rebase or a copy-paste produces --
+    pins the corpus to whichever was written second. Both values are valid on
+    their own, so every screen downstream passes over the survivor and the
+    recorded content hash, which is this file's entire reason to exist, quietly
+    describes a different corpus.
+    """
+    two_digests = _manifest(
+        tmp_path,
+        "- name: someone/corpus\n"
+        '  url: "https://example.invalid/corpus.csv"\n'
+        "  license: Apache-2.0\n"
+        f'  sha256: "{"a" * 64}"\n'
+        f'  sha256: "{"b" * 64}"\n'
+        "  role: train\n",
+    )
+    with pytest.raises(SourceError, match="duplicate key 'sha256'"):
+        load_sources(two_digests)
+
+
+def test_the_loader_refuses_an_anchor(tmp_path: Path) -> None:
+    """One field taking another's text is a manifest that does not read as it says.
+
+    `license: *n` against `name: &n someone/corpus` gives a source whose
+    licence is its own name. Every field still passes the non-empty-text check,
+    so nothing downstream objects; what is wrong is that no reader of the file
+    would expect it. The anchor is where it is caught, because the anchor is
+    where it starts.
+    """
+    aliased = _manifest(
+        tmp_path,
+        "- name: &n someone/corpus\n"
+        "  license: *n\n"
+        '  url: "https://example.invalid/corpus.csv"\n'
+        f'  sha256: "{"a" * 64}"\n'
+        "  role: train\n",
+    )
+    with pytest.raises(SourceError, match="only useful to an alias"):
+        load_sources(aliased)
+
+
+def test_the_loader_refuses_an_alias_with_no_anchor(tmp_path: Path) -> None:
+    """The other arm of the same rule, and it is not the same input.
+
+    A defined anchor is refused at its definition, so the alias arm never sees
+    an alias to one. What reaches it is an alias to an anchor that does not
+    exist -- and an `AliasEvent` carries that name in `.anchor`, so the anchor
+    arm would refuse this input too, one message later.
+
+    That makes the wording the only thing separating the arms, so the wording
+    is what this asserts: a refusal that calls an alias an anchor sends the
+    reader looking for an `&` that is not there. Matching on "an alias" alone
+    did not do it, because the anchor message ends "only useful to an alias"
+    and passed for exactly that reason.
+    """
+    dangling = _manifest(
+        tmp_path,
+        "- name: someone/corpus\n"
+        "  license: *n\n"
+        '  url: "https://example.invalid/corpus.csv"\n'
+        f'  sha256: "{"a" * 64}"\n'
+        "  role: train\n",
+    )
+    with pytest.raises(SourceError, match="takes another field's text"):
+        load_sources(dangling)
+
+
+def test_the_loader_refuses_a_merge_key(tmp_path: Path) -> None:
+    """A merge key needs no anchor when the mapping is inline, so it is refused too.
+
+    Refusing anchors alone would leave `<<: {…}` open, and a source that
+    inherits a digest is a source pinned to a corpus nobody recorded for it.
+    """
+    merged = _manifest(
+        tmp_path,
+        "- <<: {license: Apache-2.0}\n"
+        "  name: someone/corpus\n"
+        '  url: "https://example.invalid/corpus.csv"\n'
+        f'  sha256: "{"a" * 64}"\n'
+        "  role: train\n",
+    )
+    with pytest.raises(SourceError, match="merge key"):
+        load_sources(merged)
+
+
+def test_the_loader_refuses_a_comment_that_would_truncate_a_plain_value(
+    tmp_path: Path,
+) -> None:
+    """` #` inside a plain scalar is a comment, and the rest of the URL is gone.
+
+    Spec-correct YAML and a silently different source: the old reader refused
+    it outright and this restores that. The failure is invisible in the loaded
+    value, which is what makes it worth a guard rather than a convention.
+    """
+    truncated = _manifest(
+        tmp_path,
+        "- name: someone/corpus\n"
+        "  url: https://example.invalid/corpus.csv #real\n"
+        "  license: Apache-2.0\n"
+        f'  sha256: "{"a" * 64}"\n'
+        "  role: train\n",
+    )
+    with pytest.raises(SourceError, match="which YAML reads as a comment"):
+        load_sources(truncated)
+
+
+@pytest.mark.parametrize(
+    ("url_line", "expected"),
+    [
+        (
+            '  url: "https://example.invalid/corpus.csv#rows"\n',
+            "https://example.invalid/corpus.csv#rows",
+        ),
+        (
+            '  url: "https://example.invalid/corpus.csv" # the pinned file\n',
+            "https://example.invalid/corpus.csv",
+        ),
+    ],
+)
+def test_a_quoted_value_keeps_its_hash_and_may_be_commented(
+    tmp_path: Path, url_line: str, expected: str
+) -> None:
+    """The dual of the test above, and quoting is the answer its message gives.
+
+    Two cases, because the refusal has two ways to be too broad and one fixture
+    catches neither on its own. A `#` inside quotes is content, and a URL
+    fragment is a legitimate thing for a pinned source to carry. A comment
+    *after* a quoted value is a comment, because the quotes have already said
+    where the value ends -- which is exactly what the error message tells the
+    reader to do, so refusing it would make that advice wrong.
+
+    Written after a mutation that dropped the `style is None` test stayed green:
+    the fragment case passes either way, because the `#` sits before the
+    closing quote and there is nothing after it to look at.
+    """
+    fragment = _manifest(
+        tmp_path,
+        "- name: someone/corpus\n"
+        + url_line
+        + "  license: Apache-2.0\n"
+        + f'  sha256: "{"a" * 64}"\n'
+        + "  role: train\n",
+    )
+    assert load_sources(fragment)[0].url == expected
+
+
+def test_the_loader_refuses_a_python_tag(tmp_path: Path) -> None:
+    """The dangerous half of YAML, which `SafeLoader` closes and this must keep closed.
+
+    `ManifestLoader` adds strictness to `yaml.SafeLoader`; it would be easy to
+    add it to `yaml.Loader` instead and lose the thing that matters most. A
+    manifest is a file in a repository, and a repository gets pull requests.
+    """
+    tagged = _manifest(
+        tmp_path,
+        '- name: !!python/object/apply:os.system ["echo owned"]\n'
+        '  url: "https://example.invalid/corpus.csv"\n'
+        "  license: Apache-2.0\n"
+        f'  sha256: "{"a" * 64}"\n'
+        "  role: train\n",
+    )
+    with pytest.raises(SourceError, match="could not determine a constructor"):
+        load_sources(tagged)
+
+
+def test_the_loader_refuses_a_stream_it_cannot_re_read() -> None:
+    """The comment check reads the source text back, so it fails closed without it.
+
+    PyYAML fills a mark's buffer only when the document was handed to it as a
+    string. Given a file object it does not, and the ` #` check would have
+    nothing to look at. It raises rather than passing: a guard that cannot see
+    is not a guard that agrees, and this is the one caller mistake that would
+    have turned the refusal off silently.
+    """
+    with (
+        SOURCES.open(encoding="utf-8") as stream,
+        pytest.raises(SourceError, match="not read as text"),
+    ):
+        yaml.load(stream, ManifestLoader)
 
 
 def test_verify_rejects_a_file_whose_hash_moved(tmp_path: Path) -> None:

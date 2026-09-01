@@ -4,7 +4,9 @@ A corpus that changes under a published number is the same failure as a model
 that changes under one: the figure stops describing the artifact and nothing
 says so. The hash is what makes a re-fetch either identical or loud.
 
-The manifest is read with `yaml.safe_load`. PyYAML sits in
+The manifest is read with PyYAML, through `ManifestLoader` below, which is
+`yaml.SafeLoader` with the strictness the file depends on added back. PyYAML
+sits in
 `[project.optional-dependencies].dev`, beside pytest, ruff and mypy, which is
 where a test-only dependency belongs. The property this tree exists to protect
 is `[project].dependencies = []`, and the two are distinguished mechanically
@@ -23,7 +25,7 @@ import re
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import Literal, get_args
+from typing import Any, Literal, get_args
 from urllib.parse import urlsplit
 
 import yaml
@@ -64,6 +66,136 @@ _OPTIONAL = ("note",)
 
 class SourceError(Exception):
     """A source is missing, malformed, or does not hash to what was recorded."""
+
+
+class ManifestLoader(yaml.SafeLoader):
+    """`yaml.SafeLoader` with the strictness the manifest depends on put back.
+
+    `safe_load` closes the dangerous half of YAML: `!!python/object/apply` is an
+    unconstructible tag rather than a call, and that stays true here. It leaves
+    open three things the hand-rolled reader this replaced refused outright, and
+    each of them changes what a source says with nothing reporting it, which
+    against a file whose whole purpose is a recorded content hash is the wrong
+    way round:
+
+    - a repeated key inside one entry is last-wins, so a second `sha256:` line
+      pins the corpus to whichever happens to come second;
+    - an anchor or an alias lets one field take another's text, so the file can
+      say something no reader of it would expect;
+    - a ` #` inside a plain scalar starts a comment, so an unquoted URL carrying
+      a fragment loses it silently.
+
+    All three are closed here, in one class, rather than at each place a
+    manifest is read: strictness spread across callers is strictness one caller
+    forgets. `load_sources` is the only thing that reads a manifest and it is
+    the only thing that should have to know.
+    """
+
+    def _next_event(self) -> yaml.events.Event:
+        """`peek_event` with a type. types-PyYAML leaves it unannotated."""
+        event: yaml.events.Event = self.peek_event()  # type: ignore[no-untyped-call]
+        return event
+
+    def compose_node(self, parent: yaml.nodes.Node | None, index: int) -> yaml.nodes.Node | None:
+        """Anchors and aliases, refused where they are introduced.
+
+        Refusing the alias alone would leave the anchor definition legal and
+        inert, which is a manifest carrying syntax that means nothing. Both ends
+        go, so a `<<:` merge key has nothing to merge from either; the merge key
+        itself is refused separately, because `<<: {inline: mapping}` needs no
+        anchor.
+
+        How the two arms divide, because two mutations were needed to find out.
+        A *defined* anchor is refused at its definition, so an alias to it is
+        never composed; the only thing that reaches the alias arm is an alias to
+        an anchor that does not exist. An `AliasEvent` carries the name in
+        `.anchor` too, so the anchor arm below would refuse that input as well.
+        The safety property is therefore held by either arm alone, and what the
+        alias arm buys is that an alias is reported as an alias: a refusal that
+        calls it an anchor sends the reader looking for an `&` that is not
+        there. Each arm is pinned by the wording of its own message, because
+        that is the only thing that distinguishes them.
+
+        `index` is annotated `int` because the stub says so. PyYAML itself
+        passes the key node here when it composes a mapping value, and this only
+        forwards it, so the annotation is the stub's inaccuracy rather than
+        this class's.
+        """
+        event = self._next_event()
+        where = f"line {event.start_mark.line + 1}"
+        if self.check_event(yaml.events.AliasEvent):
+            raise SourceError(
+                f"{where}: an alias (`*name`) takes another field's text, and a source has "
+                "to say what it says"
+            )
+        anchor = getattr(event, "anchor", None)
+        if anchor is not None:
+            raise SourceError(
+                f"{where}: an anchor (`&{anchor}`) is only useful to an alias, and aliases "
+                "are refused here"
+            )
+        return super().compose_node(parent, index)
+
+    def construct_mapping(self, node: yaml.nodes.MappingNode, deep: bool = False) -> dict[Any, Any]:
+        """Duplicate keys, merge keys, and a comment eating a plain value.
+
+        Checked over the node's own key/value pairs before the base class
+        flattens anything, because flattening is what makes a merge key
+        invisible and `dict` construction is what makes a duplicate key
+        invisible. By the time either has run there is nothing left to see.
+        """
+        seen: set[str] = set()
+        for key_node, value_node in node.value:
+            if not isinstance(key_node, yaml.nodes.ScalarNode):
+                # A non-scalar key is unhashable and the base class says so
+                # with a better message than anything this could add.
+                continue
+            key = key_node.value
+            where = f"line {key_node.start_mark.line + 1}"
+            if key == "<<":
+                raise SourceError(
+                    f"{where}: a merge key silently gives one source another's fields, and "
+                    "a source that inherits a digest is a source pinned to a corpus nobody "
+                    "recorded for it"
+                )
+            if key in seen:
+                raise SourceError(
+                    f"{where}: duplicate key {key!r}. YAML keeps the last one and says "
+                    "nothing, so two `sha256:` lines would pin the corpus to whichever was "
+                    "written second"
+                )
+            seen.add(key)
+            if isinstance(value_node, yaml.nodes.ScalarNode) and value_node.style is None:
+                self._refuse_a_comment_that_truncates(key, value_node)
+        return super().construct_mapping(node, deep=deep)
+
+    @staticmethod
+    def _refuse_a_comment_that_truncates(key: str, node: yaml.nodes.ScalarNode) -> None:
+        """A ` #` after a plain value is a comment, and the value loses the rest.
+
+        `url: https://example.invalid/corpus.csv #real` loads as the URL without
+        ` #real`, which is spec-correct YAML and a silently different source.
+        Quoted values are untouched, because a `#` inside quotes is content and
+        the manifest already quotes every URL.
+
+        Read out of the mark's own buffer, which PyYAML fills in only when the
+        document was handed to it as text. If it is absent the check cannot run,
+        and this raises rather than passing: a guard that cannot see is not a
+        guard that agrees.
+        """
+        mark = node.end_mark
+        if mark.buffer is None:
+            raise SourceError(
+                "this manifest was not read as text, so a comment truncating a plain value "
+                "could not be checked for; read the file with `read_text` and pass the string"
+            )
+        rest_of_line = mark.buffer[mark.pointer :].split("\n", 1)[0]
+        if "#" in rest_of_line:
+            raise SourceError(
+                f"line {node.start_mark.line + 1}: `{key}` is a plain value followed by "
+                f"`{rest_of_line.strip()}`, which YAML reads as a comment and drops. Quote "
+                "the value if the text after it belongs to it"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -266,9 +398,12 @@ def _read_manifest(path: Path) -> list[object]:
     `yaml.YAMLError` separately is a caller that will forget to.
     """
     try:
-        document = yaml.safe_load(path.read_text(encoding="utf-8"))
+        document = yaml.load(path.read_text(encoding="utf-8"), ManifestLoader)
     except yaml.YAMLError as error:
         raise SourceError(f"{path} is not readable as YAML: {error}") from error
+    except SourceError as error:
+        # Raised by ManifestLoader, which knows the line but not the file.
+        raise SourceError(f"{path}:{error}") from error
     if document is None:
         raise SourceError(f"{path} lists no sources")
     if not isinstance(document, list):

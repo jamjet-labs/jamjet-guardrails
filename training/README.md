@@ -159,18 +159,28 @@ either:
   `excluded`,
   because that is the only role nothing is measured on. Flipping such an entry
   to `train` or `eval` raises at load rather than shipping an unpinned corpus.
-- **Nothing ProtectAI is named as having trained on may be an evaluation
-  source, and this screen cannot see all of it.** Enforced by
+- **Nothing either reference model is named as having trained on may be an
+  evaluation source, and this screen cannot see all of it.** Enforced by
   `tests/test_training_data.py` rather than by `load_sources`, because the rule
-  needs a list of names that is not part of the manifest. This stage measures
-  against
-  `deberta-v3-base-prompt-injection-v2`, and scoring a detector on a corpus
-  that model memorised publishes memorisation as recall. The `datasets:`
-  metadata on their model card names 7 datasets, and
-  `PROTECTAI_NAMES_AS_TRAINING_DATA` in `tests/test_training_data.py` carries
-  all 7. The same card's licence summary accounts for 22 source datasets --
-  1 CC-BY-3.0, 8 MIT, 1 CC0-1.0, 6 with no licence, 5 Apache-2.0, 1 CC-BY-4.0
-  -- so 15 are counted and never named anywhere.
+  needs a list of names that is not part of the manifest.
+
+  This stage is measured against two ProtectAI models,
+  `deberta-v3-base-prompt-injection` and its successor
+  `deberta-v3-base-prompt-injection-v2`, so contamination is screened against
+  both. Scoring a detector on a corpus either model memorised publishes
+  memorisation as recall, and a v1 number published beside ours is as published
+  as a v2 one.
+
+  `REFERENCE_MODELS` holds one entry per model with the datasets its card
+  names, and the denylist `NAMED_TRAINING_DATA` is their union. The v1 card's
+  `datasets:` metadata names 12 datasets and the card gives no total anywhere:
+  its training-data section says only that the model was trained on "a custom
+  dataset from multiple open-source ones", so how much it withholds is not a
+  number anyone has. The v2 card's metadata names 7 datasets and its licence
+  summary accounts for 22 source datasets -- 1 CC-BY-3.0, 8 MIT, 1 CC0-1.0, 6
+  with no licence, 5 Apache-2.0, 1 CC-BY-4.0 -- so 15 are counted and never
+  named anywhere. The union of the two, 19 names, is everything the two cards
+  disclose between them, and no dataset appears on both lists.
 
   What that makes the list is a known-partial denylist. A source it does not
   match is not a source it cleared; it is a source whose provenance nobody has
@@ -179,16 +189,25 @@ either:
   evaluation corpus means establishing its provenance separately and reading a
   pass here as a floor rather than a guarantee. The two entries in
   `training/sources.yaml` are the two the plan requires by name, not the whole
-  of what the reference model saw.
+  of what either reference model saw.
 
-  Two names on the list carry attribution licences, per the same card:
+  A third reference model cannot leave a silent gap the way the second one did.
+  `test_every_reference_model_named_in_this_tree_has_its_datasets_registered`
+  scans every file under `training/` for a model of this family and fails on a
+  name that carries no `REFERENCE_MODELS` entry, and the denylist is derived
+  from that registry rather than written out, so registering a model is what
+  extends the screen.
+
+  Two names on the list carry attribution licences, per v2's card:
   `VMware/open-instruct` (CC-BY-3.0) and `natolambert/xstest-v2-copy`
   (CC-BY-4.0). Neither is in the manifest. If either is ever recorded as a
   source this repository uses, it needs an entry in `corpora/NOTICE.md`
   alongside the one for `corpora/pii/third-party.jsonl`, because attribution
   is a condition of those licences rather than a courtesy.
   `test_a_source_under_an_attribution_licence_is_named_in_the_notice` fails if
-  it does not get one.
+  it does not get one. v1's card names no licence for any of its twelve and
+  warns that some may carry non-commercial terms, so nothing from that list can
+  be recorded until its own dataset card has been read.
 
 Every URL that carries a digest is pinned to a commit rather than to a branch,
 and `test_every_url_in_the_manifest_is_pinned_to_a_revision_or_carries_no_digest`
@@ -197,12 +216,30 @@ verification, which is at least loud, or gets its hash updated to match, which
 changes the corpus under every number measured on it. The one entry without a
 digest is the one nothing can be downloaded from at all.
 
-The manifest is read with `yaml.safe_load`. PyYAML lives in the `dev` extra
-beside pytest, ruff and mypy, so `pip install -e ".[dev]"` -- what every CI leg
-runs -- brings it in and the screens run everywhere. Values are still validated
-at the boundary rather than trusted: YAML types what it reads, and `role: yes`
-is a bool, so every field is required to be non-empty text before anything
-looks at what it says.
+The manifest is read with PyYAML, through `ManifestLoader` in
+`training/fetch.py`. PyYAML lives in the `dev` extra beside pytest, ruff and
+mypy, so `pip install -e ".[dev]"` -- what every CI leg runs -- brings it in and
+the screens run everywhere.
+
+Values are validated at the boundary rather than trusted: YAML types what it
+reads, and `role: yes` is a bool, so every field is required to be non-empty
+text before anything looks at what it says.
+
+`ManifestLoader` is `yaml.SafeLoader` with four refusals added back, because
+plain YAML admits things the hand-rolled reader refused and each of them
+changes what a source says without reporting it:
+
+| refused | what it would otherwise do |
+|---|---|
+| a repeated key inside one entry | YAML keeps the last, so two `sha256:` lines pin the corpus to whichever was written second |
+| an anchor or an alias | one field takes another's text, and the file stops reading as it says |
+| a `<<:` merge key | a source inherits a digest recorded for a different corpus |
+| a ` #` after a plain value | YAML reads it as a comment, so an unquoted URL loses its fragment |
+
+A `#` inside quotes is content and stays, which is why every URL in the
+manifest is quoted. `SafeLoader` itself closes the half that matters most:
+`!!python/object/apply` reaches the caller as an unconstructible tag rather
+than a call, and `test_the_loader_refuses_a_python_tag` keeps it that way.
 
 An earlier revision of this tree hand-rolled a YAML subset parser here, on the
 belief that a PyYAML entry in any `[project]` table would break the package's
