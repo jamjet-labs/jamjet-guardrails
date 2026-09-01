@@ -56,4 +56,33 @@ jobs:
               sys.exit(f"{wheel} ships no py.typed; the Typing :: Typed classifier would be false")
           print(f"{wheel} carries jamjet_guardrails/py.typed")
           PY
+      # The other half of the same argument. The step above asserts one file IS
+      # in the wheel; this one asserts nothing else is. `benchmarks/` is the
+      # reason it was written -- it sits at the repository root, carries
+      # `requirements.txt` naming onnxruntime, and would be shipped to every
+      # installer by one wrong line in the wheel target -- but the check is
+      # written against the whole namelist rather than against that directory,
+      # so `corpora/`, `tests/` and anything added later are covered without
+      # anyone remembering to add them.
+      #
+      # `tests/test_benchmarks.py` asserts the configuration that keeps this
+      # true. It cannot see inside an artifact: the suite runs against an
+      # editable install, which resolves to the source tree. This is the only
+      # place the built wheel is opened.
+      - name: The wheel must contain nothing but the package
+        run: |
+          python - <<'PY'
+          import glob, sys, zipfile
+          wheel = glob.glob("dist/*.whl")[0]
+          names = zipfile.ZipFile(wheel).namelist()
+          assert names, f"{wheel} is empty"
+          stray = [
+              n for n in names
+              if not n.startswith("jamjet_guardrails/")
+              and ".dist-info/" not in n
+          ]
+          if stray:
+              sys.exit(f"{wheel} ships files outside the package: {stray}")
+          print(f"{wheel} carries {len(names)} files, all inside the package")
+          PY
       - uses: pypa/gh-action-pypi-publish@release/v1

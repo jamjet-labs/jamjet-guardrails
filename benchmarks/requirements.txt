@@ -1,0 +1,21 @@
+# Dependencies for the measurements under benchmarks/ ONLY.
+#
+# Nothing here is a dependency of jamjet-guardrails. `[project.dependencies]` in
+# pyproject.toml is `[]` and stays `[]`; tests/test_packaging.py asserts that
+# against the BUILT metadata rather than against this claim. Install these into
+# a throwaway virtualenv outside the package's own, as benchmarks/README.md
+# describes.
+#
+# Pinned exactly rather than floored, because these are the versions the
+# committed numbers were produced on and a benchmark that moves under you is not
+# one. What actually ran is recorded again in results/measurements.json, read
+# from the interpreter at run time rather than from this file.
+#
+# onnxruntime ships no CPython 3.10 wheel after 1.23.2 and no sdist, so pip on
+# 3.10 resolves silently to 1.23.2 instead of failing. These measurements need
+# 3.11 or newer. docs/measurements/2026-09-01-phase2b-onnxruntime-support.md has
+# the full table. The package itself still supports 3.10; this file does not.
+numpy==2.5.2
+onnxruntime==1.29.0
+PyYAML==6.0.3
+tokenizers==0.23.1

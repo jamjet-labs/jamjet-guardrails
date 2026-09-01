@@ -1,9 +1,17 @@
 # Corpus provenance and attribution
 
-Every published precision and recall figure in this repository is measured on
-one of the files under `corpora/`. This file records where each one came from
-and under what licence, because for one of them that is a condition of use and
-not a courtesy.
+Every published precision and recall figure the package reports about itself is
+measured on one of the files under `corpora/`. This file records where each one
+came from and under what licence, because for one of them that is a condition of
+use and not a courtesy.
+
+That sentence used to say "every published precision and recall figure in this
+repository", and `benchmarks/RESULTS.md` made it false: it publishes precision
+and recall measured on a dataset that is Lakera's, against models that are
+ProtectAI's, and neither was named here. The rule this file states about itself
+is that a published figure is a use, so those two are attributed at the end of
+this document under [Third-party material behind published
+measurements](#third-party-material-behind-published-measurements).
 
 Each corpus is one file, one source: the loader refuses a file that mixes them,
 so in-repo and third-party numbers can never be merged into one score.
@@ -282,6 +290,60 @@ CC BY 4.0 asks for attribution wherever the material is used, which includes
 wherever its numbers are published. `BENCHMARKS.md` names the dataset in the
 Source column of every row measured on it and points here; the README does the
 same beside the figures it quotes.
+
+## Third-party material behind published measurements
+
+Nothing in this section is a corpus under `corpora/` and nothing in it is
+redistributed by this repository. It is here because `benchmarks/RESULTS.md`
+publishes precision and recall measured with it, and this file's own rule is
+that a published figure is a use. Every revision, byte count and SHA-256 below
+is recorded in `benchmarks/pins.json` and re-verified on every run.
+
+### PINT Benchmark, by Lakera AI
+
+`benchmarks/RESULTS.md` scores both `injection-structural` and the classifiers
+below on `benchmark/data/example-dataset.yaml` from the [PINT
+Benchmark](https://github.com/lakeraai/pint-benchmark).
+
+- Licence: MIT, Copyright (c) 2024 Lakera AI
+- Commit: `0efab3f463eae9c823130d8faffb71b2e7c06e63`
+- File: `benchmark/data/example-dataset.yaml`, 8 inputs, sha256
+  `df068b9a4ff72483f493add6be6242c6aa777df756bd61462aa0e13645cffa90`
+
+**No changes were made** and no part of it is committed here. `benchmarks/run.py`
+fetches the file at that commit into a gitignored `.cache/` directory inside
+`benchmarks/` and checks its digest on every run, cached copy or fresh download
+alike. The
+evaluation function in `benchmarks/pint/` follows the shape of PINT's own
+`examples/` template, which is covered by the same MIT licence.
+
+Eight inputs is not the PINT Benchmark. The PINT dataset is 4,314 inputs, is not
+public, and PINT's contributing guide requires results to be verified by the
+Lakera team before publication. This repository has no PINT score, claims none,
+and says so in every document that touches the file.
+
+### DeBERTa prompt-injection classifiers, by Protect AI
+
+Two revisions are measured, both fine-tuned from `microsoft/deberta-v3-base`.
+
+| Model | Revision | Status | Licence |
+|---|---|---|---|
+| `protectai/deberta-v3-base-prompt-injection-v2` | `90c9989b1a342275dd0d1a95aad283c04e075671` | current | Apache-2.0 |
+| `protectai/deberta-v3-base-prompt-injection` | `373b6af0f8d16739cff5de28be326652246bfaa3` | superseded by the row above | Apache-2.0 |
+
+**No weights are vendored and nothing is redistributed.** The ONNX export, its
+config and its tokenizer are downloaded at the pinned revision, checked against
+the byte counts and SHA-256 digests in `benchmarks/pins.json`, and used to
+classify. Apache-2.0 attaches no attribution obligation to a measurement made
+this way; the entry is here because the measurement is published and the models
+are somebody else's work.
+
+Both model cards carry ProtectAI's notice that the project is archived and no
+longer maintained, and the older card states that the `-v2` model supersedes it.
+The v1 card also carries a "License and Usage Notice" warning that some training
+datasets may carry non-commercial terms. That has no bearing on measuring the
+model, and it would have a bearing on anything downstream that bundled it, which
+this repository does not.
 
 ## What is deliberately absent, and why
 

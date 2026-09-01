@@ -27,7 +27,8 @@ ROOT = Path(__file__).resolve().parent.parent
 # found by writing one: the repository that owns the path is named on the line
 # above it.
 _CITED = re.compile(
-    r"`((?:corpora|tests|scripts|src/jamjet_guardrails|docs|\.github)/[^`]*|[A-Z]+\.md)`"
+    r"`((?:benchmarks|corpora|tests|scripts|src/jamjet_guardrails|docs|\.github)/[^`]*"
+    r"|[A-Z]+\.md)`"
 )
 
 

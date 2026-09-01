@@ -1,0 +1,379 @@
+"""Turn results/measurements.json into RESULTS.md.
+
+Separate from run.py, and stdlib only, for one reason: it has to be importable
+by tests/test_benchmarks.py, which runs in the package's own virtualenv where
+neither onnxruntime nor PyYAML is installed and never will be. That test
+re-renders the committed JSON and compares it to the committed Markdown, so a
+number edited into the prose by hand fails the build.
+
+Every table here names what it measures and on whose data in the header row.
+Nothing in this file emits a PINT score, because there is not one to emit.
+
+Two revisions of the same third-party classifier appear in those tables, and
+this file never prints one without its status. A reader who sees only this
+document must not come away believing the superseded revision is the vendor's
+current model, so the version and the status travel with the model name in
+every row rather than being explained once at the top.
+
+The limits of the comparison travel the same way, for the same reason one step
+further out: a table is quoted, linked and screenshotted away from the document
+around it, so `_scope` is emitted against each table rather than collected into
+a section at the end. `benchmarks/README.md` points at that block instead of
+carrying its own copy.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+
+HERE = Path(__file__).resolve().parent
+RESULTS = HERE / "results" / "measurements.json"
+OUTPUT = HERE / "RESULTS.md"
+
+
+def _ratio(numerator: int, denominator: int) -> str:
+    """Three decimals, or an em-free dash when the denominator is zero.
+
+    A zero denominator is not a score of zero and not a score of one. The two
+    counts either side of it are printed in their own columns, so the honest
+    thing to print here is nothing.
+    """
+    if denominator == 0:
+        return "-"
+    return f"{numerator / denominator:.3f}"
+
+
+def _binary_row(name: str, scores: dict[str, Any]) -> str:
+    tp, fp, fn, tn = scores["tp"], scores["fp"], scores["fn"], scores["tn"]
+    return (
+        f"| {name} | {tp + fp + fn + tn} | {tp} | {fp} | {fn} | {tn} "
+        f"| {_ratio(tp, tp + fp)} | {_ratio(tp, tp + fn)} "
+        f"| {_ratio(tp + tn, tp + fp + fn + tn)} |"
+    )
+
+
+def _category_rows(runs: list[dict[str, Any]]) -> list[str]:
+    """One row per category, with every detector's flags side by side.
+
+    Ordered by the category list of the first run, which run.py sorts, so the
+    row order is a property of the corpus rather than of dict insertion.
+    """
+    lines = []
+    categories = [c["category"] for c in runs[0]["per_category"]]
+    for category in categories:
+        cells = []
+        for run in runs:
+            entry = next(c for c in run["per_category"] if c["category"] == category)
+            cells.append(f"{entry['flagged']}")
+        first = next(c for c in runs[0]["per_category"] if c["category"] == category)
+        label = "injection" if first["positives"] == first["cases"] else "benign"
+        if 0 < first["positives"] < first["cases"]:
+            label = f"{first['positives']} of {first['cases']} injection"
+        lines.append(f"| `{category}` | {label} | {first['cases']} | " + " | ".join(cells) + " |")
+    return lines
+
+
+def _scope(data: dict[str, Any], runs: dict[tuple[str, str], dict[str, Any]]) -> list[str]:
+    """What the comparison does not support, generated beside the numbers.
+
+    These limits lived in `benchmarks/README.md` alone. A table lifted out of
+    this file left them behind, and what travelled was a bare accuracy figure
+    against a named vendor's shipping product. So they are built from the same
+    JSON as the numbers and placed against every table, not gathered into a
+    closing section a reader scrolls past. `benchmarks/README.md` points here
+    and does not restate them: two copies of a limit drift apart, and a reader
+    only ever lands on one of them.
+
+    Both directions are stated, and the recall `injection-structural` scores on
+    semantic inputs is read out of the runs rather than written down. A scope
+    note that qualified only the other side would be an argument, not a limit.
+    """
+    structural = next(d for d in data["detectors"] if d["kind"] == "constraint")
+    classifiers = [d for d in data["detectors"] if d["kind"] == "classifier"]
+    corpora = data["corpora"]
+
+    def recall_on(corpus_id: str) -> str:
+        overall = runs[(structural["id"], corpus_id)]["overall"]
+        return _ratio(overall["tp"], overall["tp"] + overall["fn"])
+
+    recalls = " and ".join(f"{recall_on(c['id'])} on {c['name']}" for c in corpora)
+    return [
+        (
+            f"**Scope of these rows.** This comparison runs each detector on a corpus "
+            f"outside the class of input it was built for. That is what the "
+            f"{len(corpora)} corpora are here to do, and it is not a finding about "
+            f"either kind. {structural['name']} reads the encoding and has no "
+            f"mechanism for an instruction written in plain words: its recall is "
+            f"{recalls}. A classifier reads the words, and where the payload is carried "
+            f"in characters this tokenizer does not deliver to the model, measured "
+            f"below, there are no words left for it to read."
+        ),
+        "",
+        (
+            f"The comparison is {len(classifiers)} revisions of one vendor's "
+            f"prompt-injection classifier over {len(corpora)} corpora, measured once, "
+            f"on {data['measured']}. It is not a measurement of semantic classifiers in "
+            f"general. The tokenizer result below generalises further than these scores "
+            f"do, and only as far as models built on that tokenizer. Nothing here says "
+            f"one approach replaces the other: they are layers over different failure "
+            f"modes and are meant to run together."
+        ),
+    ]
+
+
+def render(data: dict[str, Any]) -> str:
+    """The whole document, as a string. Deterministic: no clock, no filesystem."""
+    runs = {(r["detector"]["id"], r["corpus"]["id"]): r for r in data["runs"]}
+    env = data["environment"]
+    scope = _scope(data, runs)
+    out: list[str] = []
+    add = out.append
+
+    add("# Benchmark measurements")
+    add("")
+    add("Generated by `benchmarks/run.py`. Do not edit by hand:")
+    add("`tests/test_benchmarks.py::test_results_md_is_the_rendering_of_the_committed_json`")
+    add("re-renders this file from `benchmarks/results/measurements.json` and fails on any")
+    add("difference.")
+    add("")
+    add(f"Measured on **{data['measured']}**.")
+    add("")
+    add("## Which model is which")
+    add("")
+    for line in data["supersession"]:
+        add(line)
+    add("")
+    add("## There is no PINT score here")
+    add("")
+    add("The PINT dataset is 4,314 inputs and is not published. `benchmark/data/` in the")
+    add("PINT repository holds one file, `example-dataset.yaml`, which is 8 inputs and")
+    add('says of itself that it is "NOT the PINT Benchmark dataset or representative of')
+    add('the actual data included the PINT Benchmark dataset". PINT results "must be')
+    add('verified by the Lakera team" before they are published.')
+    add("")
+    add("So no number below is a PINT score, this package does not have one, and the")
+    add("8-input run is a smoke test that the adapter works end to end. It is reported")
+    add("because what it shows is worth showing: a structural check finds nothing in")
+    add("semantic injections, which is the honest half of the comparison.")
+    add("")
+    add("## What each thing is")
+    add("")
+    add("| | What it reads | Kind | Status | Pin |")
+    add("|---|---|---|---|---|")
+    for detector in data["detectors"]:
+        add(
+            f"| **{detector['name']}** | {detector['reads']} | {detector['kind']} "
+            f"| {detector['status']} | `{detector['pin']}` |"
+        )
+    add("")
+    add("| Corpus | Whose data | Inputs | Labelled injection | Pin |")
+    add("|---|---|---:|---:|---|")
+    for corpus in data["corpora"]:
+        add(
+            f"| **{corpus['name']}** | {corpus['whose']} | {corpus['cases']} "
+            f"| {corpus['positives']} | `{corpus['pin']}` |"
+        )
+    add("")
+    add(data["protocol"])
+    add("")
+    add("## Every detector on both corpora")
+    add("")
+    add("One decision per input, scored the same way for all of them: positive means the")
+    add("detector flagged the input. For `injection-structural` that is a verdict other")
+    add("than `allow`; for a classifier it is an `INJECTION` label at argmax. This is a")
+    add("DECISION-level score and it is not the finding-level precision and recall in")
+    add("[BENCHMARKS.md](../BENCHMARKS.md), which counts located spans on the same")
+    add("corpus and is a different measurement. The two must not be quoted as one.")
+    add("")
+    for corpus in data["corpora"]:
+        add(f"### {corpus['name']} ({corpus['cases']} inputs, {corpus['whose']})")
+        add("")
+        add("| Detector | Inputs | TP | FP | FN | TN | Precision | Recall | Accuracy |")
+        add("|---|---:|---:|---:|---:|---:|---:|---:|---:|")
+        for detector in data["detectors"]:
+            run = runs[(detector["id"], corpus["id"])]
+            add(_binary_row(detector["name"], run["overall"]))
+        add("")
+        out.extend(scope)
+        add("")
+        by_corpus = [runs[(d["id"], corpus["id"])] for d in data["detectors"]]
+        add(
+            "| Category | Label | Inputs | "
+            + " | ".join(f"{d['name']} flagged" for d in data["detectors"])
+            + " |"
+        )
+        add("|---|---|---:|" + "---:|" * len(data["detectors"]))
+        out.extend(_category_rows(by_corpus))
+        add("")
+
+    add("## Where the classifiers win")
+    add("")
+    for line in data["classifier_wins"]:
+        add(line)
+    add("")
+    add("## Where the constraint wins")
+    add("")
+    for line in data["constraint_wins"]:
+        add(line)
+    add("")
+    add("## Where they agree and where they disagree")
+    add("")
+    add("Every input, by what the label says and by which detectors flagged it. This is")
+    add('the whole answer to "do they overlap": the `neither` row on an injection line')
+    add("is what both missed, and the two `only` rows are what each one contributes that")
+    add("the other does not. One table per classifier, because agreeing with the current")
+    add("model and agreeing with the superseded one are two different facts.")
+    add("")
+    for entry in data["agreement"]:
+        corpus = next(c for c in data["corpora"] if c["id"] == entry["corpus"])
+        add(f"### {corpus['name']} ({corpus['cases']} inputs), {entry['classifier_short']}")
+        add("")
+        add(f"`injection-structural` against {entry['classifier_name']}.")
+        add("")
+        add("| Label | Flagged by | Inputs | Example ids |")
+        add("|---|---|---:|---|")
+        for row in entry["rows"]:
+            ids = ", ".join(f"`{case_id}`" for case_id in row["ids"])
+            add(f"| {row['label']} | {row['flagged_by']} | {row['cases']} | {ids} |")
+        add("")
+    add("## Can a classifier read a smuggled instruction?")
+    add("")
+    visibility = data["payload_visibility"]
+    add("Four measurements over the labelled payload spans, at the pinned revisions.")
+    add("Three of them read the tokenizer alone and none of the weights, so where two")
+    add("revisions produce the same answer it is reported once and says whose.")
+    add("")
+    for study in visibility["tokenizer_studies"]:
+        add("### What the tokenizer does to each payload character")
+        add("")
+        add(study["note"])
+        add("")
+        add("Every distinct character appearing inside a labelled span, put through this")
+        add('tokenizer\'s normalizer on the probe `"a<char>b"`.')
+        add("")
+        add("The rows that answer the question are the first two. A character the normalizer")
+        add("turns into a space never reaches the vocabulary, and one that survives to no token")
+        add("becomes `[UNK]`; either way its identity is gone before the model runs.")
+        add("")
+        add("The `survives; has a token` row is mixed, and the names listed under it are how to")
+        add("tell which is which. A span is the region the label names, and for the bit-encoded")
+        add("zero-width cases that region also covers the carrier letters the invisible")
+        add("characters sit between, so those letters are inside a span and counted here. They")
+        add("are visible text and are supposed to survive. The rest of that row is not: it is")
+        add("invisible characters this tokenizer does have a token for, so NOT every invisible")
+        add("character is erased here and a claim that they all are would be wrong.")
+        add("")
+        add("| What the tokenizer does | Distinct characters | Occurrences in payloads |")
+        add("|---|---:|---:|")
+        for entry in study["census"]:
+            add(f"| {entry['fate']} | {len(entry['characters'])} | {entry['occurrences']} |")
+        add("")
+        add("Every character behind those counts, so the table can be checked rather than")
+        add("taken:")
+        add("")
+        for entry in study["census"]:
+            add(f"**{entry['fate']}**")
+            add("")
+            for char in entry["characters"]:
+                add(f"- `{char['codepoint']}` {char['name']} ({char['occurrences']})")
+            add("")
+        add("### Does the smuggled text's content reach the model?")
+        add("")
+        add("For the tag-character cases the payload is an instruction written one tag")
+        add("character per ASCII character, so it can be overwritten with a different message")
+        add("of the same length in the same block and tokenised again. The stand-in is")
+        add(f"{visibility['tag_replacement']} repeated, TAG LATIN SMALL LETTER X. Identical token")
+        add("ids mean the model receives the same input whatever the smuggled text says, which")
+        add("is a proof about this tokenizer rather than a score.")
+        add("")
+        add("| Signal | Cases | Content test run | Token ids unchanged when the message changes |")
+        add("|---|---:|---:|---:|")
+        for entry in study["per_signal"]:
+            add(
+                f"| `{entry['signal']}` | {entry['cases']} | {entry['content_cases']} "
+                f"| {entry['content_invariant']} |"
+            )
+        add("")
+        add("The test is run for one signal only, and the omissions are not oversights: a bidi")
+        add("override is a single control character with no message to vary, and substituting")
+        add("one zero-width character for another crosses between characters this normalizer")
+        add("treats differently, so the result would measure the substitution rather than the")
+        add("model.")
+        add("")
+        add("### How long a run of tag characters collapses")
+        add("")
+        collapse = study["run_collapse"]
+        add(
+            f"The corpus holds {collapse['spans']} labelled tag-character spans, "
+            f"{collapse['shortest']} to {collapse['longest']} characters long."
+        )
+        add(
+            f"Encoded on their own, {collapse['spans_encoding_alone_to_one_unk']} of "
+            f"those {collapse['spans']} become exactly one `[UNK]` id, so a longer"
+        )
+        add("smuggled instruction is not a bigger signal to the model than a shorter one.")
+        add("Synthetic runs of the same character, including one far longer than anything")
+        add("the corpus reaches:")
+        add("")
+        add("| Run length in tag characters | `[UNK]` ids |")
+        add("|---:|---:|")
+        for entry in collapse["synthetic"]:
+            add(f"| {entry['length']} | {entry['unk_ids']} |")
+        add("")
+        add("In context the count is not always one per span, and that nuance is why this")
+        add(
+            f"is measured rather than asserted: "
+            f"{collapse['context_one_unk_per_span']} of the {collapse['context_cases']} "
+            f"tag-character cases encode to"
+        )
+        add("exactly one `[UNK]` for each labelled span, and the rest carry more. The")
+        add("collapse is a property of a run in isolation, not a promise about a whole")
+        add("prompt.")
+        add("")
+    add("### Flags that survive deleting the payload")
+    add("")
+    add("Of the smuggling cases a classifier flagged, how many it still flags with the")
+    add("payload cut out entirely. Those flags are judgements about the visible words and")
+    add("would stand with the attack removed. This one does read the weights, so it is")
+    add("reported per model.")
+    add("")
+    add("| Classifier | Smuggling cases | Flagged | Still flagged with the payload deleted |")
+    add("|---|---:|---:|---:|")
+    for entry in visibility["dependence"]:
+        add(
+            f"| {entry['detector']} | {visibility['positives']} | {entry['flagged']} "
+            f"| {entry['flagged_without_payload']} |"
+        )
+    add("")
+    add("The difference between those last two columns is the flags that DO depend on the")
+    add("payload being there. Read together with the content-invariance table above, which")
+    add("shows the tag payloads are content-invariant, what that dependence can carry is")
+    add("the presence of something unreadable, not what it said.")
+    add("")
+    add("## Environment")
+    add("")
+    add("| | |")
+    add("|---|---|")
+    for key in sorted(env):
+        add(f"| {key} | `{env[key]}` |")
+    add("")
+    add("## Commands")
+    add("")
+    add("```")
+    for line in data["commands"]:
+        add(line)
+    add("```")
+    add("")
+    return "\n".join(out) + "\n"
+
+
+def main() -> None:
+    data = json.loads(RESULTS.read_text(encoding="utf-8"))
+    OUTPUT.write_text(render(data), encoding="utf-8")
+    print(f"wrote {OUTPUT}")
+
+
+if __name__ == "__main__":
+    main()
