@@ -38,6 +38,7 @@ from pathlib import Path
 from jamjet_guardrails.detectors import build
 from jamjet_guardrails.errors import GuardrailUnavailableError
 from jamjet_guardrails.eval.corpus import CorpusError, load_corpus
+from jamjet_guardrails.eval.fixtures import options_for
 from jamjet_guardrails.eval.gate import (
     MAX_EPSILON,
     RegressionError,
@@ -399,7 +400,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     for check, source, path in corpora:
         try:
             corpus = load_corpus(path, name=f"{check}/{source}")
-            evaluations.append(evaluate(build(check), corpus))
+            evaluations.append(evaluate(build(check, **options_for(check)), corpus))
         except (CorpusError, EvaluationError, GuardrailUnavailableError) as exc:
             # EvaluationError covers a corpus paired with a guardrail that does
             # not run on its direction. Task 10 made it a typed error rather

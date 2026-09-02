@@ -47,6 +47,7 @@ from jamjet_guardrails import (
     saw,
 )
 from jamjet_guardrails.detectors import AVAILABLE, TYPES
+from jamjet_guardrails.eval.fixtures import options_for
 
 ROOT = Path(__file__).resolve().parent.parent
 README = ROOT / "README.md"
@@ -440,7 +441,7 @@ def test_the_checks_table_lists_every_check_the_registry_can_build() -> None:
 @pytest.mark.parametrize("name", sorted(AVAILABLE))
 def test_each_row_states_the_kind_and_directions_that_check_declares(name: str) -> None:
     kind, runs_on, _ = _checks_table()[name]
-    guardrail = build(name)
+    guardrail = build(name, **options_for(name))
     assert kind == guardrail.kind
     assert runs_on == set(guardrail.directions)
 

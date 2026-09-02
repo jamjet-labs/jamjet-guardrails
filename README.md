@@ -79,6 +79,7 @@ Branch on the decision first.
 |---|---|---|---|
 | `injection-structural` | constraint | input | `BIDI_OVERRIDE`, `INVISIBLE_TAG_CHARS`, `ZERO_WIDTH_SMUGGLING` |
 | `pii` | constraint | input, output | `CREDIT_CARD`, `EMAIL`, `PHONE_NUMBER`, `US_SSN` |
+| `rules` | constraint | input, output | `INTERNAL_HOST`, `LENGTH_LIMIT`, `PROJECT_CODENAME`, `TICKET_ID` |
 | `secrets` | constraint | input, output | `ANTHROPIC_KEY`, `AWS_ACCESS_KEY`, `GITHUB_TOKEN`, `JWT`, `OPENAI_KEY`, `PRIVATE_KEY`, `SLACK_TOKEN` |
 
 A type name says what a check labels a match as, not that every value of that
@@ -87,6 +88,19 @@ shapes are named here rather than left for you to find: `github_pat_`
 fine-grained GitHub tokens and `xapp-` Slack app-level tokens are not among
 the prefixes matched, so both pass through untouched. Per-type precision and
 recall are in [BENCHMARKS.md](BENCHMARKS.md).
+
+**`rules` is the one check whose types you choose.** It takes your own regular
+expressions, banned substrings and size limits, so the types in its row are the
+ones the published measurement was taken with, not a fixed set. That row
+measures the engine: whether a span is right, whether two rules claiming one
+stretch of text collapse into one placeholder, whether a limit fires one
+character past its bound. It is not a measurement of any rule you write, and
+your rules carry their own rates. The exact configuration behind the row is in
+[docs/conformance.md](docs/conformance.md).
+
+Size limits are characters, bytes and lines. There is no token limit, because
+counting tokens needs a tokenizer this library does not carry and will not
+guess at.
 
 ## Measured, not asserted
 
@@ -100,6 +114,7 @@ beside the scores.
 | injection-structural | injection-structural/in-repo | in-repo | `b11692946044` | 146 | 0.971 | 0.870 | 0.917 | 100 | 3 | 15 | 8 |
 | pii | pii/in-repo | in-repo | `06fb3b601aba` | 81 | 0.631 | 0.872 | 0.732 | 41 | 24 | 6 | 24 |
 | pii | pii/third-party | nvidia/Nemotron-PII@b70ffaf | `c25ef538d677` | 300 | 0.960 | 0.997 | 0.978 | 340 | 14 | 1 | 6 |
+| rules | rules/in-repo | in-repo | `78a1bcf1eb18` | 34 | 1.000 | 1.000 | 1.000 | 23 | 0 | 0 | 0 |
 | secrets | secrets/in-repo | in-repo | `e9e0ed70dc37` | 39 | 0.957 | 0.880 | 0.917 | 22 | 1 | 3 | 4 |
 
 **A *balanced* override still reorders, and `injection-structural` allows it.**
@@ -159,9 +174,9 @@ character denies whatever else the message contains.
 
 Numbers measured on a corpus we wrote are reported separately from numbers
 measured on a corpus we did not, and the two are never merged. There is no
-third-party corpus for `secrets` or for `injection-structural`. No compatibly
-licensed one was found for either, so both are measured on our own corpora only
-and are self-graded.
+third-party corpus for `injection-structural`, `rules` or `secrets`. No
+compatibly licensed one was found for any of them, so all three are measured on
+our own corpora only and are self-graded.
 
 The third-party PII corpus is derived from
 [nvidia/Nemotron-PII](https://huggingface.co/datasets/nvidia/Nemotron-PII),

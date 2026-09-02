@@ -26,6 +26,7 @@ from jamjet_guardrails import build_chain as build_chain_from_the_root
 from jamjet_guardrails.chain import GuardrailChain
 from jamjet_guardrails.detectors import AVAILABLE, PiiGuardrail, build, build_chain
 from jamjet_guardrails.errors import GuardrailUnavailableError
+from jamjet_guardrails.eval.fixtures import options_for
 from jamjet_guardrails.protocol import Guardrail, saw
 from jamjet_guardrails.types import Context, Direction, Kind, Provenance, Verdict
 
@@ -33,7 +34,7 @@ OUT = Context(direction="output", origin="model")
 
 
 def test_every_bundled_detector_is_registered() -> None:
-    assert set(AVAILABLE) == {"injection-structural", "pii", "secrets"}
+    assert set(AVAILABLE) == {"injection-structural", "pii", "rules", "secrets"}
 
 
 def test_build_returns_a_working_guardrail() -> None:
@@ -53,8 +54,11 @@ def test_build_returns_the_guardrail_asked_for_and_not_a_default(name: str) -> N
     pins the key to the detector's own name, which is what `provenance.detector`
     carries into the audit record: a key that disagreed with it would make the
     audit trail name a guardrail the config never asked for.
+
+    `**options_for(name)` because `rules` refuses to build with no options at
+    all; every other entry's fixture is empty, so this is a no-op for them.
     """
-    assert build(name).name == name
+    assert build(name, **options_for(name)).name == name
 
 
 def test_build_passes_options_through() -> None:

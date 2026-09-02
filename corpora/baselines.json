@@ -14,6 +14,11 @@
     "precision": 0.96,
     "recall": 0.997
   },
+  "rules/in-repo/78a1bcf1eb18": {
+    "decision_mismatches": 0,
+    "precision": 1.0,
+    "recall": 1.0
+  },
   "secrets/in-repo/e9e0ed70dc37": {
     "decision_mismatches": 4,
     "precision": 0.956,

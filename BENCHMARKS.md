@@ -8,6 +8,7 @@ every score. How to read them is under the table.
 | injection-structural | injection-structural/in-repo | in-repo | `b11692946044` | 146 | 0.971 | 0.870 | 0.917 | 100 | 3 | 15 | 8 |
 | pii | pii/in-repo | in-repo | `06fb3b601aba` | 81 | 0.631 | 0.872 | 0.732 | 41 | 24 | 6 | 24 |
 | pii | pii/third-party | nvidia/Nemotron-PII@b70ffaf | `c25ef538d677` | 300 | 0.960 | 0.997 | 0.978 | 340 | 14 | 1 | 6 |
+| rules | rules/in-repo | in-repo | `78a1bcf1eb18` | 34 | 1.000 | 1.000 | 1.000 | 23 | 0 | 0 | 0 |
 | secrets | secrets/in-repo | in-repo | `e9e0ed70dc37` | 39 | 0.957 | 0.880 | 0.917 | 22 | 1 | 3 | 4 |
 
 ## How to read this
@@ -97,6 +98,15 @@ above clamped it.
 | PHONE_NUMBER | 0.991 | 1.000 | 115 | 1 | 0 |
 | US_SSN | 0.750 | 0.960 | 24 | 8 | 1 |
 
+## Per type: rules on rules/in-repo (in-repo, `78a1bcf1eb18`)
+
+| Type | Precision | Recall | TP | FP | FN |
+|---|---:|---:|---:|---:|---:|
+| INTERNAL_HOST | 1.000 | 1.000 | 7 | 0 | 0 |
+| LENGTH_LIMIT | 1.000 | 1.000 | 4 | 0 | 0 |
+| PROJECT_CODENAME | 1.000 | 1.000 | 6 | 0 | 0 |
+| TICKET_ID | 1.000 | 1.000 | 6 | 0 | 0 |
+
 ## Per type: secrets on secrets/in-repo (in-repo, `e9e0ed70dc37`)
 
 | Type | Precision | Recall | TP | FP | FN |
@@ -144,6 +154,10 @@ above clamped it.
 | `nemotron-us-0d5de439e848400396da9d25efaf92aa` | decision_mismatch | allow | redact |
 
 ...and 16 more, in `benchmarks.json`.
+
+## Worst misses: rules on rules/in-repo (in-repo, `78a1bcf1eb18`)
+
+No misses on this corpus.
 
 ## Worst misses: secrets on secrets/in-repo (in-repo, `e9e0ed70dc37`)
 

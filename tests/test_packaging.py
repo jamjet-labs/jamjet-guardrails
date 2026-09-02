@@ -154,14 +154,18 @@ def test_no_description_a_reader_receives_promises_a_kind_we_do_not_ship() -> No
     from importlib.metadata import metadata
 
     import jamjet_guardrails
-    from jamjet_guardrails.detectors import AVAILABLE
+    from jamjet_guardrails.detectors import AVAILABLE, build
+    from jamjet_guardrails.eval.fixtures import options_for
 
     described = {
         "the PyPI Summary": metadata("jamjet-guardrails")["Summary"],
         "the package docstring": jamjet_guardrails.__doc__ or "",
     }
     assert all(described.values()), f"nothing to check in {described}"
-    kinds = {cls().kind for cls in AVAILABLE.values()}
+    # A registry value is a factory whose options are the check's own, so
+    # constructing it bare (`cls()`) is a call this package refuses on
+    # purpose: `rules` raises GuardrailUnavailableError with no arguments.
+    kinds = {build(name, **options_for(name)).kind for name in AVAILABLE}
     if "classifier" not in kinds:
         offenders = [where for where, text in described.items() if "classifier" in text.lower()]
         assert offenders == [], f"{offenders} promise a classifier; none is registered"

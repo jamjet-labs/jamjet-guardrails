@@ -741,6 +741,52 @@
       ]
     },
     {
+      "detector": "rules",
+      "detector_version": "0.1.0",
+      "corpus_name": "rules/in-repo",
+      "corpus_source": "in-repo",
+      "corpus_version": "78a1bcf1eb18",
+      "cases": 34,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "true_positives": 23,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "decision_mismatches": 0,
+      "per_type": {
+        "INTERNAL_HOST": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "true_positives": 7,
+          "false_positives": 0,
+          "false_negatives": 0
+        },
+        "LENGTH_LIMIT": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "true_positives": 4,
+          "false_positives": 0,
+          "false_negatives": 0
+        },
+        "PROJECT_CODENAME": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "true_positives": 6,
+          "false_positives": 0,
+          "false_negatives": 0
+        },
+        "TICKET_ID": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "true_positives": 6,
+          "false_positives": 0,
+          "false_negatives": 0
+        }
+      },
+      "failures": []
+    },
+    {
       "detector": "secrets",
       "detector_version": "0.1.0",
       "corpus_name": "secrets/in-repo",

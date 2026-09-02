@@ -10,6 +10,7 @@ from jamjet_guardrails.detectors.injection_structural import (
     InjectionStructuralGuardrail,
 )
 from jamjet_guardrails.detectors.pii import PII_TYPES, PiiGuardrail
+from jamjet_guardrails.detectors.rules import RULES_TYPES, build_rules
 from jamjet_guardrails.detectors.secrets import SECRET_TYPES, SecretsGuardrail
 from jamjet_guardrails.errors import GuardrailUnavailableError
 from jamjet_guardrails.protocol import Guardrail
@@ -18,6 +19,7 @@ from jamjet_guardrails.types import Direction
 AVAILABLE: dict[str, Callable[..., Guardrail]] = {
     "injection-structural": InjectionStructuralGuardrail,
     "pii": PiiGuardrail,
+    "rules": build_rules,
     "secrets": SecretsGuardrail,
 }
 
@@ -40,6 +42,7 @@ AVAILABLE: dict[str, Callable[..., Guardrail]] = {
 TYPES: dict[str, frozenset[str]] = {
     "injection-structural": INJECTION_TYPES,
     "pii": PII_TYPES,
+    "rules": RULES_TYPES,
     "secrets": SECRET_TYPES,
 }
 
@@ -251,10 +254,11 @@ def build_chain(names: Iterable[str]) -> GuardrailChain:
 
 __all__ = [
     "AVAILABLE",
+    "TYPES",
     "InjectionStructuralGuardrail",
     "PiiGuardrail",
     "SecretsGuardrail",
-    "TYPES",
     "build",
     "build_chain",
+    "build_rules",
 ]
