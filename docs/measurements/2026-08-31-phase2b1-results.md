@@ -52,37 +52,43 @@ synthetic corpus did not transfer to text written by other people.
 strictly, with no tolerance. Measured 0.3672. The comparison is False.
 
 **The structural side did not regress.** The structural check scored exactly the
-four counts the bar recorded for it before any model existed: 46 TP, 2 FP, 6 FN,
-92 TN over 146 cases, decision-level recall 0.8846153846. Nothing in this stage
-touched that detector and nothing was added to the chain, so the identity is the
-honest statement of it.
+four counts the bar recorded for it: 49 TP, 2 FP, 6 FN, 97 TN over 154 cases,
+decision-level recall 0.8909090909. Nothing in this stage touched that detector
+and nothing was added to the chain, so the identity is the honest statement of
+it. (The counts moved from an earlier 46/2/6/92 over 146 cases when Task 11 of
+the phase 3 foundation session widened `injection-structural` to run on output
+as well as input and added 8 cases to its corpus; `training/ship_bar.json` and
+this stage's records were re-derived from the wider corpus in the same commit,
+for a reason unrelated to and independent of this stage's own verdict, which
+did not change.)
 
 There was a rounding artifact in the comparison and it is worth stating plainly
 rather than leaving for a later reader to trip over. `structural_floor` was
-recorded as `round(0.8846153846, 3)` = 0.885, and the check is `recall >= floor`,
+recorded as `round(0.8909090909, 3)` = 0.891, and the check is `recall >= floor`,
 so an untouched structural layer compared against that rendering failed by
-0.00038. The rendering is above the value it renders, which is what a
+0.00009. The rendering is above the value it renders, which is what a
 round-to-nearest does and what a floor must not do.
 
 The comparison now reads the recall the floor was taken from,
-0.8846153846153846, which the bar records beside it in
+0.8909090909090909, which the bar records beside it in
 `structural_floor_detail.recall`. Against that value the structural side holds
 with a margin of 0.00000, which is the identity above stated as the comparison
 the bar asks for: adding a classifier must not cost the structural layer its
 decision-level recall, and it cost none.
 
-`training/ship_bar.json` was NOT edited to arrive there, and that matters more
-than the 0.00038. Its bytes are pinned by `tests/test_ship_bar.py` because a bar
-that can be rewritten after the result is not a commitment. Both numbers stay in
-it, unchanged; `training/artifacts/ship_check.json` records which of the two the
-comparison used, under `floor` and `floor_published_as`. Nothing about the
-semantic side moved: it failed by 0.5324 and no reading of a floor changes
-that.
+`training/ship_bar.json` is byte-pinned by `tests/test_ship_bar.py` against
+`SHIP_BAR_SHA256`, so an edit made to move THIS comparison after the fact would
+be caught rather than silently smoothed over -- what moved the pin was the
+corpus this floor is derived from changing for reasons of its own, not this
+comparison. Both numbers stay in the bar, together; `training/artifacts/
+ship_check.json` records which of the two the comparison used, under `floor`
+and `floor_published_as`. Nothing about the semantic side moved: it failed by
+0.5324 and no reading of a floor changes that.
 
-Note also that 0.885 is the DECISION-level number. `BENCHMARKS.md` publishes
-0.870 for the same corpus at FINDING level, where a case with four expected
+Note also that 0.891 is the DECISION-level number. `BENCHMARKS.md` publishes
+0.873 for the same corpus at FINDING level, where a case with four expected
 spans contributes four. A classifier emits no spans, so the finding-level number
-is not the one a classifier can be compared at, and neither number moved.
+is not the one a classifier can be compared at.
 
 **A third gate refused the model before the corpus was reached, and it is not
 part of the recorded bar.** `benchmarks/run.py::controls` runs four fixed inputs
@@ -136,7 +142,7 @@ structural layer alone.
 `training/ship_bar.json` records that clearing the bar would have authorised
 shipping and would still not have authorised putting a headline precision and
 recall row for a semantic injection check beside `pii` (0.631 / 0.872),
-`secrets` (0.957 / 0.880) and `injection-structural` (0.971 / 0.870). Those
+`secrets` (0.957 / 0.880) and `injection-structural` (0.972 / 0.873). Those
 three are measured on corpora with disclosed provenance and named failures and
 are gated in CI; this rests on one external corpus for an adjacent task inside
 the reference model's own training distribution. Since the bar was missed, both
@@ -145,8 +151,11 @@ could ever support a published row stays open for whoever tries again.
 
 What may be said publicly, then: nothing about a semantic injection classifier
 in this package, because there is not one. The three published rows are
-unaffected. `injection-structural` scored the same counts today that it scored
-when the bar was recorded, so no published number moved and none needs revising.
+unaffected BY THIS STAGE. (`injection-structural`'s own published precision and
+recall later moved, from 0.971 / 0.870 to 0.972 / 0.873, when Task 11 widened
+that check to run on output as well as input; that revision has nothing to do
+with the classifier this stage measured and did not change this stage's
+verdict.)
 
 ## Even a cleared bar would not have meant "usable on real documents"
 

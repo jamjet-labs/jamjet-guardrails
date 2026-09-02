@@ -87,9 +87,14 @@ STRUCTURAL_CORPUS = "corpora/injection-structural/in-repo.jsonl"
 #: The published FINDING-level recall on the same corpus, recorded so the two
 #: numbers are visibly different things rather than one number that moved.
 #: BENCHMARKS.md counts findings, so a case with four expected spans contributes
-#: four; this file counts decisions. Scoring a classifier against 0.870 would
+#: four; this file counts decisions. Scoring a classifier against 0.873 would
 #: compare quantities that are not the same kind of thing.
-PUBLISHED_FINDING_LEVEL_RECALL = 0.870
+#:
+#: Moved from 0.870 to 0.873 by Task 11 of the phase 3 foundation session,
+#: which widened `injection-structural` to run on output as well as input and
+#: added 8 cases to its corpus (146 -> 154), 5 of them `allow`. That raised
+#: BENCHMARKS.md's finding-level recall for this check from 0.870 to 0.873.
+PUBLISHED_FINDING_LEVEL_RECALL = 0.873
 
 #: Places the recorded floor is rounded to, matching how BENCHMARKS.md and
 #: benchmarks/RESULTS.md print every rate in this repository.

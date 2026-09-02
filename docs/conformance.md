@@ -319,7 +319,7 @@ scoring that pairing would publish a number for a run that never happens.
 `pii` and `secrets` are patterns over what a document says, and the sections above are enough to port them:
 their type names are the labels their corpora use, and their bar is the score on those corpora. This check
 constrains how a document is ENCODED rather than what it says, and reproducing its numbers is not the same
-as reproducing it. 29 of its 94 `allow` cases stop allowing when one of the exemptions or exclusions below
+as reproducing it. 33 of its 99 `allow` cases stop allowing when one of the exemptions or exclusions below
 is switched off, and neither an exemption nor an exclusion is visible in a precision figure.
 
 Its `kind` is `constraint`, so the invariant above applies unchanged: no finding
@@ -358,18 +358,21 @@ code units. A port that indexes in either -- the natural choice in Java,
 JavaScript, Go or Rust -- reports a span this corpus scores as a miss, and
 redacts the wrong bytes.
 
-### It runs on input only
+### It runs on input and on output
 
-`directions` holds `input` and nothing else, so a chain skips this check on
-output entirely. That is a restriction on what it covers rather than a detail of
-how it is wired: a model that emits tag characters into its own output is
-smuggling to whatever reads that output next, and this check does not look.
+`directions` holds both, so a chain runs this check in either direction. That is
+a statement about coverage rather than about wiring: a model that emits tag
+characters into its own output is smuggling to whatever reads that output next,
+which in an agent chain is another model, and a check that looked only at input
+could not see it.
 
-**The corpora cannot tell a port this.** Every case in the corpus carries
-`direction: input`, and scoring calls `check` with the case's own direction, so
-a port that declared `output` as well would score exactly the same. Like the
-combination order and the single-pass rule, this is specified here and measured
-nowhere.
+It shipped input-only at 0.1.0 and widened at 0.2.0. **The corpora could not
+have told a port either version.** Scoring calls `check` with each case's own
+direction, so while every case carried an `input` direction a port declaring
+output as well scored identically. The corpus now carries cases in both
+directions, which measures that a port runs in both; what it still cannot
+measure is a port that declares MORE directions than these two, and there are no
+more to declare.
 
 ### The exemptions
 
@@ -385,8 +388,8 @@ rather than left to go stale.
   presence of a control. Reporting every control instead denies these, all
   labelled `allow`: `inj-0027`, `inj-0028`, `inj-0029`, `inj-0030`, `inj-0031`,
   `inj-0032`, `inj-0035`, `inj-0036`, `inj-0037`, `inj-0038`, `inj-0096`,
-  `inj-0141` and `inj-0142`. They are balanced embeddings, overrides and
-  isolates around Latin, digits, Hebrew and Arabic. Right-to-left text is
+  `inj-0141`, `inj-0142` and `inj-0153`. They are balanced embeddings, overrides
+  and isolates around Latin, digits, Hebrew and Arabic. Right-to-left text is
   written with these controls, so a check that reported them would report a
   language.
 
@@ -395,26 +398,26 @@ rather than left to go stale.
   flags of England, Scotland and Wales, each written as U+1F3F4, the tag
   spelling of its subdivision code, and U+E007F CANCEL TAG. Unicode defines
   those three and no others, so the set is closed. Dropping the exemption denies
-  these, all labelled `allow`: `inj-0002`, `inj-0015`, `inj-0016`, `inj-0017`
-  and `inj-0018`, which carry all three flags singly and in a row. A check that
-  denies the Scotland flag is a check that gets switched off.
+  these, all labelled `allow`: `inj-0002`, `inj-0015`, `inj-0016`, `inj-0017`,
+  `inj-0018` and `inj-0150`, which carry all three flags singly and in a row. A
+  check that denies the Scotland flag is a check that gets switched off.
 
 - **The joiner exemption is contextual, by script.** ZWJ and ZWNJ are
   orthography in the scripts that write them and structure inside an emoji
   sequence, and nothing anywhere else, so what excuses one is its NEIGHBOURS and
   never its identity. Dropping the exemption denies these, all labelled `allow`:
-  `inj-0055` and `inj-0089`, which are family emoji; `inj-0061`, which is
-  Devanagari conjuncts; and `inj-0063`, `inj-0079`, `inj-0087` and `inj-0095`,
-  which are Persian and Arabic, both written in the Arabic script. A port that
-  exempts a joiner wherever it appears has exempted the attack along with the
-  orthography; one that exempts it nowhere denies conjunct Devanagari, ZWNJ in
-  the Arabic script, and every emoji ZWJ sequence. Those are what these seven
-  carry, and they are narrower than the eight ranges this implementation
-  declares.
+  `inj-0055`, `inj-0089` and `inj-0151`, which are family emoji; `inj-0061` and
+  `inj-0152`, which are Devanagari conjuncts; and `inj-0063`, `inj-0079`,
+  `inj-0087` and `inj-0095`, which are Persian and Arabic, both written in the
+  Arabic script. A port that exempts a joiner wherever it appears has exempted
+  the attack along with the orthography; one that exempts it nowhere denies
+  conjunct Devanagari, ZWNJ in the Arabic script, and every emoji ZWJ sequence.
+  Those are what these nine carry, and they are narrower than the eight ranges
+  this implementation declares.
 
   Every other joiner case in the corpus still allows with the exemption
   disabled, because it carries too few joiners to reach either bound. Those
-  seven are what hold the rule.
+  nine are what hold the rule.
 
 ### Where this implementation falls short of its own corpus
 

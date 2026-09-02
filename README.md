@@ -77,7 +77,7 @@ Branch on the decision first.
 
 | Name | Kind | Runs on | Types |
 |---|---|---|---|
-| `injection-structural` | constraint | input | `BIDI_OVERRIDE`, `INVISIBLE_TAG_CHARS`, `ZERO_WIDTH_SMUGGLING` |
+| `injection-structural` | constraint | input, output | `BIDI_OVERRIDE`, `INVISIBLE_TAG_CHARS`, `ZERO_WIDTH_SMUGGLING` |
 | `pii` | constraint | input, output | `CREDIT_CARD`, `EMAIL`, `PHONE_NUMBER`, `US_SSN` |
 | `rules` | constraint | input, output | `INTERNAL_HOST`, `LENGTH_LIMIT`, `PROJECT_CODENAME`, `TICKET_ID` |
 | `secrets` | constraint | input, output | `ANTHROPIC_KEY`, `AWS_ACCESS_KEY`, `GITHUB_TOKEN`, `JWT`, `OPENAI_KEY`, `PRIVATE_KEY`, `SLACK_TOKEN` |
@@ -126,7 +126,7 @@ beside the scores.
 
 | Check | Corpus | Source | Version | Cases | Precision | Recall | F1 | TP | FP | FN | Wrong decisions |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| injection-structural | injection-structural/in-repo | in-repo | `b11692946044` | 146 | 0.971 | 0.870 | 0.917 | 100 | 3 | 15 | 8 |
+| injection-structural | injection-structural/in-repo | in-repo | `b704703f431d` | 154 | 0.972 | 0.873 | 0.920 | 103 | 3 | 15 | 8 |
 | pii | pii/in-repo | in-repo | `06fb3b601aba` | 81 | 0.631 | 0.872 | 0.732 | 41 | 24 | 6 | 24 |
 | pii | pii/third-party | nvidia/Nemotron-PII@b70ffaf | `c25ef538d677` | 300 | 0.960 | 0.997 | 0.978 | 340 | 14 | 1 | 6 |
 | rules | rules/in-repo | in-repo | `fb63357f5268` | 39 | 1.000 | 1.000 | 1.000 | 27 | 0 | 0 | 0 |

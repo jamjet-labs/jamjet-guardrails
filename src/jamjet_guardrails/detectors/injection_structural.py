@@ -37,7 +37,7 @@ INJECTION_TYPES = frozenset(
     }
 )
 
-_VERSION = "0.1.0"
+_VERSION = "0.2.0"
 
 # U+E0000..U+E007F. TAG SPACE (U+E0020) through TAG TILDE (U+E007E) mirror
 # printable ASCII one-for-one, which is the whole smuggling primitive: any
@@ -1341,7 +1341,15 @@ class InjectionStructuralGuardrail:
     name: str = "injection-structural"
     version: str = _VERSION
     kind: Kind = "constraint"
-    directions: frozenset[Direction] = frozenset({"input"})
+    # Both directions since 0.2.0. It shipped input-only, inherited from the
+    # classifier's rationale that injection is something a caller receives. That
+    # is half the threat: a model emitting tag characters into its OWN output is
+    # smuggling to whatever reads that output next, which in an agent chain is
+    # another model. The corpus could not have caught this. Every case carried
+    # `direction: input` and scoring calls `check` with the case's own
+    # direction, so declaring output as well scored identically; the gap was
+    # visible only in the conformance document, which stated it.
+    directions: frozenset[Direction] = frozenset({"input", "output"})
 
     def __init__(self, on_match: Decision = "deny") -> None:
         # Defaults to deny, unlike `secrets`, and the asymmetry is deliberate. A

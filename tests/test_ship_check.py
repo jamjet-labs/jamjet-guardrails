@@ -131,10 +131,10 @@ def test_the_structural_side_is_re_derived_from_the_shipped_corpus() -> None:
     )
     recorded = check()["verdict"]["structural"]
     # The floor compared against is the recall it was DERIVED from, not the
-    # three-decimal rendering the bar also carries. `round(0.8846153846, 3)` is
-    # 0.885, which is ABOVE the value it renders, so the rendering fails an
-    # untouched structural layer by 0.00038. Both numbers are in the bar and
-    # neither was edited; the verdict records which one it used.
+    # three-decimal rendering the bar also carries. `round(0.8909090909, 3)` is
+    # 0.891, which is ABOVE the value it renders, so the rendering fails an
+    # untouched structural layer by 0.00009. Both numbers are in the bar,
+    # byte-pinned by `SHIP_BAR_SHA256`; the verdict records which one it used.
     floor = float(bar()["structural_floor_detail"]["recall"])
     published = float(bar()["structural_floor"])
     assert recorded["floor"] == floor
@@ -177,9 +177,9 @@ def test_rounding_the_floor_to_three_places_could_never_have_hidden_a_real_chang
     """Why the rendering is safe to publish even though it is unsafe to compare.
 
     The corpus has one granularity: decision-level recall moves in steps of
-    1/(TP+FN). If that step were smaller than the rounding, the published 0.885
+    1/(TP+FN). If that step were smaller than the rounding, the published 0.891
     would be hiding real movement rather than merely mis-comparing. It is not,
-    by a factor of about 38, and the factor is asserted rather than stated so it
+    by a factor of about 36, and the factor is asserted rather than stated so it
     fails if the corpus is ever cut down.
     """
     counts = structural_floor(harness())["counts"]

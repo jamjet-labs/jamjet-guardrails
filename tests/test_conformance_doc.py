@@ -610,19 +610,22 @@ def test_the_span_vector_the_document_publishes_is_the_case_it_names() -> None:
         )
 
 
-def test_every_case_in_the_injection_corpus_carries_the_direction_the_document_claims() -> None:
-    """The document says this check's direction is specified here and measured nowhere.
+def test_the_injection_corpus_carries_both_directions_the_document_claims() -> None:
+    """The document says this check runs in both directions and that the corpus
+    now measures it. Both halves are checked here: the corpus really does carry
+    output cases, and the document really does claim both.
 
-    That rests on one fact about the corpus: every case is `input`, so a port
-    declaring `output` as well scores identically and the corpus cannot object.
-    Add one output case and the sentence becomes false, with nothing else in the
-    repository disagreeing.
-    """
+    The previous version of this test asserted the opposite, that every case was
+    `input`, and it was correct for 0.1.0. It is kept in this shape rather than
+    deleted because the sentence it guards moved rather than went away: what the
+    corpus can and cannot tell a port is still the point."""
     corpus = load_corpus(INJECTION_CORPUS, name="injection-structural")
     assert corpus.cases, "the injection corpus is empty; this check would prove nothing"
     directions = {case.direction for case in corpus.cases}
-    assert directions == {"input"}, f"the corpus carries directions {sorted(directions)}"
-    assert "`direction: input`" in _section(INJECTION)
+    assert directions == {"input", "output"}, f"the corpus carries directions {sorted(directions)}"
+    section = _section(INJECTION)
+    assert "runs on input and on output" in section
+    assert "`direction: input`" not in section
 
 
 # ==========================================================================

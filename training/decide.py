@@ -259,9 +259,9 @@ def verdict(
 
     **The structural floor is compared against the recall it was derived from,
     not against the three-decimal rendering of it.** `structural_floor` is
-    `round(recall, 3)` and the recall it rounded is 46 of 52 = 0.8846153846, which
-    rounds UP. So `recall >= 0.885` is False on a structural layer nothing
-    touched, by 0.00038, and the first run of this comparison recorded a
+    `round(recall, 3)` and the recall it rounded is 49 of 55 = 0.8909090909, which
+    rounds UP. So `recall >= 0.891` is False on a structural layer nothing
+    touched, by 0.00009, and the first run of this comparison recorded a
     regression that was a rounding artifact. The bar records both numbers, and
     `structural_floor_detail.recall` is the one the floor was taken from;
     reading it is what makes the comparison ask the question the bar's own
@@ -271,9 +271,10 @@ def verdict(
     Exact, not tolerant. A tolerance band would be a second thing to argue
     about, and none is needed: the floor and the measurement are now the same
     quantity, so an unchanged layer compares equal and any real change fails.
-    `training/ship_bar.json` is byte-pinned and was NOT edited to arrive here.
-    A bar that can be rewritten after the result is not a commitment, and the
-    rounding is in the rendering rather than in the bar.
+    `training/ship_bar.json` is byte-pinned against `SHIP_BAR_SHA256`, so an
+    edit made to move this comparison after the fact would be caught rather
+    than silently smoothed over -- what moves the pin is the corpus this floor
+    is derived from changing for reasons of its own, not this comparison.
     """
     minimum = float(bar["our_minimum"])
     floor = float(bar["structural_floor_detail"]["recall"])
@@ -304,9 +305,10 @@ def verdict(
             "floor_published_as": float(bar["structural_floor"]),
             "floor_note": (
                 "The recall the floor was derived from, not its three-decimal rendering. "
-                "round(0.8846153846, 3) is 0.885, which is ABOVE the value it renders, so "
-                "comparing against the rendering fails an unchanged layer by 0.00038. Both "
-                "numbers are recorded in training/ship_bar.json and neither was edited."
+                "round(0.8909090909, 3) is 0.891, which is ABOVE the value it renders, so "
+                "comparing against the rendering fails an unchanged layer by 0.00009. Both "
+                "numbers are recorded in training/ship_bar.json, byte-pinned by "
+                "SHIP_BAR_SHA256."
             ),
             "comparison": ">=",
             "holds": structural_holds,
