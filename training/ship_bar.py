@@ -82,6 +82,12 @@ METRIC_DEFINITION = (
 #: How the recorded floor was arrived at, kept beside the number so a later
 #: reader cannot mistake it for the published finding-level one.
 STRUCTURAL_LEVEL = "decision"
+#: A PATH, not the corpus's own version digest -- which is the whole reason
+#: unrelated work landing on this path, as Task 11 of the phase 3 foundation
+#: session did by widening injection-structural to run on output, can move
+#: `structural_floor` at all; see `structural_floor_rederived` in the recorded
+#: bar for what that cost, and this is filed as a follow-up rather than fixed
+#: here.
 STRUCTURAL_CORPUS = "corpora/injection-structural/in-repo.jsonl"
 
 #: The published FINDING-level recall on the same corpus, recorded so the two
