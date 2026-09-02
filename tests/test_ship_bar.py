@@ -49,6 +49,7 @@ from training.ship_bar import (
     harness,
     required_minimum,
     structural_floor,
+    why_the_structural_side_exists,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -240,10 +241,18 @@ def test_the_structural_floor_is_the_decision_level_recall_of_the_shipped_corpus
     assert recorded["structural_floor"] == recomputed["floor"]
     assert recorded["structural_floor_detail"]["counts"] == recomputed["counts"]
     assert recorded["structural_floor_level"] == STRUCTURAL_LEVEL == "decision"
-    assert recorded["structural_floor"] == round(
-        recomputed["counts"]["tp"] / (recomputed["counts"]["tp"] + recomputed["counts"]["fn"]),
-        FLOOR_PLACES,
+    # The unrounded rate too, and against the counts rather than against itself.
+    # Rounding to three places hides WHICH rate was recorded: precision here is
+    # 0.958 and recall 0.885, and a mutation swapping one for the other inside
+    # `structural_floor` survived until this line existed, because the rounded
+    # `floor` was computed from a value the test never looked at.
+    counts = recomputed["counts"]
+    exact = counts["tp"] / (counts["tp"] + counts["fn"])
+    assert math.isclose(recomputed["recall"], exact, rel_tol=1e-12), (
+        f"structural_floor reports {recomputed['recall']} where TP/(TP+FN) is {exact}"
     )
+    assert math.isclose(recorded["structural_floor_detail"]["recall"], exact, rel_tol=1e-12)
+    assert recorded["structural_floor"] == round(exact, FLOOR_PLACES)
 
 
 def test_the_structural_floor_is_not_the_published_finding_level_number() -> None:
@@ -517,6 +526,12 @@ def test_the_structural_side_records_what_a_semantic_classifier_scored_there() -
     stage has already had once.
     """
     recorded = bar()["why_the_structural_side_exists"]
+    # Through the function that wrote it, not by re-implementing the read. A
+    # test that reads the same file the same way passes over a reader that went
+    # to the wrong corpus, which is a mutation that survived until this line
+    # called the function instead of imitating it.
+    assert recorded == why_the_structural_side_exists()
+
     measurements = json.loads(
         (ROOT / "benchmarks" / "results" / "measurements.json").read_text(encoding="utf-8")
     )
@@ -530,6 +545,9 @@ def test_the_structural_side_records_what_a_semantic_classifier_scored_there() -
     assert source, "measurements.json records no classifier over the structural corpus"
     assert {entry["id"]: entry["counts"] for entry in recorded["reference_classifiers"]} == source
     assert recorded["measured"] == measurements["measured"]
+    assert recorded["corpus"] == bar()["structural_floor_detail"]["corpus"], (
+        "the classifiers were scored on a corpus other than the one the floor came from"
+    )
 
     # The claim the finding rests on: every reference classifier is well below
     # the structural check on this corpus. Asserted rather than described, so a
