@@ -20,6 +20,7 @@ import functools
 import hashlib
 import inspect
 import json
+import math
 import os
 import re
 from collections.abc import Iterable
@@ -35,6 +36,7 @@ from training.backbone import (
     BACKBONES,
     REVISION,
     BackboneError,
+    described,
     digest_mismatches,
     licence_refusals,
     pin_faults,
@@ -114,6 +116,15 @@ from training.generate import (
     prompt_id,
     seeds_from_rows,
 )
+from training.scoring import (
+    NEGATIVE,
+    POSITIVE,
+    ScoringError,
+    at,
+    counts,
+    scored,
+    sweep,
+)
 from training.screen import (
     _FNG_DOMAINS,
     ATTRIBUTION,
@@ -158,6 +169,7 @@ from training.splits import (
     leaks,
     pool_key,
 )
+from training.splits import SEED as SPLIT_SEED
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCES = ROOT / "training" / "sources.yaml"
@@ -169,7 +181,18 @@ CONFORMANCE = ROOT / "docs" / "conformance.md"
 #: The module that fits the classifier. Read as TEXT: nothing in `tests/`
 #: imports `training/train.py`, because importing it would import torch, which
 #: is deliberately not installed anywhere the suite runs.
+#:
 TRAINER = ROOT / "training" / "train.py"
+
+#: What the run wrote. Read as JSON: the suite re-derives from the record the
+#: same way it re-derives from the corpus, rather than re-running the thing that
+#: made it.
+ARTIFACTS = ROOT / "training" / "artifacts"
+TRAINING_RUN = ARTIFACTS / "training_run.json"
+
+#: The same configuration, the same seed, a second process. The reproducibility
+#: claim is a comparison between two files rather than a sentence.
+TRAINING_RUN_REPEAT = ARTIFACTS / "training_run_repeat.json"
 
 #: The module that legitimately reads the evaluation set, used as the positive
 #: control for the scan that requires `TRAINER` never to.
@@ -4866,6 +4889,348 @@ def test_the_readme_cites_the_backbone_by_its_full_id() -> None:
             f"the README cites {entry.model_id} and not the {entry.upstream_id} it came from, "
             "so the licence question one step up is invisible to a reader"
         )
+
+
+def test_the_confusion_counts_are_taken_against_the_positive_label() -> None:
+    """Polarity, checked both ways round.
+
+    A counter with `POSITIVE` and its complement swapped produces four
+    plausible integers and every rate derived from them reads as a rate. The
+    only thing that tells them apart is a case where the two answers differ,
+    which is what an asymmetric input is for.
+    """
+    actual = [1, 1, 1, 0, 0]
+    predicted = [1, 1, 0, 1, 0]
+    assert counts(actual, predicted) == (2, 1, 1, 1)
+    # The dual: swap the labels and the counts swap with them, so the function
+    # is reading POSITIVE rather than reading position.
+    assert counts([1 - label for label in actual], [1 - label for label in predicted]) == (
+        1,
+        1,
+        1,
+        2,
+    )
+    assert POSITIVE == 1 and NEGATIVE == 0
+
+
+def test_predictions_shorter_than_the_labels_are_refused() -> None:
+    """`zip` truncates, so a metric over the first half of a set looks like a metric."""
+    with pytest.raises(ScoringError, match="5 labels against 3 predictions"):
+        counts([1, 1, 1, 0, 0], [1, 1, 0])
+
+
+def test_a_rate_with_no_denominator_is_zero_and_not_a_nan() -> None:
+    """A NaN reads as "did not clear" for a model nobody scored.
+
+    The same choice `training/ship_bar.py` makes, for the same reason, and it
+    has to be made in both places because they are separate arithmetic.
+    """
+    nothing_flagged = scored([1, 1, 0, 0], [0, 0, 0, 0])
+    assert (nothing_flagged.precision, nothing_flagged.recall, nothing_flagged.f1) == (
+        0.0,
+        0.0,
+        0.0,
+    )
+    assert not any(
+        math.isnan(value)
+        for value in (nothing_flagged.precision, nothing_flagged.recall, nothing_flagged.f1)
+    )
+    assert scored([], []).accuracy == 0.0
+
+
+def test_f1_is_the_harmonic_mean_of_the_two_rates() -> None:
+    here = scored([1, 1, 1, 1, 0, 0], [1, 1, 1, 0, 1, 0])
+    assert here.precision == pytest.approx(3 / 4)
+    assert here.recall == pytest.approx(3 / 4)
+    assert here.f1 == pytest.approx(3 / 4)
+    assert here.accuracy == pytest.approx(4 / 6)
+
+
+def test_a_row_sitting_exactly_on_the_threshold_is_flagged() -> None:
+    """The boundary, which is where a comparison fails without saying anything.
+
+    `>` and `>=` differ on exactly one input: the row whose probability IS the
+    threshold. Every other test of a decision rule passes under both, which is
+    why this one exists and why the sweep below walks the observed
+    probabilities, so a threshold it returns always has a row sitting on it.
+    """
+    assert at([0.4, 0.5, 0.6], 0.5) == [0, 1, 1]
+    assert at([0.4, 0.5, 0.6], 0.6) == [0, 0, 1]
+    assert at([0.0, 1.0], 0.0) == [1, 1]
+
+
+def test_the_sweep_takes_the_best_threshold_and_the_lower_of_two_that_tie() -> None:
+    """Ties to the recall-favouring side, because that is the side to lose to.
+
+    Also the dual: a set where a threshold OTHER than 0.5 is strictly better
+    has to move the answer, or the sweep is a function that returns its
+    starting point.
+    """
+    # 0.5 separates nothing here; 0.3 sorts it perfectly.
+    chance = [0.1, 0.2, 0.35, 0.4]
+    actual = [0, 0, 1, 1]
+    threshold, best = sweep(chance, actual)
+    assert threshold == 0.35
+    assert best.f1 == 1.0
+
+    # Every threshold at or below the lowest probability flags everything, and
+    # those all score the same; the lowest of them is the one returned.
+    threshold, best = sweep([0.6, 0.7, 0.8], [1, 1, 1])
+    assert threshold == 0.5
+    assert best.recall == 1.0
+
+
+def test_the_sweep_refuses_an_empty_set() -> None:
+    """Returning a default would answer "0.5 is best" for a set nobody measured."""
+    with pytest.raises(ScoringError, match="every threshold scores the same"):
+        sweep([], [])
+
+
+def _run(path: Path) -> dict[str, Any]:
+    record: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+    return record
+
+
+def _training_run() -> dict[str, Any]:
+    return _run(TRAINING_RUN)
+
+
+def test_the_run_record_repeats_the_pin_the_registry_screens() -> None:
+    """Two tables, and they have to agree.
+
+    The record is what a reader downstream believes about which weights were
+    fitted, and the registry is what the suite screens. A record naming a
+    different revision, or different digests, is a model nothing in this
+    repository has screened wearing the name of one that was.
+    """
+    assert _training_run()["backbone"] == described(BACKBONE)
+
+
+def test_the_run_was_fitted_on_the_corpus_and_the_split_committed_here() -> None:
+    """The rows the model read, held to the rows in the tree.
+
+    Digests on both, because a path is a name and a name is what stays the same
+    while the bytes change. `rows.jsonl` regenerated after training would leave
+    every path in the record still pointing at a file, and the model would have
+    been fitted on rows nobody can now read.
+    """
+    record = _training_run()
+    split = _split_record()
+    assert record["data"]["fitted_on"] == FITTED_ON
+    assert record["data"]["rows_sha256"] == sha256_of(GENERATED)
+    assert record["data"]["rows_sha256"] == split["rows_sha256"]
+    assert record["data"]["split_sha256"] == sha256_of(SPLITS)
+    assert record["data"]["split_seed"] == split["seed"]
+    assert record["data"]["train"]["rows"] == len(split["train"])
+    assert record["data"]["dev"]["rows"] == len(split["dev"])
+    assert record["data"]["train"]["labels"] == split["balance"]["train"]
+    assert record["data"]["dev"]["labels"] == split["balance"]["dev"]
+
+
+def test_every_rate_in_the_run_record_is_the_one_its_counts_give() -> None:
+    """Recomputed from four integers rather than trusted as eight decimals.
+
+    A rate typed into a record is a claim, and the failure this closes is not
+    hypothetical in this stage: a number restated in a second file drifts while
+    both files go on looking right. Every scored line carries its confusion
+    counts so nothing here has to take a rate on faith, and the counts have to
+    add up to the dev set as well, which is what catches a metric computed over
+    a subset.
+    """
+    record = _training_run()
+    dev_rows = record["data"]["dev"]["rows"]
+    scored = [epoch["dev"] for epoch in record["history"]]
+    scored.append(record["selected"]["dev"])
+    scored.append(record["selected"]["dev_at_tuned_threshold"])
+    assert len(scored) >= 3, "the record holds no history, so this checks nothing"
+    for entry in scored:
+        tp, fp, fn, tn = (int(entry[key]) for key in ("tp", "fp", "fn", "tn"))
+        assert tp + fp + fn + tn == dev_rows, f"{entry} does not cover the {dev_rows} dev rows"
+        precision = tp / (tp + fp) if tp + fp else 0.0
+        recall = tp / (tp + fn) if tp + fn else 0.0
+        f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+        assert entry["precision"] == pytest.approx(precision, abs=1e-9)
+        assert entry["recall"] == pytest.approx(recall, abs=1e-9)
+        assert entry["f1"] == pytest.approx(f1, abs=1e-9)
+        assert entry["accuracy"] == pytest.approx((tp + tn) / dev_rows, abs=1e-9)
+
+
+def test_the_selected_checkpoint_is_the_best_dev_epoch_the_run_recorded() -> None:
+    """The selection, re-derived rather than read.
+
+    This is the number the whole stage turns on, and it is chosen on DEV. A
+    record whose `selected` block named an epoch its own history does not
+    support would be a checkpoint chosen somewhere else, which is the one thing
+    the external evaluation set must never have been used for.
+    """
+    record = _training_run()
+    history = record["history"]
+    assert history, "no epochs recorded"
+    assert [epoch["epoch"] for epoch in history] == list(range(len(history)))
+    assert record["epochs_run"] == len(history)
+    best = max(history, key=lambda epoch: (epoch["dev"]["f1"], -epoch["epoch"]))
+    assert record["selected"]["epoch"] == best["epoch"]
+    assert record["selected"]["dev"] == best["dev"]
+    # And the tuned threshold cannot be worse on the set it was tuned on, which
+    # is what a threshold sweep run over the wrong probabilities looks like.
+    assert record["selected"]["dev_at_tuned_threshold"]["f1"] >= best["dev"]["f1"]
+    assert 0.0 <= record["selected"]["dev_at_tuned_threshold"]["threshold"] <= 1.0
+
+
+def test_the_run_record_points_at_weights_that_are_not_in_this_repository() -> None:
+    """Where the weights live and what they hash to, instead of the weights.
+
+    90 MB of parameters in git is 90 MB in every clone and every source
+    distribution forever. The record is the substitute, so it has to be
+    checkable: a path under `data/`, which `.gitignore` excludes, and a sha256
+    per file. And the directory the record itself lives in has to stay small,
+    which is the rule that fails the day somebody commits a checkpoint beside
+    it.
+    """
+    record = _training_run()
+    weights = record["weights"]
+    assert weights["path"].startswith("data/"), (
+        f"the weights are recorded at {weights['path']}, which is inside the repository"
+    )
+    assert "/data/" in (ROOT / ".gitignore").read_text(encoding="utf-8")
+    assert weights["files"], "no weight digests recorded"
+    for name, digest in weights["files"].items():
+        assert HEX64.match(digest), f"{name} is recorded as {digest!r}, not a sha256"
+    assert "model.safetensors" in weights["files"], "no weights file is recorded at all"
+
+    for path in sorted(ARTIFACTS.rglob("*")):
+        if not path.is_file():
+            continue
+        assert path.suffix == ".json", f"{path.name} is not a record; weights do not go here"
+        assert path.stat().st_size < 256 * 1024, f"{path.name} is {path.stat().st_size} bytes"
+
+
+def test_the_run_record_names_the_versions_a_re_run_has_to_match() -> None:
+    """A number is a number under a library version, and MPS kernels move.
+
+    Without this, a re-run that differed would look like an unseeded loop
+    rather than like a different torch. The pins are read from
+    `training/requirements.txt`, so a record made under something else fails
+    here instead of being discovered when somebody cannot reproduce it.
+    """
+    versions = _training_run()["versions"]
+    pinned = dict(
+        line.split("==", 1)
+        for line in (ROOT / "training" / "requirements.txt")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if "==" in line and not line.startswith("#")
+    )
+    for name in ("torch", "transformers", "scikit-learn"):
+        assert name in pinned, f"{name} is not pinned in training/requirements.txt"
+        assert versions[name] == pinned[name], (
+            f"the run used {name} {versions[name]} and the tree pins {pinned[name]}"
+        )
+    assert versions["python"].startswith("3.13."), versions["python"]
+    assert versions["platform"], "no platform recorded"
+
+
+def test_the_run_record_states_the_hyperparameters_and_the_seed() -> None:
+    """Reproducibility is the claim; these are what it is made of."""
+    parameters = _training_run()["hyperparameters"]
+    for key in ("epochs", "batch_size", "learning_rate", "seed", "patience", "max_length"):
+        assert key in parameters, f"the record does not state {key}"
+    assert parameters["epochs"] >= _training_run()["epochs_run"]
+    assert parameters["seed"] == SPLIT_SEED, (
+        "the training seed and the split seed differ; one number is easier to record than two "
+        "and this repository has only ever used one"
+    )
+    assert _training_run()["parameters"] == BACKBONE.parameters
+
+
+def test_the_run_was_repeated_from_its_seed_and_reached_the_same_dev_numbers() -> None:
+    """The reproducibility claim, measured rather than described.
+
+    Two full runs of one configuration under one seed, in separate processes,
+    recorded separately and held equal here epoch by epoch. Every epoch rather
+    than the selected one: a loop that agreed only where somebody looked would
+    be the same defect surviving the test written for it.
+
+    **Equal at the DECISIONS, not at the bits, and that is the finding.** Every
+    confusion count on DEV is identical in both runs, every epoch, so every
+    published rate is identical. The training loss is not: the two committed
+    records differ by up to 1.04e-06, growing with the epoch number, and their
+    saved `model.safetensors` hash to different digests. MPS reduces in a
+    non-deterministic order and float addition is not associative, so a sum
+    over 90 batches lands a few ULPs apart and the parameters follow.
+
+    The tolerance below is set above the divergence that was MEASURED, not at a
+    number that felt safe, and the weight digests are deliberately NOT compared:
+    asserting they match would be asserting something this hardware does not do,
+    and the test would have been weakened until it passed. What is claimed is
+    what holds -- the same seed reaches the same predictions on every dev row --
+    and it is stronger than the three decimals of F1 the plan asked for.
+    """
+    first, second = _training_run(), _run(TRAINING_RUN_REPEAT)
+    assert first["hyperparameters"] == second["hyperparameters"], (
+        "the two runs used different settings, so they are not a repeat"
+    )
+    assert first["backbone"] == second["backbone"]
+    assert first["data"]["rows_sha256"] == second["data"]["rows_sha256"]
+    assert first["versions"] == second["versions"]
+    assert len(first["history"]) == len(second["history"]) >= 2
+    for left, right in zip(first["history"], second["history"]):
+        assert left["epoch"] == right["epoch"]
+        assert left["dev"] == right["dev"], (
+            f"epoch {left['epoch']} scored {left['dev']} and then {right['dev']}; something "
+            "in the loop is not seeded"
+        )
+        assert left["train_loss"] == pytest.approx(right["train_loss"], abs=1e-5), (
+            f"epoch {left['epoch']} lost {left['train_loss']} and then {right['train_loss']}, "
+            "further apart than MPS float reordering accounts for"
+        )
+    assert first["selected"] == second["selected"]
+
+
+def test_the_readme_states_the_dev_metrics_the_run_recorded() -> None:
+    """Two tables, and they have to agree.
+
+    `training/README.md` prints the per-epoch DEV column and the record holds
+    it as data. A number in prose that restates a number in an artifact drifts,
+    and both copies go on looking right alone; this stage has already had that
+    failure once, with a size in KB that was written down and never recomputed.
+
+    Every row, not the selected one. A table trimmed to its best row cannot
+    show that the two epochs after it did not improve, which is the whole
+    argument for stopping where it stopped.
+    """
+    readme = " ".join(TRAINING_README.read_text(encoding="utf-8").split())
+    record = _training_run()
+    for epoch in record["history"]:
+        dev = epoch["dev"]
+        row = (
+            f"| {epoch['epoch']} | {epoch['train_loss']:.4f} | {dev['precision']:.4f} | "
+            f"{dev['recall']:.4f} | {dev['f1']:.4f} |"
+        )
+        assert row in readme, f"training/README.md does not state {row!r}"
+    for other in record["considered"]:
+        row = (
+            f"| {other['epochs']} | {other['learning_rate']:g} | "
+            f"{other['selected_epoch']} | {other['dev_f1']:.4f} |"
+        )
+        assert row in readme, f"training/README.md does not state {row!r}"
+    seconds = round(sum(epoch["seconds"] for epoch in record["history"]), 1)
+    repeat = _run(TRAINING_RUN_REPEAT)
+    apart = max(
+        abs(left["train_loss"] - right["train_loss"])
+        for left, right in zip(record["history"], repeat["history"])
+    )
+    for claim in (
+        f"differ by at most {apart:.3g} over the",
+        f"{seconds} seconds of wall clock",
+        f"One row of {record['data']['train']['rows'] + record['data']['dev']['rows']} is longer",
+        f"**Epoch {record['selected']['epoch']} is the checkpoint**",
+        f"the best of them is {record['selected']['dev_at_tuned_threshold']['threshold']}",
+    ):
+        assert claim in readme, f"training/README.md does not state {claim!r}"
+    assert record["truncated_rows"] == 1, (
+        f"the README says one row was truncated and the record says {record['truncated_rows']}"
+    )
 
 
 # --------------------------------------------------------------------------

@@ -1,0 +1,224 @@
+{
+  "backbone": {
+    "files": {
+      "config.json": "953f9c0d463486b10a6871cc2fd59f223b2c70184f49815e7efbcab5d8908b41",
+      "model.safetensors": "53aa51172d142c89d9012cce15ae4d6cc0ca6895895114379cacb4fab128d9db",
+      "special_tokens_map.json": "303df45a03609e4ead04bc3dc1536d0ab19b5358db685b6f3da123d05ec200e3",
+      "tokenizer.json": "be50c3628f2bf5bb5e3a7f17b1f74611b2561a3a27eeab05e5aa30f411572037",
+      "tokenizer_config.json": "acb92769e8195aabd29b7b2137a9e6d6e25c476a4f15aa4355c233426c61576b",
+      "vocab.txt": "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3"
+    },
+    "licence": "apache-2.0",
+    "licence_declared_in": "README.md",
+    "licence_sha256": "dcd602d2fd35c203a247304a06fec6654a12f7941b739f9221a064fe8dc3b7f0",
+    "model_id": "sentence-transformers/all-MiniLM-L6-v2",
+    "parameters": 22713986,
+    "read_on": "2026-09-02",
+    "revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+    "upstream_id": "nreimers/MiniLM-L6-H384-uncased",
+    "upstream_licence": "mit"
+  },
+  "considered": [],
+  "data": {
+    "dev": {
+      "labels": {
+        "0": 359,
+        "1": 359
+      },
+      "rows": 718
+    },
+    "fitted_on": "training/generated/rows.jsonl",
+    "rows_sha256": "ce698f62dc86f510cb7ff5fafabb87cfb3ce808dff2ad810ec7d3118d0a49423",
+    "split": "training/generated/splits.json",
+    "split_seed": 20260831,
+    "split_sha256": "998ee0e18ac5168ebb4f482da6b90d1b42e5df4e58a4523942f9599ad241e72f",
+    "train": {
+      "labels": {
+        "0": 1433,
+        "1": 1433
+      },
+      "rows": 2866
+    }
+  },
+  "device": "mps",
+  "epochs_run": 8,
+  "history": [
+    {
+      "dev": {
+        "accuracy": 0.8384401114206128,
+        "f1": 0.8204334365325077,
+        "fn": 94,
+        "fp": 22,
+        "precision": 0.9233449477351916,
+        "recall": 0.7381615598885793,
+        "tn": 337,
+        "tp": 265
+      },
+      "epoch": 0,
+      "seconds": 30.7,
+      "train_loss": 0.607859116130405
+    },
+    {
+      "dev": {
+        "accuracy": 0.8969359331476323,
+        "f1": 0.8936781609195402,
+        "fn": 48,
+        "fp": 26,
+        "precision": 0.9228486646884273,
+        "recall": 0.8662952646239555,
+        "tn": 333,
+        "tp": 311
+      },
+      "epoch": 1,
+      "seconds": 30.3,
+      "train_loss": 0.32730379187398484
+    },
+    {
+      "dev": {
+        "accuracy": 0.9178272980501393,
+        "f1": 0.9158345221112696,
+        "fn": 38,
+        "fp": 21,
+        "precision": 0.9385964912280702,
+        "recall": 0.8941504178272981,
+        "tn": 338,
+        "tp": 321
+      },
+      "epoch": 2,
+      "seconds": 30.3,
+      "train_loss": 0.19756903077165286
+    },
+    {
+      "dev": {
+        "accuracy": 0.915041782729805,
+        "f1": 0.9172320217096337,
+        "fn": 21,
+        "fp": 40,
+        "precision": 0.8941798941798942,
+        "recall": 0.9415041782729805,
+        "tn": 319,
+        "tp": 338
+      },
+      "epoch": 3,
+      "seconds": 30.4,
+      "train_loss": 0.14283666167822148
+    },
+    {
+      "dev": {
+        "accuracy": 0.9303621169916435,
+        "f1": 0.9287749287749287,
+        "fn": 33,
+        "fp": 17,
+        "precision": 0.9504373177842566,
+        "recall": 0.9080779944289693,
+        "tn": 342,
+        "tp": 326
+      },
+      "epoch": 4,
+      "seconds": 30.6,
+      "train_loss": 0.09406529800552461
+    },
+    {
+      "dev": {
+        "accuracy": 0.9373259052924791,
+        "f1": 0.9365303244005643,
+        "fn": 27,
+        "fp": 18,
+        "precision": 0.9485714285714286,
+        "recall": 0.924791086350975,
+        "tn": 341,
+        "tp": 332
+      },
+      "epoch": 5,
+      "seconds": 34.8,
+      "train_loss": 0.0722184918820858
+    },
+    {
+      "dev": {
+        "accuracy": 0.9331476323119777,
+        "f1": 0.9327731092436975,
+        "fn": 26,
+        "fp": 22,
+        "precision": 0.9380281690140845,
+        "recall": 0.9275766016713092,
+        "tn": 337,
+        "tp": 333
+      },
+      "epoch": 6,
+      "seconds": 41.7,
+      "train_loss": 0.05473851497388548
+    },
+    {
+      "dev": {
+        "accuracy": 0.9303621169916435,
+        "f1": 0.9291784702549575,
+        "fn": 31,
+        "fp": 19,
+        "precision": 0.9452449567723343,
+        "recall": 0.9136490250696379,
+        "tn": 340,
+        "tp": 328
+      },
+      "epoch": 7,
+      "seconds": 40.8,
+      "train_loss": 0.03985464386124578
+    }
+  ],
+  "hyperparameters": {
+    "batch_size": 32,
+    "epochs": 8,
+    "learning_rate": 2e-05,
+    "max_length": 256,
+    "optimiser": "AdamW",
+    "patience": 3,
+    "seed": 20260831
+  },
+  "parameters": 22713986,
+  "selected": {
+    "dev": {
+      "accuracy": 0.9373259052924791,
+      "f1": 0.9365303244005643,
+      "fn": 27,
+      "fp": 18,
+      "precision": 0.9485714285714286,
+      "recall": 0.924791086350975,
+      "tn": 341,
+      "tp": 332
+    },
+    "dev_at_tuned_threshold": {
+      "accuracy": 0.9373259052924791,
+      "f1": 0.9365303244005643,
+      "fn": 27,
+      "fp": 18,
+      "precision": 0.9485714285714286,
+      "recall": 0.924791086350975,
+      "threshold": 0.5,
+      "tn": 341,
+      "tp": 332
+    },
+    "epoch": 5,
+    "why": "the highest dev F1 of every epoch that ran, ties to the earlier epoch. Selected on DEV and on nothing else: the external evaluation set is measured once, by a later task, against a bar recorded before this model existed"
+  },
+  "trained_on": "2026-09-02",
+  "trained_utc": "2026-09-02T09:13:51.071631+00:00",
+  "truncated_rows": 1,
+  "versions": {
+    "numpy": "2.5.2",
+    "platform": "Darwin 25.6.0 arm64",
+    "python": "3.13.2",
+    "scikit-learn": "1.7.2",
+    "torch": "2.8.0",
+    "transformers": "4.57.1"
+  },
+  "weights": {
+    "files": {
+      "config.json": "71d3a1a27ceaeccd6e39d76bde1f61696343e40739acb4bb0c827706313da134",
+      "model.safetensors": "2b51b4c6ea3584b555a9f1113f6f0f2bcc49aa01ef7ef7e1d2973d2676f667de",
+      "special_tokens_map.json": "5d5b662e421ea9fac075174bb0688ee0d9431699900b90662acd44b2a350503a",
+      "tokenizer.json": "0d3aef594edd5f9b53e7f814277a9171dc70ff93eb66bda6e01f7aa53997d963",
+      "tokenizer_config.json": "ccb4eb21a03e1442ee5c3f85431b9c307960a04579942537d74778dc8080a48c",
+      "vocab.txt": "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3"
+    },
+    "path": "data/model/selected-repeat"
+  }
+}

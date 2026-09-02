@@ -32,13 +32,14 @@ from __future__ import annotations
 import json
 import math
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from training.evalset import EVAL_SOURCE
-from training.fetch import load_sources
+from training.fetch import load_sources, sha256_of
 from training.ship_bar import (
     FLOOR_PLACES,
     PUBLISHED_FINDING_LEVEL_RECALL,
@@ -56,6 +57,21 @@ ROOT = Path(__file__).resolve().parent.parent
 SHIP_BAR = ROOT / "training" / "ship_bar.json"
 SPLITS = ROOT / "training" / "generated" / "splits.json"
 MANIFEST = ROOT / "training" / "sources.yaml"
+ARTIFACTS = ROOT / "training" / "artifacts"
+
+#: sha256 of `training/ship_bar.json` as it was committed, in
+#: `feat: record the ship bar before any model exists`, before any model in
+#: this repository had been trained.
+#:
+#: This replaced a weaker check and the replacement is the point. The ordering
+#: used to be witnessed by `training/artifacts/` not existing, which is a
+#: property that can only ever be true once: the day a model was trained the
+#: assertion stopped being a guard and became a failure, and the tempting fix
+#: was to delete the line. A digest keeps the same claim afterwards. The bar is
+#: a commitment made before the result, and a commitment that can be edited
+#: after the result is none, so any edit to that file from here on fails here
+#: whatever else in the suite still passes.
+SHIP_BAR_SHA256 = "92d6c734ada7e28c081af635e24fea6d53b4fd250056f6fbb3bbc1f0b259cfbc"
 
 
 def bar() -> dict[str, Any]:
@@ -367,15 +383,49 @@ def test_the_metric_is_defined_at_the_decision_level_in_the_file() -> None:
 
 
 def test_the_bar_was_recorded_before_any_model_existed() -> None:
-    """The ordering, which is the whole reason the bar means anything."""
+    """The ordering, which is the whole reason the bar means anything.
+
+    A model now exists, so the old form of this check is gone: it asserted that
+    `training/artifacts/` did not exist, which witnessed the ordering exactly
+    once and then turned into a failure whose obvious fix was to delete it. The
+    claim has not changed and neither has its strength. It is now carried by two
+    things that go on holding after a model is trained:
+
+    - **the bar cannot have been edited.** Its bytes are pinned by
+      `SHIP_BAR_SHA256`, taken at the commit that recorded it, before any
+      training run in this repository.
+    - **the bar predates every model.** Each run record carries `trained_utc`,
+      and the bar carries `recorded_utc`. Both are instants rather than dates,
+      because the first model was fitted on the same day the bar was written
+      and two dates cannot be put in order.
+
+    Timestamps alone would not be enough, which is why the digest is first: a
+    `recorded_utc` that can be edited is a timestamp that says whatever the last
+    editor needed it to say.
+    """
     recorded = bar()
     assert recorded["recorded_before_any_model_existed"] is True
     assert recorded["recorded_utc"].endswith("+00:00"), (
         f"recorded_utc is {recorded['recorded_utc']!r}, which is not UTC"
     )
-    assert not (ROOT / "training" / "artifacts").exists(), (
-        "a model artifact exists, so this file can no longer witness the ordering"
+    assert sha256_of(SHIP_BAR) == SHIP_BAR_SHA256, (
+        "training/ship_bar.json has changed since it was recorded; a bar edited after the "
+        "model it judges is not a commitment made before the result"
     )
+
+    written = datetime.fromisoformat(recorded["recorded_utc"])
+    records = sorted(ARTIFACTS.glob("*.json")) if ARTIFACTS.is_dir() else []
+    assert records, (
+        "no model record exists yet, so the ordering below is vacuous; delete this line "
+        "only when one does"
+    )
+    for path in records:
+        run = json.loads(path.read_text(encoding="utf-8"))
+        trained = datetime.fromisoformat(run["trained_utc"])
+        assert trained > written, (
+            f"{path.name} was trained at {trained.isoformat()} and the bar was recorded at "
+            f"{written.isoformat()}; the bar has to come first"
+        )
 
 
 def test_the_two_references_did_not_decide_identically() -> None:

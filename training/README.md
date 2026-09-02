@@ -851,3 +851,111 @@ that does not match, a revision that is a branch name, or an empty file map all
 refuse the run, and the last of those is the one a shape test passes over: an
 entry pinning no digests clears every byte comparison there is by having none
 to make.
+
+### The run, and what it selected
+
+Fitted on TRAIN, 2866 rows, 1433 of each label. Scored on DEV, 718 rows, 359 of
+each, after every epoch. The evaluation set was not touched: it is external, it
+is measured once, by a later task, against a bar written down before this model
+existed, and `test_the_training_module_cannot_reach_the_evaluation_set` parses
+`training/train.py` and fails if it ever reaches for it.
+
+Eight epochs, batch 32, AdamW at 2e-5, seed 20260831, 256-token window, on MPS.
+One row of 3584 is longer than the window and was truncated. 242.8 seconds of
+wall clock in total, on an Apple M3 Max that was doing other things at the
+time, so treat that figure as an upper bound rather than a benchmark.
+
+| epoch | train loss | DEV precision | DEV recall | DEV F1 |
+|---|---|---|---|---|
+| 0 | 0.6079 | 0.9233 | 0.7382 | 0.8204 |
+| 1 | 0.3273 | 0.9228 | 0.8663 | 0.8937 |
+| 2 | 0.1976 | 0.9386 | 0.8942 | 0.9158 |
+| 3 | 0.1428 | 0.8942 | 0.9415 | 0.9172 |
+| 4 | 0.0941 | 0.9504 | 0.9081 | 0.9288 |
+| 5 | 0.0722 | 0.9486 | 0.9248 | 0.9365 |
+| 6 | 0.0547 | 0.9380 | 0.9276 | 0.9328 |
+| 7 | 0.0399 | 0.9452 | 0.9136 | 0.9292 |
+
+**Epoch 5 is the checkpoint**, on the highest DEV F1, ties to the earlier
+epoch. Epochs 6 and 7 kept driving the training loss down and did not improve
+DEV, which is what the last two rows are for: they are the evidence that
+stopping later would have been fitting the training half harder rather than
+learning anything, and they are printed rather than trimmed because a table
+that stops at its own best row cannot show that.
+
+Every rate above is re-derived from the confusion counts recorded beside it by
+`test_every_rate_in_the_run_record_is_the_one_its_counts_give`, and this table
+is held equal to the record by
+`test_the_readme_states_the_dev_metrics_the_run_recorded`. A rate typed into a
+document is a claim; one that can be recomputed from four integers is not.
+
+The threshold was swept on DEV over the probabilities the model actually
+produced, and the best of them is 0.5, which is the argmax the epoch metrics
+already use. That is a finding and not a default: the classes are balanced by
+construction, so the boundary the sweep would move to is the boundary it starts
+at. It is recorded anyway, because the sweep is what a later task must not run
+on the evaluation set.
+
+Four configurations were tried and all four are in the record's `considered`
+block, read off the files they wrote rather than retyped:
+
+| epochs | learning rate | best epoch | DEV F1 |
+|---|---|---|---|
+| 3 | 2e-05 | 2 | 0.9158 |
+| 8 | 2e-05 | 5 | 0.9365 |
+| 8 | 3e-05 | 6 | 0.9290 |
+| 8 | 5e-05 | 6 | 0.9343 |
+
+The first row is the configuration the plan named, and it is the weakest of the
+four: at three epochs the model was still improving, so three epochs measured
+how long it had been allowed to run rather than what it could reach. Selection
+across all four was on DEV and on nothing else.
+
+### Where the arithmetic lives
+
+`training/train.py` imports torch, so nothing in it can be tested by a suite
+that runs without torch, and CI runs without torch on purpose. The four rules
+that decide every number published about our own model are therefore in
+`training/scoring.py`, which imports nothing but the standard library: the
+confusion counts, the rates derived from them, the decision a threshold makes,
+and the sweep that picks one.
+
+That split is what lets the boundary be tested. `at` compares with `>=`, and
+`>` and `>=` differ on exactly one input -- the row whose probability IS the
+threshold -- so every test of a decision rule that does not put a row there
+passes under both. `train.py` still cross-checks the same counts against
+scikit-learn on every evaluation, so the arithmetic has a second opinion where
+scikit-learn is installed and a test where it is not.
+
+### Reproducibility, measured rather than claimed
+
+The whole run was repeated from the same seed, in a separate process, and
+recorded separately as `training/artifacts/training_run_repeat.json`.
+`test_the_run_was_repeated_from_its_seed_and_reached_the_same_dev_numbers`
+holds the two runs together epoch by epoch.
+
+**The same seed reaches the same predictions, and not the same bits.** Every
+confusion count on DEV is identical in both runs, at every epoch, so every rate
+above reproduces exactly rather than to three decimals. The training loss does
+not: the two runs differ by at most 1.04e-06 over the eight epochs, growing
+with the epoch number, and the two saved `model.safetensors` files hash to
+different digests.
+
+That is MPS, and it is not a defect in the seeding. Float addition is not
+associative and the backend does not fix a reduction order, so a sum over 90
+batches lands a few units in the last place apart and the parameters follow it.
+Argmax over two logits is not sensitive at that scale, which is why the
+decisions survive and the loss does not.
+
+Recorded this way round on purpose. The test asserts the equality that HOLDS
+and does not compare the weight digests, because asserting a match this
+hardware does not produce would have ended with the comparison being loosened
+until it passed. The tolerance on the loss is set above the divergence that was
+measured, not at a number that felt safe. A reader who needs bit-identical
+weights needs a CPU run or a deterministic backend, and this file is not
+claiming to have one.
+
+The weights are not in this repository. They are 90 MB under `data/`, which
+`.gitignore` excludes, and the record names the directory and a sha256 for
+every file in it, so a copy on another machine is checkable and a copy that
+differs is not silently the same model.

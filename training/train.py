@@ -55,7 +55,6 @@ import random
 import sys
 import time
 from collections.abc import Sequence
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -71,6 +70,7 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 from training.backbone import BACKBONE, Backbone, described, download, verified
 from training.fetch import ROOT, sha256_of
 from training.generate import GENERATED, Row, load_generated
+from training.scoring import POSITIVE, Scored, at, scored, sweep
 from training.split import Split, separated_twins
 from training.splits import FITTED_ON, SPLITS, corpus_keys
 
@@ -90,45 +90,9 @@ RECORD = ROOT / "training" / "artifacts" / "training_run.json"
 #: parameters is not something this repository commits.
 WEIGHTS = ROOT / "data" / "model"
 
-#: The label a positive is. One place, because a metric computed against the
-#: other one is a metric that reads plausibly and measures the complement.
-POSITIVE = 1
-
 
 class TrainingError(RuntimeError):
     """The run cannot honestly start, or cannot honestly be recorded."""
-
-
-@dataclass(frozen=True, slots=True)
-class Scored:
-    """One evaluation of the model over one set, with its counts kept.
-
-    The counts are carried rather than the rates alone. A rate restated
-    elsewhere drifts and both copies go on looking right; a rate that can be
-    re-derived from four integers cannot, and `tests/test_training_data.py`
-    re-derives every one of them from the record.
-    """
-
-    tp: int
-    fp: int
-    fn: int
-    tn: int
-    precision: float
-    recall: float
-    f1: float
-    accuracy: float
-
-    def as_record(self) -> dict[str, Any]:
-        return {
-            "tp": self.tp,
-            "fp": self.fp,
-            "fn": self.fn,
-            "tn": self.tn,
-            "precision": self.precision,
-            "recall": self.recall,
-            "f1": self.f1,
-            "accuracy": self.accuracy,
-        }
 
 
 class Rows:
@@ -181,49 +145,28 @@ def seed_everything(seed: int) -> None:
     torch.use_deterministic_algorithms(True, warn_only=True)
 
 
-def counts(actual: Sequence[int], predicted: Sequence[int]) -> tuple[int, int, int, int]:
-    """The confusion counts, as (tp, fp, fn, tn) against `POSITIVE`."""
-    if len(actual) != len(predicted):
-        raise TrainingError(f"{len(actual)} labels against {len(predicted)} predictions")
-    tp = sum(1 for a, p in zip(actual, predicted) if a == POSITIVE and p == POSITIVE)
-    fp = sum(1 for a, p in zip(actual, predicted) if a != POSITIVE and p == POSITIVE)
-    fn = sum(1 for a, p in zip(actual, predicted) if a == POSITIVE and p != POSITIVE)
-    tn = sum(1 for a, p in zip(actual, predicted) if a != POSITIVE and p != POSITIVE)
-    return tp, fp, fn, tn
+def cross_checked(actual: Sequence[int], predicted: Sequence[int]) -> Scored:
+    """`training.scoring.scored`, held equal to scikit-learn where it is installed.
 
-
-def scored(actual: Sequence[int], predicted: Sequence[int]) -> Scored:
-    """Precision, recall and F1, cross-checked against scikit-learn.
-
-    Two implementations of one quantity, held equal. Not belt and braces: the
-    counts are what the record carries and what the suite re-derives from, so a
-    counting bug here would be re-derived faithfully by every test downstream
-    and agree with itself all the way to a published number.
+    Two implementations of one quantity, and not belt and braces. The counts
+    are what the record carries and what the suite re-derives every published
+    rate from, so a counting error would be re-derived faithfully by every test
+    downstream and agree with itself all the way to a number somebody quotes.
+    `training/scoring.py` imports nothing, so CI tests the arithmetic without
+    scikit-learn; this is the second opinion on the machine that has it.
     """
-    tp, fp, fn, tn = counts(actual, predicted)
+    mine = scored(actual, predicted)
     precision, recall, f1, _ = precision_recall_fscore_support(
         actual, predicted, average="binary", pos_label=POSITIVE, zero_division=0
     )
-    mine = (
-        tp / (tp + fp) if tp + fp else 0.0,
-        tp / (tp + fn) if tp + fn else 0.0,
-    )
-    if abs(mine[0] - float(precision)) > 1e-9 or abs(mine[1] - float(recall)) > 1e-9:
-        raise TrainingError(
-            f"counts give precision {mine[0]} recall {mine[1]}; scikit-learn gives "
-            f"{float(precision)} and {float(recall)}"
-        )
-    total = tp + fp + fn + tn
-    return Scored(
-        tp=tp,
-        fp=fp,
-        fn=fn,
-        tn=tn,
-        precision=float(precision),
-        recall=float(recall),
-        f1=float(f1),
-        accuracy=(tp + tn) / total if total else 0.0,
-    )
+    for name, ours, theirs in (
+        ("precision", mine.precision, float(precision)),
+        ("recall", mine.recall, float(recall)),
+        ("f1", mine.f1, float(f1)),
+    ):
+        if abs(ours - theirs) > 1e-9:
+            raise TrainingError(f"the counts give {name} {ours} and scikit-learn gives {theirs}")
+    return mine
 
 
 def probabilities(model: Any, loader: Any, device: Any) -> tuple[list[float], list[int]]:
@@ -245,35 +188,6 @@ def probabilities(model: Any, loader: Any, device: Any) -> tuple[list[float], li
             chance += torch.softmax(logits.float(), dim=-1)[:, POSITIVE].cpu().tolist()
             actual += [int(label) for label in batch["labels"].tolist()]
     return chance, actual
-
-
-def at(chance: Sequence[float], threshold: float) -> list[int]:
-    """The decisions a threshold makes.
-
-    `>=`, and stated because the boundary is where a guard fails quietly: a
-    model that put exactly 0.5 on a row is decided by this comparison and by
-    nothing else.
-    """
-    return [POSITIVE if value >= threshold else 1 - POSITIVE for value in chance]
-
-
-def sweep(chance: Sequence[float], actual: Sequence[int]) -> tuple[float, Scored]:
-    """The DEV threshold with the best F1, and what it scores there.
-
-    Swept over the probabilities the model actually produced rather than over a
-    grid, so the chosen threshold is one that sits on a real boundary between
-    two rows instead of in whatever gap a round number happened to fall in.
-    Ties go to the lower threshold, which is the recall-favouring side, and
-    that is the side an injection detector should lose to.
-    """
-    if not chance:
-        raise TrainingError("no probabilities to sweep, so any threshold is best")
-    best_threshold, best = 0.5, scored(actual, at(chance, 0.5))
-    for threshold in sorted(set(chance)):
-        here = scored(actual, at(chance, threshold))
-        if here.f1 > best.f1 or (here.f1 == best.f1 and threshold < best_threshold):
-            best_threshold, best = threshold, here
-    return best_threshold, best
 
 
 def corpus(rows: Sequence[Row], split: dict[str, Any]) -> tuple[Split, list[str], list[int]]:
@@ -463,7 +377,7 @@ def train(
             optimiser.step()
             total += float(loss.detach())
         chance, actual = probabilities(model, dev_loader, device)
-        here = scored(actual, at(chance, 0.5))
+        here = cross_checked(actual, at(chance, 0.5))
         history.append(
             {
                 "epoch": epoch,
@@ -557,7 +471,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     made, texts, labels = corpus(rows, split)
 
     record: dict[str, Any] = {
+        # Both, and not one. The date is what a reader wants; the timestamp is
+        # what an ORDERING needs. `training/ship_bar.json` records a UTC instant
+        # and has to predate every model it judges, and two values on the same
+        # day cannot be put in order by their dates.
         "trained_on": datetime.now(tz=timezone.utc).date().isoformat(),
+        "trained_utc": datetime.now(tz=timezone.utc).isoformat(),
         "backbone": described(BACKBONE),
         "hyperparameters": {
             "epochs": args.epochs,

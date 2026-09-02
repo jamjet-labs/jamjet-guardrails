@@ -244,9 +244,20 @@ def test_the_ship_bar_was_recorded_before_any_model_existed() -> None:
         "the reference score must be measured by us on the held-out corpus, "
         "not quoted from a published leaderboard"
     )
-    # The ordering, asserted rather than described. No model exists yet, and the
-    # day one does it must not be able to arrive in the same commit as the bar.
-    assert not (ROOT / "training" / "artifacts").exists(), (
-        "training/artifacts/ exists, so a model is present; the bar had to be "
-        "recorded before it and this test can no longer witness that ordering"
-    )
+    # The ordering, asserted rather than described. This used to be "no model
+    # exists yet", which witnessed it exactly once: the day a model was trained
+    # the assertion became a failure whose obvious fix was to delete the line.
+    # What survives a model existing is that the bar is not re-recorded beside
+    # one. `training/artifacts/` holds the run records, and nothing in it may
+    # be a second copy of the bar for a later reader to prefer.
+    artifacts = ROOT / "training" / "artifacts"
+    for path in sorted(artifacts.glob("*.json")) if artifacts.is_dir() else []:
+        beside = json.loads(path.read_text(encoding="utf-8"))
+        assert "our_minimum" not in beside, (
+            f"{path.name} carries our_minimum, so a ship bar has been written beside the "
+            "model it judges; the one in training/ship_bar.json is the only one"
+        )
+    # `tests/test_ship_bar.py` holds the bar's own bytes to the digest they had
+    # before any model existed, and holds every run record's trained_utc after
+    # the bar's recorded_utc. That is the ordering itself; this is the rule
+    # that stops a second bar appearing where nothing would compare it.
