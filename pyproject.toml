@@ -132,16 +132,27 @@ files = ["src", "tests", "training"]
 python_version = "3.10"
 
 # The training tree's machine learning imports, and only those. `training/train.py`
-# needs torch, transformers, numpy and scikit-learn; none of them is installed in
-# `.venv` or in CI, because the separate `.venv-training` is the whole mechanism
-# that keeps `dependencies = []` true. Without this a bare `mypy` fails on an
-# import it is not supposed to be able to resolve, which would make the type gate
-# depend on somebody having installed a gigabyte of torch. Every other strict
-# setting stays on for these modules and for every other module in the tree.
+# needs torch, transformers, numpy and scikit-learn, and `training/export.py`
+# adds onnx and onnxruntime; none of them is installed in `.venv` or in CI,
+# because the separate `.venv-training` is the whole mechanism that keeps
+# `dependencies = []` true. Without this a bare `mypy` fails on an import it is
+# not supposed to be able to resolve, which would make the type gate depend on
+# somebody having installed a gigabyte of torch. Every other strict setting
+# stays on for these modules and for every other module in the tree.
+#
+# This list is a permission to be unable to RESOLVE an import, and it is not a
+# permission to depend on one. `training/measure.py` imports numpy and
+# onnxruntime inside the functions that use them rather than at the top, so the
+# windowing rules 2b-2 ports stay importable and testable where neither is
+# installed; that is a property of that module, not of this table.
 [[tool.mypy.overrides]]
 module = [
   "numpy",
   "numpy.*",
+  "onnx",
+  "onnx.*",
+  "onnxruntime",
+  "onnxruntime.*",
   "sklearn",
   "sklearn.*",
   "torch",

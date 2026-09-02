@@ -73,6 +73,24 @@ ARTIFACTS = ROOT / "training" / "artifacts"
 #: whatever else in the suite still passes.
 SHIP_BAR_SHA256 = "92d6c734ada7e28c081af635e24fea6d53b4fd250056f6fbb3bbc1f0b259cfbc"
 
+#: The instant every committed artifact under `training/artifacts/` records, by
+#: file name, so each one can be ordered against the bar.
+#:
+#: A file NOT named here fails rather than being skipped, and that is the whole
+#: design. This guard used to read `trained_utc` off every JSON it found, which
+#: worked while every artifact was a training run and would have started raising
+#: KeyError the moment one was not -- and the obvious fix for a KeyError is to
+#: skip the file, which is how an artifact stops being ordered against the bar
+#: without anybody deciding that it should. Declaring the key per file makes
+#: adding an artifact a decision about what instant it carries.
+INSTANT_OF = {
+    "training_run.json": "trained_utc",
+    "training_run_repeat.json": "trained_utc",
+    "export.json": "exported_utc",
+    "export_repeat.json": "exported_utc",
+    "metrics.json": "measured_utc",
+}
+
 
 def bar() -> dict[str, Any]:
     loaded: dict[str, Any] = json.loads(SHIP_BAR.read_text(encoding="utf-8"))
@@ -419,11 +437,20 @@ def test_the_bar_was_recorded_before_any_model_existed() -> None:
         "no model record exists yet, so the ordering below is vacuous; delete this line "
         "only when one does"
     )
+    found = {path.name for path in records}
+    assert found == set(INSTANT_OF), (
+        f"training/artifacts/ holds {sorted(found)} and this guard knows how to order "
+        f"{sorted(INSTANT_OF)} against the bar; an artifact nobody has given an instant is "
+        "an artifact the ordering has stopped covering"
+    )
     for path in records:
-        run = json.loads(path.read_text(encoding="utf-8"))
-        trained = datetime.fromisoformat(run["trained_utc"])
-        assert trained > written, (
-            f"{path.name} was trained at {trained.isoformat()} and the bar was recorded at "
+        beside = json.loads(path.read_text(encoding="utf-8"))
+        key = INSTANT_OF[path.name]
+        assert key in beside, f"{path.name} records no {key}, so it cannot be ordered"
+        when = datetime.fromisoformat(beside[key])
+        assert when.tzinfo is not None, f"{path.name} records {key} without an offset"
+        assert when > written, (
+            f"{path.name} records {key} {when.isoformat()} and the bar was recorded at "
             f"{written.isoformat()}; the bar has to come first"
         )
 

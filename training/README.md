@@ -47,11 +47,10 @@ and a venv holding a gigabyte of torch is not something to find out about from
 
 ### From fetch to export
 
-Four commands exist so far, and they are written down because they run. The
-scripts that fine-tune the encoder and export to ONNX arrive with the tasks
-that write them, and each lands here when it exists: a sequence documented
-ahead of its scripts is a list of commands that do not run, which is the class
-of claim this repository spends most of its effort not making.
+Six commands exist so far, and they are written down because they run. Each
+lands here when it exists: a sequence documented ahead of its scripts is a list
+of commands that do not run, which is the class of claim this repository spends
+most of its effort not making.
 `test_every_runnable_training_module_is_a_documented_command` holds this block
 to the modules that actually have a `__main__`, in both directions.
 
@@ -75,6 +74,21 @@ PYTHONPATH=src:. /tmp/guardrails-bench/bin/python -m training.ship_bar \
 # training/artifacts/training_run.json. Needs the network the first time, to
 # fetch the pinned backbone; nothing after that. Weights land under data/.
 ./.venv-training/bin/python -m training.train
+
+# The ONNX export and its int8 quantisation. Verifies the checkpoint against
+# the digests training_run.json recorded before it reads a byte of it, and
+# writes training/artifacts/export.json. The models land under data/.
+./.venv-training/bin/python -m training.export
+
+# The same export a second time, into a second directory, so the determinism
+# claim below is a comparison between two files rather than a sentence.
+./.venv-training/bin/python -m training.export \
+  --out data/onnx-repeat --record training/artifacts/export_repeat.json
+
+# The measurement. Scores both models on DEV, sweeps the window and the stride
+# on long documents built out of DEV rows, and writes
+# training/artifacts/metrics.json. Reads no corpus but DEV.
+./.venv-training/bin/python -m training.measure
 ```
 
 The first two write into `training/generated/`, which is committed, and both
@@ -160,14 +174,25 @@ under `training/` is therefore committed by default and a file written under
   data](#generated-data) below.
 - `training/artifacts/` is therefore committed, and it is named here rather
   than left to the general rule because it is the directory that makes the
-  published numbers reproducible. It now holds `training_run.json`, the record
-  of the run that fitted the classifier; the exported model and its tokenizer
-  arrive with the task that exports one. Nothing in `.gitignore` reaches it,
-  which is why what may go in it is a rule rather than a habit: records only,
-  and `test_the_run_record_points_at_weights_that_are_not_in_this_repository`
-  fails on any file there that is not a small JSON. Weights are 90 MB and 90 MB
-  in git is 90 MB in every clone and every sdist forever, so the record names
-  where they live and what they hash to instead of carrying them.
+  published numbers reproducible. It holds `training_run.json` and its repeat,
+  the records of the runs that fitted the classifier; `export.json` and its
+  repeat, the records of the ONNX export and its quantisation; and
+  `metrics.json`, what both exported models scored. Nothing in `.gitignore`
+  reaches it, which is why what may go in it is a rule rather than a habit:
+  records only, and
+  `test_the_run_record_points_at_weights_that_are_not_in_this_repository` fails
+  on any file there that is not a small JSON. Weights are 90 MB and 90 MB in git
+  is 90 MB in every clone and every sdist forever, so the record names where
+  they live and what they hash to instead of carrying them. The ONNX files are
+  the same decision at 88 MiB and 22 MiB: the plan asked for the chosen artifact
+  to be committed beside its metrics, and it is not. Every digest is in
+  `metrics.json`, and 2b-2 pins it there.
+
+  Every file in that directory carries an instant -- `trained_utc`,
+  `exported_utc` or `measured_utc` -- and `tests/test_ship_bar.py` orders each
+  one after `training/ship_bar.json`'s `recorded_utc`. The mapping from file to
+  instant is declared there rather than guessed, so an artifact added without
+  one fails instead of quietly dropping out of the ordering the bar rests on.
 
 The `/data/` rule is anchored with a leading slash. An unanchored `data/`
 matches a directory of that name at any depth, so it would also swallow one
