@@ -50,7 +50,7 @@ score does not depend on which of these two runtimes measures it.**
 ## Two further things the same run established
 
 **The label map resolves.** The exported `config.json` carries
-`id2label = {"0": "SAFE", "1": "INJECTION"}`, so `benchmarks/run.py:classifier`
+`id2label = {"0": "SAFE", "1": "INJECTION"}`, so `benchmarks/run.py::classifier`
 finds the injection class by name rather than by index. The checkpoint's own
 config carried `LABEL_0` and `LABEL_1`, which that lookup would not have found.
 An index is the thing that inverts in silence, and this is what stops it.
