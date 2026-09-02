@@ -240,6 +240,17 @@ SPLIT_BUILDER = ROOT / "training" / "splits.py"
 #: Every file under `training/` that could name a reference model. Globbed
 #: rather than listed, so a file added to the tree tomorrow is scanned without
 #: anyone remembering to add it here.
+#: This distribution's own name, read from `pyproject.toml` with a regex for the
+#: reason `tests/test_benchmarks.py` gives: `tomllib` is 3.11+ and the floor is
+#: 3.10. It is the org segment of the identifiers this repository gives its OWN
+#: artifacts, and the identifier screen below needs to tell those from a third
+#: party's model.
+DISTRIBUTION = re.search(
+    r'^\[project\][^\[]*?^name = "([^"]+)"',
+    (ROOT / "pyproject.toml").read_text(encoding="utf-8"),
+    re.DOTALL | re.MULTILINE,
+)
+
 TRAINING_FILES = tuple(
     sorted(
         path
@@ -1048,6 +1059,8 @@ def test_every_external_identifier_in_this_tree_is_accounted_for() -> None:
     appear in the README -- citing the full id is the convention this makes
     checkable.
     """
+    assert DISTRIBUTION is not None, "pyproject.toml declares no [project] name"
+    distribution = DISTRIBUTION.group(1)
     prefixes = frozenset(entry.name.lstrip(".") for entry in ROOT.iterdir())
     accounted = set(DENYLIST_BASES) | set(ATTRIBUTION_BASES)
     accounted |= {base_id(model.model_id) for model in REFERENCE_MODELS}
@@ -1070,6 +1083,16 @@ def test_every_external_identifier_in_this_tree_is_accounted_for() -> None:
                 # The tail of a longer path (`./.venv-training/bin/python`) or
                 # of a YAML tag (`!!python/object/apply`). An identifier is
                 # cited after whitespace or a backtick, never mid-path.
+                continue
+            if token.split("/")[0] == distribution:
+                # An artifact this repository BUILT, spelled
+                # `<distribution>/<name>` by `training/decide.py`. It is not a
+                # third party's model and is in no registry, so there is nothing
+                # to account for it in and nothing about its training data that
+                # is unscreened: this whole module is the screen. Matched on the
+                # org segment against the name in `pyproject.toml`, never on a
+                # literal, so it admits this distribution and nothing else and
+                # follows the distribution if it is ever renamed.
                 continue
             if (ROOT / token).exists() or token.split("/")[0] in prefixes:
                 # A path in this repository, including one not created yet:

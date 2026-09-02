@@ -89,6 +89,7 @@ INSTANT_OF = {
     "export.json": "exported_utc",
     "export_repeat.json": "exported_utc",
     "metrics.json": "measured_utc",
+    "ship_check.json": "measured_utc",
 }
 
 
@@ -581,7 +582,7 @@ def test_every_runnable_training_module_is_a_documented_command() -> None:
     # The count is also written in the README's prose, in words, and a count in
     # prose about code is a claim. Mapped rather than string-replaced, so the
     # guard still means something at four.
-    words = {1: "One", 2: "Two", 3: "Three", 4: "Four", 5: "Five", 6: "Six"}
+    words = {1: "One", 2: "Two", 3: "Three", 4: "Four", 5: "Five", 6: "Six", 7: "Seven"}
     stated = f"{words[len(runnable)]} commands exist so far"
     assert stated in readme, f"the README does not say {stated!r}"
     for wrong in (

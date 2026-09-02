@@ -244,6 +244,23 @@ def distinct_models(run: ModuleType, dirs: dict[str, Path]) -> None:
             )
 
 
+def cases(run: ModuleType, rows: Sequence[EvalRow]) -> list[Any]:
+    """The evaluation rows as `run.Case`, in the one shape every model is scored in.
+
+    Factored out of `measure_reference` so `training/decide.py` scores our model
+    over the same construction rather than over a second one that looks like it.
+    The id, the category and the label are exactly what `run.score` counts by, so
+    a copy that spelled any of the three differently would print a table that
+    reads like the reference table and is not comparable with it.
+    """
+    return [
+        run.Case(
+            f"eval-{index:04d}", row.text, "jailbreak" if row.label else "benign", bool(row.label)
+        )
+        for index, row in enumerate(rows)
+    ]
+
+
 def measure_reference(
     run: ModuleType, rows: Sequence[EvalRow], dirs: dict[str, Path]
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -259,20 +276,15 @@ def measure_reference(
     back with the same TP and the same FN for both revisions, which reads like
     one model scored twice; the per-input disagreement is what shows it was not.
     """
-    cases = [
-        run.Case(
-            f"eval-{index:04d}", row.text, "jailbreak" if row.label else "benign", bool(row.label)
-        )
-        for index, row in enumerate(rows)
-    ]
-    positives = {case.id for case in cases if case.label}
+    inputs = cases(run, rows)
+    positives = {case.id for case in inputs if case.label}
     measured: list[dict[str, Any]] = []
     flagged: dict[str, set[str]] = {}
     for pin in run.CLASSIFIER_PINS:
         model_dir = dirs[str(pin["id"])]
         predict, _tokenizer, max_length = run.classifier(model_dir, pin)
         run.controls(predict, "classifier", str(pin["model"]))
-        scored = run.score(cases, predict)
+        scored = run.score(inputs, predict)
         counts = dict(scored["overall"])
         flagged[str(pin["id"])] = {str(case_id) for case_id in scored["flagged"]}
         measured.append(

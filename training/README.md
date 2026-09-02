@@ -47,7 +47,7 @@ and a venv holding a gigabyte of torch is not something to find out about from
 
 ### From fetch to export
 
-Six commands exist so far, and they are written down because they run. Each
+Seven commands exist so far, and they are written down because they run. Each
 lands here when it exists: a sequence documented ahead of its scripts is a list
 of commands that do not run, which is the class of claim this repository spends
 most of its effort not making.
@@ -89,6 +89,12 @@ PYTHONPATH=src:. /tmp/guardrails-bench/bin/python -m training.ship_bar \
 # on long documents built out of DEV rows, and writes
 # training/artifacts/metrics.json. Reads no corpus but DEV.
 ./.venv-training/bin/python -m training.measure
+
+# The verdict. Scores the shipped int8 export on the external evaluation set
+# through benchmarks/run.py, applies both sides of training/ship_bar.json and
+# writes training/artifacts/ship_check.json. From the BENCHMARK virtualenv, for
+# the same reason the bar itself runs there. It runs ONCE.
+PYTHONPATH=src:. /tmp/guardrails-bench/bin/python -m training.decide
 ```
 
 The first two write into `training/generated/`, which is committed, and both
