@@ -1,0 +1,34 @@
+name: A published number or document looks wrong
+description: A figure, a citation, or a claim in the documentation does not hold
+labels: ["docs"]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        This project's claim is its numbers, so a wrong one is worth a whole
+        issue. Nearly every figure is derivable from something committed here,
+        and where one is not, the document says so beside it.
+  - type: input
+    id: where
+    attributes:
+      label: Where
+      description: File and, if you can, the line or the sentence.
+      placeholder: "BENCHMARKS.md, the injection-structural row"
+    validations:
+      required: true
+  - type: textarea
+    id: claim
+    attributes:
+      label: The claim as written
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it does not hold
+      description: >-
+        If you re-derived it, give the command and what you got. If it is a
+        citation, name the source and the revision you read.
+    validations:
+      required: true

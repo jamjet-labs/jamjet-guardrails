@@ -1,0 +1,73 @@
+name: A miss or a false alarm
+description: A check let something through, or flagged something it should not have
+labels: ["corpus"]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Most reports of this kind become a corpus case, which is the most useful
+        contribution this project takes. Please check
+        [BENCHMARKS.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/BENCHMARKS.md)
+        first: these checks have published false-positive and false-negative
+        rates, and a case inside them is expected behaviour with a number
+        attached rather than a defect.
+
+
+        If content came back `allow` or `redact` while a value the chain said it
+        handled is still in the returned content, that is a fail-open. Do not
+        file it here. Report it privately through
+        [SECURITY.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/SECURITY.md).
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`python -c \"import jamjet_guardrails; print(jamjet_guardrails.__version__)\"`"
+    validations:
+      required: true
+  - type: input
+    id: checks
+    attributes:
+      label: Checks and direction
+      description: The list passed to `build_chain`, and the `Context` you used.
+      placeholder: 'build_chain(["pii", "secrets"]), Context(direction="output", origin="model")'
+    validations:
+      required: true
+  - type: textarea
+    id: input
+    attributes:
+      label: Input
+      description: >-
+        The smallest input that shows it. Invisible or non-printing characters
+        matter here, so write them as `\uXXXX` escapes rather than pasting them,
+        the way `corpora/injection-structural/in-repo.jsonl` does.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: got
+    attributes:
+      label: What you got
+      description: The decision, the returned content, and the findings.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should happen, and why
+      description: >-
+        Say what the correct label for this input is and what makes it correct.
+        A corpus here records what SHOULD happen, never what the detector does,
+        so this is the part that decides whether the case can be added.
+    validations:
+      required: true
+  - type: checkboxes
+    id: values
+    attributes:
+      label: Values
+      options:
+        - label: >-
+            This input contains no real credential and no real person's data.
+            Credential shapes carry `EXAMPLEONLY` or `notarealtoken` in their own
+            bodies, and addresses use a reserved documentation domain.
+          required: true

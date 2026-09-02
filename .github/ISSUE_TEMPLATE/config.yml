@@ -1,0 +1,13 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/jamjet-labs/jamjet-guardrails/security/advisories/new
+    about: >-
+      Do not open a public issue for a fail-open, a leaked value in returned
+      content, or a decision that weakens. SECURITY.md draws the line between a
+      vulnerability and a published error rate.
+  - name: Read the published numbers first
+    url: https://github.com/jamjet-labs/jamjet-guardrails/blob/main/BENCHMARKS.md
+    about: >-
+      Per-check and per-type precision and recall, the counts behind them, and
+      the worst misses. A miss inside these rates is a corpus case, not a bug.

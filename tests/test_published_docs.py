@@ -129,3 +129,33 @@ def test_every_repository_path_any_published_doc_cites_exists() -> None:
                 missing.append(f"{doc.name} -> {target} (file exists, test does not)")
     assert checked > 0, "no citations found; this guard would prove nothing"
     assert missing == [], f"published docs cite things that do not exist: {missing}"
+
+
+def test_no_published_document_uses_an_em_dash() -> None:
+    """The house rule, over every published document rather than over README.
+
+    `tests/test_readme.py::test_the_readme_has_no_em_dash` held this for one
+    file. Four community health documents were added later, and under a
+    file-scoped guard they would have got the same treatment the other published
+    documents got when the path and case-id guards were written for whichever
+    file their author had open: nothing. Derived from git for that reason, so a
+    Markdown file added after this one is covered without anyone remembering.
+
+    THE CHARACTER ONLY, and the narrowing is deliberate rather than an
+    oversight. `tests/test_readme.py` also refuses ` -- `, and that half is left
+    scoped to README because it is not met: `corpora/NOTICE.md`,
+    `docs/conformance.md`, `training/README.md` and one measurement note use the
+    construction 53 times between them. Widening the rule to reach them would
+    mean rewriting 53 sentences, several of which other tests template claims
+    out of word for word, to gain nothing the character check does not already
+    give. Widening it and exempting those four files would be worse: an
+    exemption list is the thing the next document gets added to. So this guard
+    states what is actually true everywhere and holds it there, and the stricter
+    rule stays where it is enforced.
+    """
+    offenders = [
+        f"{doc.relative_to(ROOT)} contains an em dash"
+        for doc in _published_markdown()
+        if "—" in doc.read_text(encoding="utf-8")
+    ]
+    assert offenders == [], offenders
