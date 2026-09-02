@@ -12,7 +12,14 @@ import re
 
 import pytest
 
-from jamjet_guardrails.authoring import Limits, _limit_spans, _nests_unbounded_repeats
+from jamjet_guardrails.authoring import (
+    Limits,
+    PatternGuardrail,
+    _limit_spans,
+    _nests_unbounded_repeats,
+)
+from jamjet_guardrails.errors import GuardrailUnavailableError
+from jamjet_guardrails.protocol import Guardrail
 
 
 def test_content_at_the_limit_is_not_over_it() -> None:
@@ -129,3 +136,110 @@ def test_an_alternation_of_bounded_repeats_is_not_nesting() -> None:
 
 def test_a_compiled_pattern_is_accepted_and_its_flags_are_used() -> None:
     assert _nests_unbounded_repeats(re.compile(r"(a+)+", re.IGNORECASE)) is True
+
+
+def _guard(**options: object) -> PatternGuardrail:
+    """A minimal valid guardrail, so each test below varies one thing."""
+    base: dict[str, object] = {
+        "name": "example",
+        "version": "0.1.0",
+        "patterns": {"TICKET_ID": r"\bJIRA-\d{4,}\b"},
+    }
+    base.update(options)
+    return PatternGuardrail(**base)  # type: ignore[arg-type]
+
+
+def test_a_built_guardrail_satisfies_the_protocol() -> None:
+    assert isinstance(_guard(), Guardrail)
+
+
+def test_it_declares_itself_a_constraint() -> None:
+    """Not configurable. A classifier's findings must carry a confidence and
+    nothing here produces one, so a caller who could declare this a classifier
+    would build a guardrail whose every verdict `Verdict` rejects."""
+    assert _guard().kind == "constraint"
+
+
+def test_it_carries_the_name_and_version_it_was_given() -> None:
+    guard = _guard(name="rules", version="2.3.4")
+    assert (guard.name, guard.version) == ("rules", "2.3.4")
+
+
+def test_a_configuration_that_selects_nothing_is_refused() -> None:
+    """The same refusal `build_chain([])` makes, for the same reason: it would
+    allow every input while its configuration says a check is running."""
+    with pytest.raises(GuardrailUnavailableError, match="check nothing"):
+        PatternGuardrail(name="example", version="0.1.0")
+
+
+def test_an_empty_patterns_mapping_is_not_a_configuration() -> None:
+    with pytest.raises(GuardrailUnavailableError, match="check nothing"):
+        PatternGuardrail(name="example", version="0.1.0", patterns={}, banned={})
+
+
+@pytest.mark.parametrize("bad", ["lower", "With Space", "1LEADING", "", "has-hyphen"])
+def test_a_finding_type_outside_the_naming_rule_is_refused(bad: str) -> None:
+    """Type names are what a corpus labels and what a placeholder prints, so a
+    name that cannot appear in either is refused where it was written."""
+    with pytest.raises(ValueError, match="finding type"):
+        _guard(patterns={bad: r"x"})
+
+
+def test_a_banned_type_is_held_to_the_same_naming_rule() -> None:
+    with pytest.raises(ValueError, match="finding type"):
+        _guard(patterns=None, banned={"lower": ("x",)})
+
+
+def test_a_pattern_that_matches_the_empty_string_is_refused() -> None:
+    """A zero-width match produces a zero-width span, which the chain refuses
+    mid-run. Refusing at construction moves the failure to the mistake."""
+    with pytest.raises(ValueError, match="empty string"):
+        _guard(patterns={"ANYTHING": r"x*"})
+
+
+def test_a_pattern_nesting_unbounded_repeats_is_refused_by_name() -> None:
+    with pytest.raises(ValueError, match="NESTS"):
+        _guard(patterns={"SLOW": r"(a+)+b"})
+
+
+def test_an_empty_banned_substring_is_refused() -> None:
+    with pytest.raises(ValueError, match="empty"):
+        _guard(patterns=None, banned={"CODENAME": ("",)})
+
+
+def test_a_banned_entry_that_is_a_bare_string_is_refused() -> None:
+    """A string is an iterable of its own characters, so `("bluebird")` without
+    the comma would otherwise register eight one-character banned substrings
+    and deny almost everything."""
+    with pytest.raises(ValueError, match="list of substrings"):
+        _guard(patterns=None, banned={"CODENAME": "bluebird"})
+
+
+def test_an_on_match_mapping_missing_a_declared_direction_is_refused() -> None:
+    """The alternative is a KeyError from inside `check`, which fails closed
+    and names nothing. This names the direction."""
+    with pytest.raises(GuardrailUnavailableError, match="output"):
+        _guard(on_match={"input": "deny"})
+
+
+@pytest.mark.parametrize("decision", ["allow", "warn", "REDACT", ""])
+def test_a_decision_outside_redact_and_deny_is_refused(decision: str) -> None:
+    """`allow` included, and that is the interesting one: a check configured to
+    allow on a match is a check that runs and cannot act, which is the shape
+    the other two bundled detectors refuse in their own constructors."""
+    with pytest.raises(ValueError, match="'redact' or 'deny'"):
+        _guard(on_match=decision)
+
+
+def test_a_guardrail_declaring_no_direction_is_refused() -> None:
+    with pytest.raises(GuardrailUnavailableError, match="no direction"):
+        _guard(directions=frozenset())
+
+
+def test_directions_default_to_both() -> None:
+    assert _guard().directions == frozenset({"input", "output"})
+
+
+def test_a_compiled_pattern_keeps_its_own_flags() -> None:
+    guard = _guard(patterns={"SHOUT": re.compile(r"jira-\d{4,}", re.IGNORECASE)})
+    assert guard._patterns[0][1].flags & re.IGNORECASE

@@ -20,8 +20,18 @@ from __future__ import annotations
 
 import re
 import warnings
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
+
+from jamjet_guardrails.errors import GuardrailUnavailableError
+
+# Context, Finding, Provenance and Verdict are not referenced by this task's
+# code. Task 5 adds `_matches` and `check`, which use all four; until then
+# ruff's F401 flags them as unused, and the controller's ruling on that
+# conflict (see task-4-report.md) is to import only what this task's own code
+# uses rather than silence the check. Task 5 widens this same import line.
+from jamjet_guardrails.types import Decision, Direction, Kind
 
 # `re._parser` on 3.11 and later; `sre_parse` on 3.10, where `re._parser` does
 # not exist at all. Measured: on 3.10.20 the first import raises
@@ -183,3 +193,125 @@ def _walk_for_nesting(sequence: Any, inside_unbounded: bool) -> bool:
             if _walk_for_nesting(argument, inside_unbounded):
                 return True
     return False
+
+
+# A finding type is a label a corpus uses and a name a placeholder prints, so
+# the domain is the one both can carry. Checked rather than documented: a type
+# that cannot be labelled makes a corpus row that can never match, and a
+# published per-type number for a type nothing can express.
+_TYPE_NAME = re.compile(r"\A[A-Z][A-Z0-9_]*\Z")
+
+_RUNNABLE: frozenset[Direction] = frozenset({"input", "output"})
+
+
+class PatternGuardrail:
+    """A constraint over patterns, banned substrings and length.
+
+    Every refusal in ``__init__`` is one shape of the same mistake: a check
+    that is configured and would check less than the configuration says. That
+    is the mistake ``build`` and ``build_chain`` already refuse five ways, and
+    this constructor is a sixth door into the same room, reachable from a
+    user's own configuration file.
+    """
+
+    kind: Kind = "constraint"
+
+    def __init__(
+        self,
+        *,
+        name: str,
+        version: str,
+        patterns: Mapping[str, str | re.Pattern[str]] | None = None,
+        banned: Mapping[str, Sequence[str]] | None = None,
+        limits: Limits | None = None,
+        on_match: Decision | Mapping[Direction, Decision] = "deny",
+        directions: frozenset[Direction] = frozenset({"input", "output"}),
+        fold_case: bool = True,
+    ) -> None:
+        self.name = name
+        self.version = version
+        self.directions = directions
+
+        compiled: list[tuple[str, re.Pattern[str]]] = []
+        for type_name, pattern in (patterns or {}).items():
+            _require_type_name(type_name)
+            if _nests_unbounded_repeats(pattern):
+                raise ValueError(
+                    f"the pattern for {type_name!r} NESTS unbounded repeats, which can "
+                    "take exponential time on an input that fails to match. Rewrite it "
+                    "so no unbounded repeat encloses another"
+                )
+            built = re.compile(pattern) if isinstance(pattern, str) else pattern
+            if built.search("") is not None:
+                raise ValueError(
+                    f"the pattern for {type_name!r} matches the empty string, so it "
+                    "would report a zero-width span the chain refuses to apply"
+                )
+            compiled.append((type_name, built))
+        self._patterns = tuple(compiled)
+
+        folded: list[tuple[str, str]] = []
+        for type_name, substrings in (banned or {}).items():
+            _require_type_name(type_name)
+            if isinstance(substrings, (str, bytes)):
+                # ValueError, not TypeError: every other refusal in this constructor is a
+                # ValueError over a configuration mistake, and this one is the same mistake
+                # (a value that iterates into something other than what was declared), not
+                # a caller passing the wrong Python type. test_a_banned_entry_that_is_a_bare
+                # _string_is_refused pins ValueError specifically.
+                raise ValueError(  # noqa: TRY004
+                    f"banned[{type_name!r}] must be a list of substrings, not the "
+                    f"{type(substrings).__name__} {substrings!r}; a string is an "
+                    "iterable of its own characters"
+                )
+            for substring in substrings:
+                if not substring or not substring.casefold():
+                    raise ValueError(
+                        f"banned[{type_name!r}] carries an empty substring, which "
+                        "matches everywhere"
+                    )
+                folded.append((type_name, substring.casefold() if fold_case else substring))
+        self._banned = tuple(folded)
+        self._fold_case = fold_case
+
+        self._limits = limits
+
+        if not (self._patterns or self._banned or self._limits):
+            raise GuardrailUnavailableError(
+                f"{name!r} was configured with no patterns, no banned substrings and no "
+                "limits, so it would check nothing and allow any content at all"
+            )
+
+        if not directions:
+            raise GuardrailUnavailableError(
+                f"{name!r} declares no direction it can run in, so every context would "
+                f"skip it. Expected at least one of {sorted(_RUNNABLE)}"
+            )
+
+        if isinstance(on_match, str):
+            resolved = {direction: on_match for direction in directions}
+        else:
+            missing = sorted(directions - set(on_match))
+            if missing:
+                raise GuardrailUnavailableError(
+                    f"{name!r} declares directions {sorted(directions)} but on_match "
+                    f"names no decision for {missing}; the alternative is a KeyError "
+                    "from inside check, which fails closed and names nothing"
+                )
+            resolved = {direction: on_match[direction] for direction in directions}
+        for direction, decision in sorted(resolved.items()):
+            if decision not in ("redact", "deny"):
+                raise ValueError(
+                    f"on_match for {direction!r} must be 'redact' or 'deny', got "
+                    f"{decision!r}. A check configured to allow on a match is a check "
+                    "that runs and cannot act"
+                )
+        self._on_match: Mapping[Direction, Decision] = resolved
+
+
+def _require_type_name(type_name: str) -> None:
+    if not isinstance(type_name, str) or not _TYPE_NAME.match(type_name):
+        raise ValueError(
+            f"finding type {type_name!r} must match {_TYPE_NAME.pattern}; a type name "
+            "is what a corpus labels and what a placeholder prints"
+        )
