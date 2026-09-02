@@ -32,3 +32,8 @@
 {"id": "rules-0032", "text": "the release shipped on 2026-01-15 as planned", "direction": "output", "expect": {"decision": "allow", "findings": []}, "source": "in-repo", "license": "Apache-2.0"}
 {"id": "rules-0033", "text": "installed version 1.2.3-45-6789 successfully", "direction": "output", "expect": {"decision": "allow", "findings": []}, "source": "in-repo", "license": "Apache-2.0"}
 {"id": "rules-0034", "text": "{\"name\": \"example\", \"count\": 3, \"active\": true}", "direction": "output", "expect": {"decision": "allow", "findings": []}, "source": "in-repo", "license": "Apache-2.0"}
+{"id": "rules-0035", "text": "stra\u00dfe project bluebird was mentioned", "direction": "output", "expect": {"decision": "redact", "findings": [{"type": "PROJECT_CODENAME", "span": [7, 23]}]}, "source": "in-repo", "license": "Apache-2.0"}
+{"id": "rules-0036", "text": "duplicate refs JIRA-1111,JIRA-2222 both open", "direction": "input", "expect": {"decision": "redact", "findings": [{"type": "TICKET_ID", "span": [15, 24]}, {"type": "TICKET_ID", "span": [25, 34]}]}, "source": "in-repo", "license": "Apache-2.0"}
+{"id": "rules-0037", "text": "JIRA-1111JIRA-2222", "direction": "input", "expect": {"decision": "allow", "findings": []}, "source": "in-repo", "license": "Apache-2.0"}
+{"id": "rules-0038", "text": "aa.corp.examplebb.corp.example", "direction": "input", "expect": {"decision": "redact", "findings": [{"type": "INTERNAL_HOST", "span": [8, 30]}]}, "source": "in-repo", "license": "Apache-2.0"}
+{"id": "rules-0039", "text": "\u4f1a\u8b70\u306f\u6c34\u66dc\u65e5\u306b\u4e88\u5b9a\u3055\u308c\u3066\u3044\u307e\u3059", "direction": "output", "expect": {"decision": "allow", "findings": []}, "source": "in-repo", "license": "Apache-2.0"}

@@ -102,6 +102,21 @@ Size limits are characters, bytes and lines. There is no token limit, because
 counting tokens needs a tokenizer this library does not carry and will not
 guess at.
 
+**This row is not comparable to the other rows in the table below.** The other
+checks are heuristics over open-ended text, and their precision and recall
+describe how often the heuristic is right on text nobody controlled. `rules`
+here is a deterministic engine running against a fixed set of rules we wrote
+for the published measurement, so a high score means the engine computes
+spans, merges overlapping regions and applies limits correctly against that
+configuration. It is not a claim that any rule is well chosen, and a perfect
+score on this row carries none of the weight a perfect score on `pii` or
+`secrets` would.
+
+The published measurement also only exercises one of the three limit kinds.
+The fixture sets a character limit and no byte or line limit, so the row never
+reaches the byte-boundary or line-boundary code paths at all. A limit the row
+cannot reach is a limit the row does not cover, not a limit proven correct.
+
 ## Measured, not asserted
 
 Every check ships with a labelled corpus and published precision and recall.
@@ -114,7 +129,7 @@ beside the scores.
 | injection-structural | injection-structural/in-repo | in-repo | `b11692946044` | 146 | 0.971 | 0.870 | 0.917 | 100 | 3 | 15 | 8 |
 | pii | pii/in-repo | in-repo | `06fb3b601aba` | 81 | 0.631 | 0.872 | 0.732 | 41 | 24 | 6 | 24 |
 | pii | pii/third-party | nvidia/Nemotron-PII@b70ffaf | `c25ef538d677` | 300 | 0.960 | 0.997 | 0.978 | 340 | 14 | 1 | 6 |
-| rules | rules/in-repo | in-repo | `78a1bcf1eb18` | 34 | 1.000 | 1.000 | 1.000 | 23 | 0 | 0 | 0 |
+| rules | rules/in-repo | in-repo | `fb63357f5268` | 39 | 1.000 | 1.000 | 1.000 | 27 | 0 | 0 | 0 |
 | secrets | secrets/in-repo | in-repo | `e9e0ed70dc37` | 39 | 0.957 | 0.880 | 0.917 | 22 | 1 | 3 | 4 |
 
 **A *balanced* override still reorders, and `injection-structural` allows it.**
