@@ -40,6 +40,22 @@ and a signature of random bytes, so they verify against nothing; and the PEM
 bodies are base64 of random bytes rather than DER, so no tool can load one as a
 key.
 
+That sentence used to stop at these three files, and two credential-shaped
+strings outside them were covered by nothing: a canonical Slack bot token with a
+random 24-character secret, and a 36-character GitHub token body, each written
+into a docstring in `src/` to show a defect that string had caused. Both shipped
+in every wheel. Neither carried a marker, so nothing about either one told a
+scanner or a reader that it was not live. Both now carry the same markers the
+corpus values do, and the rule is repository-wide rather than file-scoped: the
+detector this package ships is run over every tracked file, and where it reports
+a GitHub, OpenAI, Anthropic or Slack token the body has to say what it is.
+`test_no_credential_shaped_literal_in_the_repository_reads_as_a_live_one` in
+`tests/test_packaging.py` is that check. Six older bodies carry no marker and are
+listed there one by one instead: a sequential alphabet, a counted digit run,
+Amazon's published example key and the standard HS256 header. They are named
+rather than admitted by a rule about what looks synthetic, because the first
+body a rule like that lets through is the one worth catching.
+
 ### `corpora/injection-structural/in-repo.jsonl`
 
 Every value in this file is invented too, and none of it is a credential or a

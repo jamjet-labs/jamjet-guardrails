@@ -67,7 +67,7 @@ class GuardrailChain:
     That is not a simplification, it is a leak fix. Rewriting sequentially let a
     redaction by one detector cut a match another detector was about to make:
 
-        SLACK_BOT_TOKEN=xoxb-2411756141-2412093090608-8dyRy9NUsIbEXCKV0LZ7XkGx
+        SLACK_BOT_TOKEN=xoxb-0000000000-2000000000008-EXAMPLEONLYnotarealtoken
 
     ``pii`` redacts the 13-digit segment, which is Luhn-valid and starts with a
     2, so it is a card as far as that detector can tell. The placeholder splits
