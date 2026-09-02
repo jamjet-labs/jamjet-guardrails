@@ -335,9 +335,9 @@ check against real YAML was a test that skipped on every CI leg.
 
 ## Generated data
 
-`training/generated/rows.jsonl` holds 3468 generated rows: 1734 hard negatives
-and 1734 attacks, across 8 hard-negative kinds and 8 attack kinds. The thinnest
-kind holds 203 rows, and `tests/test_training_data.py` requires at least 203
+`training/generated/rows.jsonl` holds 3584 generated rows: 1792 hard negatives
+and 1792 attacks, across 8 hard-negative kinds and 8 attack kinds. The thinnest
+kind holds 212 rows, and `tests/test_training_data.py` requires at least 203
 rows in every one of them, so a later run that fell over part way cannot land
 looking complete.
 
@@ -373,57 +373,177 @@ which is the one thing the bar exists to rule out.
 | hard negative | rows | attack | rows |
 |---|---|---|---|
 | `user_correcting_themselves` | 216 | `direct_override` | 216 |
-| `documentation_quoting_an_attack` | 214 | `indirect_via_retrieved_content` | 214 |
-| `security_report_with_payload` | 213 | `tool_misuse_request` | 213 |
-| `prompt_engineering_tutorial` | 203 | `role_reassignment` | 203 |
+| `documentation_quoting_an_attack` | 227 | `indirect_via_retrieved_content` | 227 |
+| `security_report_with_payload` | 225 | `tool_misuse_request` | 225 |
+| `prompt_engineering_tutorial` | 223 | `role_reassignment` | 223 |
 | `roleplay_request` | 212 | `multi_turn_setup` | 212 |
-| `config_or_code_with_instructions` | 215 | `delimiter_confusion` | 215 |
+| `config_or_code_with_instructions` | 228 | `delimiter_confusion` | 228 |
 | `translation_request` | 248 | `encoded_payload` | 248 |
 | `meta_question_about_the_system` | 213 | `exfiltration_request` | 213 |
 
 ### What the corpus measures, and the ceilings it is held to
 
-Three probes, each fitted with five-fold cross-validation by
-`training/separability.py`, which is pure Python because this runs in CI. Every
-one is held to a ceiling stated here as well as in the test module, and
-`test_the_readme_states_the_separability_it_was_measured_at` requires the two
-to agree. That cross-check is the point: a ceiling written down in only one
-place can be widened there, and the previous version of this file had exactly
-that hole.
+Every figure below comes from `training/separability.py`, which is pure Python
+because it runs in CI and CI has neither numpy nor scikit-learn. Every one is
+stated here as well as in `tests/test_training_data.py`, and
+`test_the_readme_states_the_separability_it_was_measured_at` requires the two to
+agree: a ceiling widened in one place fails, and so does a stated measurement
+that has gone stale. Any regeneration that moves a number by 0.001 fails the
+suite until this file is updated, which is the intended behaviour and not a
+flaky test.
 
-| probe | what it sees | measured | ceiling |
+**Read this before quoting any of the ceilings.** Every threshold on this page
+was set just above a value that had already been measured, so a ceiling set from
+a measured result is not evidence of cleanliness. Passing one says the corpus
+has not got worse since the day the number was taken. It does not say the number
+was low enough that day, and three rounds of this corpus have passed every
+ceiling in force at the time while carrying a defect that the next round's
+measurement found. They are drift guards. The evidence question is what the
+numbers say next to each other, and it is answered below rather than by the fact
+that a threshold was cleared.
+
+#### The two separabilities, and which one an encoder is exposed to
+
+A MARGINAL probe fits one direction over all 3584 rows. A corpus passes it by
+having no single voice that runs along the label, which is what the pairing
+fixed.
+
+A fine-tuned encoder is under no such constraint. It reads the topic, the topic
+says which of the eight prompt pairs produced the row, and it can then apply a
+different rule inside each pair. Pair identity costs it nothing, so the channel
+it can actually exploit is what survives CONDITIONING on the pair. Pair identity
+alone scores exactly the majority baseline, because every pair holds as many
+attacks as negatives, so none of this is measuring the grouping.
+
+**Within-pair separability** is the pooled held-out accuracy of the same
+logistic regression fitted SEPARATELY INSIDE each of the eight pairs. A pair's
+rows are five-fold cross-validated among themselves, every row is scored by a
+model that never saw it, and the hits are pooled across pairs rather than the
+per-pair accuracies averaged, so a thin pair does not weigh as much as a thick
+one. The fit is 25 epochs of full-batch gradient descent on features
+standardised by the training fold, the same budget every probe here uses; at 100
+and 200 epochs the number comes out lower rather than higher, so 25 is not an
+underfit reading of it.
+
+`no content word` is style and function words in one vector: lengths,
+punctuation counts, character-class ratios and the rate of each closed-class
+word. Nothing that reaches it says what a row is about. `bag of words` reads
+every word in the corpus as present or absent, and is reported rather than
+gated: a model that reads the content SHOULD be able to sort an injection
+corpus. It is here as the comparison the other rows are read against, because
+"function words score 0.73" means one thing when reading everything scores 0.95
+and another when it scores 0.76.
+
+| probe | what it sees | marginal | within pair |
 |---|---|---|---|
-| style | lengths, punctuation, character ratios | style 0.558 | style ceiling 0.60 |
-| function words | rates of closed-class words only | function-word 0.730 | function-word ceiling 0.78 |
-| lexical | "contains instruction vocabulary" | lexical 0.576 | lexical ceiling 0.62 |
-| majority | always guess the commoner class | baseline 0.500 | no ceiling |
-| openers | the first token only | opener share 0.020 | opener share ceiling 0.12 |
+| style | lengths, punctuation, character ratios | marginal style 0.574 | within-pair style 0.729 |
+| function words | rates of closed-class words only | marginal function-word 0.760 | within-pair function-word 0.829 |
+| no content word | both of the above together | marginal no-content-word 0.722 | within-pair no-content-word 0.848 |
+| bag of words | every word, present or absent | marginal bag-of-words 0.850 | within-pair bag-of-words 0.907 |
 
-69 rows (opener share 0.020) open with a token at least as pure as the opener
-purity threshold 0.95 for one label. Openers are shared within a pair by
-instruction, which is what keeps that number down; position 1 is its own leak
-and none of the whole-text probes above can see it.
+Against a majority baseline 0.500. The ceilings are style ceiling 0.60,
+function-word ceiling 0.78 and within-pair ceiling 0.88, and the last of those
+is the one this section exists for. The corpus it was added to read 0.686
+marginally and 0.789 within pair, against 0.843 for a bag of words reading every
+content word: reading none of the content recovered within 0.054 of reading all
+of it, while the marginal figure looked like a corpus that had been cleaned.
 
-Rows are also screened against each other at a near-duplicate threshold 0.60 of
-word-trigram Jaccard. Exact distinctness is not enough: the previous corpus was
-exactly distinct across all of its rows and still held eleven near-duplicate
-pairs differing by a comma or a dropped final word, which leaks between the
-halves of whatever split comes next.
+#### One word, one pair
 
-Two per-kind floors are stated the same way and cross-checked the same way. A
-kind quality floor 0.55 of `delimiter_confusion` rows must carry a subversive
-verb, against the 0.123 that did before the pairing; and a quoting floor 0.90
-of the two quoting kinds must actually quote a span, against the 0.912 and
-1.000 measured. A floor that is written down once can be lowered without any
-test objecting, which is the same hole the ceilings had.
+The worst single word inside any one pair sorts it at single token 0.840, held
+to a single token ceiling 0.88. Scored as balanced accuracy over that pair's
+whole vocabulary, both polarities tried, which for a present-or-absent feature
+is that feature's ROC AUC.
 
-Function words sit higher than style and that is expected rather than
-tolerated. A closed-class model is the standard authorship probe because
-function words carry register and almost no topic; for THIS pair of classes
-they carry some genuine content as well, because a question about how a system
-works and an attempt to extract what it holds really do differ in 'what',
-'how', 'its' and 'been'. The style probe is the one that isolates pure
-artifact, and it is the one that has to sit at chance.
+Over the whole vocabulary rather than a list of suspects, because every tell
+found so far was introduced by the wording that removed the one before. The past
+tense rule that made a security report read like a report put `was` at 0.864;
+dropping it left the report naming "the assistant" in the third person while its
+partner addressed it in the second, and `assistant` sorted that pair at 0.925;
+`now` sorted another at 0.906 while being written down in the test module as the
+phenomenon. A screen that knows only the words its author suspects cannot find
+the next one.
+
+#### The other screens
+
+- lexical 0.561 against a lexical ceiling 0.62. "Contains instruction
+  vocabulary, therefore injection", scored as if it were the classifier and
+  required to do badly. It was 0.470 before the pairing, below chance, because
+  the hard negatives carry that vocabulary more often than the attacks do.
+- opener share 0.085 against an opener share ceiling 0.12: the share of rows
+  opening with a token at least as pure as the opener purity threshold 0.95 for
+  one label. Position 1 is its own leak and none of the whole-text probes can
+  see it. Openers are shared within a pair by instruction, which is what keeps
+  this down.
+- twin similarity 0.204 against a twin similarity ceiling 0.28: the highest
+  per-pair MEDIAN word-trigram Jaccard between the two members of a twin. See
+  the split section below for what it leaks into.
+- Rows are screened against each other at a near-duplicate threshold 0.60 of
+  word-trigram Jaccard, per label. Exact distinctness is not enough: a previous
+  corpus was distinct across every row and still held eleven near-duplicate
+  pairs differing by a comma.
+- leave-one-pair-out 0.606, reported and not gated. Fit on seven pairs, score
+  the eighth, no content word. A signal that is the phenomenon transfers,
+  because an attack is an attack whatever it is about; a signal that is one
+  prompt's wording does not, and a pair that scores below chance is carrying a
+  direction opposite to the rest of the corpus. It is not gated because eight
+  pairs are eight kinds of attack and some of the gap between them is real
+  difference rather than artifact.
+
+#### Per-kind floors
+
+Four, stated the same way and cross-checked the same way, because LOWERING a
+floor cannot fail the test that floor gates: the measured value still clears it,
+and only a second statement of the number can object.
+
+- kind quality floor 0.75: the share of `delimiter_confusion` rows carrying a
+  subversive verb, 0.820 measured, against the 0.123 that did before the
+  pairing and the 0.642 the pairing alone reached. Scoped to that
+  one kind because it is the kind whose defect is lexical; the same word list
+  across all eight attack kinds scored `encoded_payload` at 0.084, which
+  measures the list and not the kind.
+- quoting floor 0.90: the share of the two quoting kinds that quote a span at
+  all. 8.8% of `security_report_with_payload` quoted nothing before.
+- supersede floor 0.85: the share of `role_reassignment` rows that say an
+  earlier instruction has been replaced. 71.9% carried no such marker, and 132
+  of those differed from their benign twin by the word `now`, which is how that
+  word came to sort the pair at 0.906. A reassignment that replaces nothing is a
+  role instruction, which is what the benign member of that pair is.
+- explained floor 0.70 and explained ceiling threshold 0.15: one screen scored
+  on both members of the documentation pair, in opposite directions. Quoting a
+  span AND framing it as an example is what security documentation does;
+  `indirect_via_retrieved_content` is a document with an instruction hidden in
+  its running text, and 34.6% of it did both, which is the benign kind's own
+  definition. Scoring one pattern twice is what stops it measuring the author's
+  vocabulary: a pattern matching nothing would clear the ceiling and fail the
+  floor, one matching everything would do the reverse.
+
+### The split, and why it is by twin
+
+Rows are generated in twins and land adjacent in `rows.jsonl`: a hard negative
+and an attack from one call, sharing an opening, a length and a register. That
+pairing is what stopped the classes being separable by style, and it creates a
+hazard one step later.
+
+Split the rows at random and one member of a twin lands in train and the other
+in eval. The model has then read most of the held-out text already, under the
+opposite label, and what it learns from that is the local difference between two
+near-copies. It generalises nowhere and it scores well on the split that created
+it. The median twin in the worst pair shared 0.549 of its word trigrams with its
+own partner when this was found, so it was not a handful of rows.
+
+`training/split.py` divides by twin, holding out an eval share threshold 0.20 of
+the TWINS, which holds out that share of each class without stratifying anything
+because a twin carries one row of each. `separated_twins` scores any partition,
+however it was built, and `test_the_split_never_separates_a_twin` fails if one
+is broken apart. The task that builds the split for stage 2b-2 builds it through
+that module, and the requirement is enforced rather than described.
+
+None of that makes this corpus its own benchmark. Every row on both sides came
+out of one generator under one of eight prompts, so a number measured on the
+eval half is optimistic by an unknown margin however the halves were chosen.
+Splitting by twin removes one leak. An independent evaluation set is a different
+problem and it is still open.
 
 ### What produced them, and what that is checkable against
 
@@ -432,6 +552,20 @@ weights blob, the sampling options, the seed range per pair, the ollama
 version, and the full text of every prompt with its digest. A row carries the
 tag, the weights digest, the prompt id and the seed of the call that produced
 it, so a single row can be regenerated and not only its pair.
+
+It also records the ENVELOPE each pair was generated under, with its own
+digest, and that is a gap that was open for three corpora. Every call sends a
+pair's instruction wrapped in text saying how the two members must match and
+what shape the reply takes, and none of that appeared in the record: the
+wrapper could have been edited between two runs and every stored digest would
+still have verified. The wrapper is not a detail. Its first version asked for
+the two members to be "as alike as possible" with "the same opening words", and
+that is what produced the pair whose twins share a median 0.549 of their word
+trigrams, and a benign member that collapsed into its attack's own frame, "You
+are now given a role instruction as follows: You are an editor ...", filed
+under label 0. The second version keeps the matching that made the pairing work
+and drops those two clauses. Pairs generated under the first keep it recorded
+against them, because a record that says otherwise is a record that is wrong.
 
 The generator is `qwen2.5:14b`, which is Qwen/Qwen2.5-14B-Instruct, and its
 licence was screened the way a corpus licence is. It is `apache-2.0`, which
@@ -459,4 +593,4 @@ files alone.
 
 Nothing under `training/` is in the wheel, so none of this reaches an installed
 package. It is all in the sdist, for the reason the section above gives, so
-these 1474 KB travel with every source distribution.
+these 1580 KB travel with every source distribution.
