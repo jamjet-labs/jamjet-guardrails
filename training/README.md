@@ -47,13 +47,27 @@ and a venv holding a gigabyte of torch is not something to find out about from
 
 ### From fetch to export
 
-There is no command sequence to write down yet. `training/fetch.py` is the only
-entry point this tree has, and nothing calls it. The scripts that build the
-splits, fine-tune the encoder, export to ONNX and score the ship bar arrive
-with the tasks that write them, and the sequence lands here when the commands
-it names exist. A sequence documented ahead of its scripts is a list of
-commands that do not run, which is the class of claim this repository spends
-most of its effort not making.
+Two commands exist so far, and they are written down because they run. The
+scripts that fine-tune the encoder, export to ONNX and score the ship bar
+arrive with the tasks that write them, and each lands here when it exists: a
+sequence documented ahead of its scripts is a list of commands that do not run,
+which is the class of claim this repository spends most of its effort not
+making.
+
+```bash
+# The synthetic corpus. Needs a local Ollama with qwen2.5:14b pulled.
+./.venv-training/bin/python -m training.generate
+
+# The train and dev split, the external evaluation set, and the contamination
+# check between them. Needs Ollama with nomic-embed-text, and the network, for
+# the pinned corpora it verifies against their recorded digests.
+./.venv-training/bin/python -m training.splits
+```
+
+Both write into `training/generated/`, which is committed, and both are
+re-checkable from what they wrote without either dependency: every test over
+those artifacts reads the committed files, and the two that talk to a model
+server are gated behind `JAMJET_GUARDRAILS_OLLAMA=1`.
 
 ### Why 3.13 and not 3.14
 
@@ -99,10 +113,17 @@ under `training/` is therefore committed by default and a file written under
 - `training/` holds anything a published number is measured on or measured by.
   A number that describes an artifact nobody else can obtain is not a
   measurement.
-- `training/generated/` holds the synthetic corpus and the record of what
-  produced it. Committed for the same reason: a classifier is fitted on it, so
-  a number measured on the resulting model is a number measured through this
-  file. It is described under [Generated data](#generated-data) below.
+- `training/generated/` holds the synthetic corpus, the record of what produced
+  it, and `splits.json`, the train and dev division with the contamination
+  finding against the external evaluation set. Committed for the same reason: a
+  classifier is fitted on it, so a number measured on the resulting model is a
+  number measured through these files. `splits.json` is committed for a second
+  reason as well. CI has neither a model server nor a network, and with the
+  clusters recorded there the split is re-derivable from its seed by arithmetic
+  alone, which is what
+  `test_the_committed_split_is_reproducible_from_its_recorded_seed` does rather
+  than trusting the file. It is described under [Generated
+  data](#generated-data) below.
 - `training/artifacts/` is therefore committed, and it is named here rather
   than left to the general rule because it is the directory that makes the
   published numbers reproducible: the exported model, its tokenizer and the
