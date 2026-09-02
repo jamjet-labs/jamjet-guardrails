@@ -22,7 +22,7 @@ import json
 import os
 import re
 from collections.abc import Iterable
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 from pathlib import Path
 from typing import Any
 
@@ -127,7 +127,15 @@ from training.split import (
     split,
     twins,
 )
-from training.splits import FITTED_ON, SPLITS, corpus_keys
+from training.splits import (
+    FITTED_ON,
+    SCREENED,
+    SPLITS,
+    admitted,
+    corpus_keys,
+    leaks,
+    pool_key,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCES = ROOT / "training" / "sources.yaml"
@@ -4122,14 +4130,212 @@ def test_every_pool_the_classifier_could_be_fitted_on_was_checked() -> None:
     source is what a later stage may add. A pool quietly dropped from the check
     leaves the finding describing a smaller question than the one it is read as
     answering.
+
+    `SCREENED` widens that further, to corpora the manifest does NOT admit. It
+    holds `fka/awesome-chatgpt-prompts`, which is excluded BECAUSE it overlaps
+    the evaluation set, and an exclusion whose measurement has been deleted
+    along with the entry is an exclusion the next reader undoes.
     """
     found = _split_record()["eval"]["contamination"]
     checked = {pool["pool"] for pool in found["pools"]}
-    expected = {FITTED_ON} | {
-        source.name for source in load_sources(SOURCES) if source.role == "train"
-    }
+    admissible = {source.name for source in load_sources(SOURCES) if source.role == "train"}
+    expected = {FITTED_ON} | admissible | set(SCREENED)
     assert checked == expected, f"checked {sorted(checked)}, expected {sorted(expected)}"
     assert found["fitted_on"] in checked
+    # And the widening is only ever a widening. A name in `SCREENED` that the
+    # manifest also admitted would make this test pass while `leaks` gated on
+    # a pool nobody had noticed was admitted, which is the shape of every
+    # exemption that turned into a channel.
+    assert not {base_id(name) for name in SCREENED} & {base_id(name) for name in admissible}, (
+        "a corpus is both screened as unadmitted and admitted for training"
+    )
+
+
+def _fka() -> Source:
+    """The manifest's own entry for the corpus that overlaps the evaluation set."""
+    by_name = {source.name: source for source in load_sources(SOURCES)}
+    return by_name["fka/awesome-chatgpt-prompts"]
+
+
+def test_the_committed_split_and_its_training_pools_leak_nothing() -> None:
+    """The gate, over the artifacts that were actually committed.
+
+    One call, because a twin separated across the line and a training pool that
+    overlaps the evaluation set are the same failure through two doors: either
+    way the model has read rows it is about to be graded on. Held in two places
+    they drift, and the second one goes on passing while the first is relaxed.
+    """
+    found = leaks(_split_record(), load_sources(SOURCES), load_generated(GENERATED))
+    assert found == [], "; ".join(found)
+
+
+def test_the_leak_check_fires_when_the_contaminated_corpus_is_admitted() -> None:
+    """The one this whole guard exists for, proved rather than described.
+
+    `fka/awesome-chatgpt-prompts` carries the DAN prompt and so does the
+    evaluation corpus. It is `role: excluded` for that reason and for no other:
+    its licence is CC0-1.0 and its values screened clean. A note asking the next
+    person not to train on it would be worth nothing, because the person who
+    does it is the person who never read the note.
+
+    So the manifest's own entry is taken and its role flipped to `train`,
+    changing one field and nothing else, and the check has to fail on the
+    committed finding -- which is a CONTENT comparison, 3 exact and 6 near
+    rows measured by `training.evalset.compare` from the corpora themselves.
+    """
+    admitted_fka = replace(_fka(), role="train")
+    sources = [admitted_fka, *(s for s in load_sources(SOURCES) if s.name != admitted_fka.name)]
+    found = leaks(_split_record(), sources, load_generated(GENERATED))
+    assert len(found) == 1, f"expected one finding, got {found}"
+    assert "fka/awesome-chatgpt-prompts is admitted for training" in found[0]
+    assert "3 exact and 6 near-duplicate rows" in found[0], found[0]
+
+
+def test_a_re_pinned_spelling_of_the_contaminated_corpus_is_the_same_pool() -> None:
+    """Re-pinning is how a name changes without the rows changing.
+
+    The finding is recorded under `fka/awesome-chatgpt-prompts`. Admit the same
+    corpus as `fka/awesome-chatgpt-prompts@fdf3857` and a check comparing
+    strings finds no record for it, which under a lenient rule reads as clean
+    and under this one would report the wrong failure. `base_id` is what makes
+    the two one pool, so the recorded overlap is the finding either way.
+    """
+    rows = load_generated(GENERATED)
+    others = [source for source in load_sources(SOURCES) if source.name != _fka().name]
+
+    # The manifest carries the pinned spelling; the record carries the bare one.
+    pinned = replace(_fka(), name=f"{_fka().name}@fdf3857", role="train")
+    found = leaks(_split_record(), [pinned, *others], rows)
+    assert len(found) == 1, f"expected one finding, got {found}"
+    assert "3 exact and 6 near-duplicate rows" in found[0], (
+        f"a re-pinned spelling was not recognised as the corpus already measured: {found[0]}"
+    )
+
+    # And the other way round, which is the half `pool_key` is for: the RECORD
+    # names a pinned or differently-cased pool and the manifest admits the bare
+    # name. Without the fold this reads as a corpus nobody measured, and the
+    # wrong failure is reported for the right corpus.
+    for spelling in (f"{_fka().name}@fdf3857", _fka().name.upper()):
+        record = json.loads(json.dumps(_split_record()))
+        for pool in record["eval"]["contamination"]["pools"]:
+            if pool["pool"] == _fka().name:
+                pool["pool"] = spelling
+        found = leaks(record, [replace(_fka(), role="train"), *others], rows)
+        assert len(found) == 1, f"expected one finding for {spelling}, got {found}"
+        assert "3 exact and 6 near-duplicate rows" in found[0], (
+            f"the pool recorded as {spelling} was not recognised as the admitted corpus: {found[0]}"
+        )
+
+
+def test_the_leak_check_fires_when_an_admitted_pool_was_never_compared() -> None:
+    """An unmeasured pool is not a clean pool, and is not reported as one.
+
+    Skipping it would return the same empty list a clean result returns, so one
+    edit adding a corpus to `role: train` would widen what may be trained on and
+    narrow what is checked, in silence.
+    """
+    added = replace(_fka(), name="someone/a-corpus-nobody-compared", role="train")
+    sources = [added, *load_sources(SOURCES)]
+    found = leaks(_split_record(), sources, load_generated(GENERATED))
+    assert len(found) == 1, f"expected one finding, got {found}"
+    assert "was never compared against the evaluation set" in found[0], found[0]
+
+
+def test_screening_a_corpus_is_not_admitting_it() -> None:
+    """`SCREENED` widens what is compared and can never quiet a comparison.
+
+    The hazard of every exemption list is that it becomes a channel. This one
+    cannot: `admitted` reads `role` and never reads `SCREENED`, so the two
+    directions are not symmetrical. Adding a name here causes more work; it
+    cannot cause less.
+    """
+    sources = load_sources(SOURCES)
+    assert set(SCREENED), "nothing is screened, so this test compares two empty sets"
+    for name in SCREENED:
+        assert base_id(name) not in admitted(sources), f"{name} is screened AND admitted"
+    assert set(admitted(sources)) == {FITTED_ON} | {
+        base_id(source.name) for source in sources if source.role == "train"
+    }
+    # And the corpus that is screened is admitted the moment its role says so,
+    # which is what makes the test above a real gate rather than a name check.
+    flipped = [replace(_fka(), role="train"), *(s for s in sources if s.name != _fka().name)]
+    assert base_id(_fka().name) in admitted(flipped)
+
+
+def test_the_leak_check_fires_on_a_split_made_by_row() -> None:
+    """The other door, through the same function.
+
+    A checker that returned an empty list for everything would satisfy the gate
+    above, so it is handed a split dealt out row by row -- what anybody writes
+    first -- and it has to object to that as loudly as it objects to a
+    contaminated pool.
+    """
+    record = dict(_split_record())
+    rows = load_generated(GENERATED)
+    record["train"] = [index for index in range(len(rows)) if index % 2]
+    record["dev"] = [index for index in range(len(rows)) if not index % 2]
+    found = leaks(record, load_sources(SOURCES), rows)
+    assert len(found) == 1, f"expected one finding, got {found}"
+    assert "twins straddle the line between train and dev" in found[0], found[0]
+    # Dealing alternately puts one member of every twin on each side, so the
+    # count is the whole corpus and not a sample of it. Asserted exactly,
+    # because a checker that noticed one twin would satisfy a "some were found"
+    # assertion while missing the other 1791.
+    assert found[0].startswith(f"{len(rows) // 2} twins"), (
+        f"a split dealt out row by row should break every twin: {found[0]}"
+    )
+
+
+def test_the_leak_check_fires_when_the_record_disagrees_with_itself() -> None:
+    """A hand-edited artifact, which is the one input every other check trusts.
+
+    `splits.json` is committed, and everything above reads it. Emptying the
+    overlap lists while leaving `max_similarity` above the threshold is the edit
+    that would make a contaminated pool look clean, and the two recorded numbers
+    are what catch it.
+    """
+    record = json.loads(json.dumps(_split_record()))
+    pools = record["eval"]["contamination"]["pools"]
+    fitted = next(pool for pool in pools if pool["pool"] == FITTED_ON)
+    fitted["max_similarity"] = fitted["threshold"]
+    found = leaks(record, load_sources(SOURCES), load_generated(GENERATED))
+    assert len(found) == 1, f"expected one finding, got {found}"
+    assert "while recording no overlap" in found[0], found[0]
+    # And the record has to name the pool this module fits on, or the gate is
+    # measuring some other pool's cleanliness.
+    record["eval"]["contamination"]["fitted_on"] = "training/generated/somewhere-else.jsonl"
+    assert any(
+        "and this module fits on" in line
+        for line in leaks(record, load_sources(SOURCES), load_generated(GENERATED))
+    )
+
+
+def test_no_corpus_the_manifest_admits_overlaps_the_evaluation_set() -> None:
+    """The same rule read off the shipped files, and it is not vacuous.
+
+    A pool with a recorded overlap must not be admitted for training, and one
+    pool does have a recorded overlap: if that stopped being true this test
+    would pass over a comparison that had quietly started answering "clean" to
+    everything, which is why the overlap is asserted rather than assumed.
+    """
+    record = _split_record()
+    sources = load_sources(SOURCES)
+    overlapping = {
+        pool_key(pool["pool"])
+        for pool in record["eval"]["contamination"]["pools"]
+        if pool["exact"] or pool["near"]
+    }
+    assert overlapping, (
+        "no pool overlaps the evaluation set at all, so this test would pass over a "
+        "comparison that always answered clean"
+    )
+    assert not overlapping & set(admitted(sources)), (
+        f"{sorted(overlapping & set(admitted(sources)))} overlap the evaluation set and are "
+        "admitted for training"
+    )
+    by_key = {base_id(source.name): source for source in sources}
+    for key in overlapping:
+        assert by_key[key].role == "excluded", f"{key} overlaps the evaluation set"
 
 
 def test_the_contamination_finding_records_an_overlap_it_actually_found() -> None:

@@ -199,9 +199,9 @@ interchangeable. As of 2026-09-02 the manifest holds 13 sources:
 
 | `role` | sources | meaning |
 |---|---|---|
-| `train` | 2 | may be fitted on |
+| `train` | 1 | may be fitted on |
 | `eval` | 1 | may be scored on |
-| `excluded` | 10 | neither, with the reason recorded in the entry itself |
+| `excluded` | 11 | neither, with the reason recorded in the entry itself |
 
 The counts are in the table because a number in prose that counts rows in a
 file is a claim like any other, and this one went stale the moment the manifest
@@ -308,7 +308,7 @@ of them:
 
   Written as an allowlist rather than as a list of forbidden terms, because a
   denylist fails open: the restriction nobody thought of reads as clean. 4 of
-  the 10 excluded entries are refused here, and for four different reasons --
+  the 11 excluded entries are refused here, and for four different reasons --
   one non-commercial, one share-alike, one declaring no licence at all, and one
   declaring two different licences in the same card. The last two are recorded
   in the manifest as `none-declared` and `conflicting`, which are not SPDX
@@ -628,14 +628,27 @@ Three caveats, and none of them is small.
 
 **The eval set is checked against the training data by content, not by name.**
 `training/evalset.py` compares every eval row against the synthetic corpus and
-against every `role: train` source, exact and near-duplicate at 0.6 word-trigram
-Jaccard, and `splits.json` records the finding per pool. Against the corpus the
-encoder is actually fitted on the result is 0 exact and 0 near, the closest pair
-reaching 0.389. Against `fka/awesome-chatgpt-prompts` it is 3 exact and 6 near:
-that corpus carries the DAN prompt and so does the evaluation set. Nothing in
-stage 2b is fitted on it, so nothing leaks today, and the finding is recorded
-rather than filed away because the day somebody adds that corpus to the
-training mix, 6 evaluation rows stop being held out.
+against every source the manifest admits for training, exact and near-duplicate
+at 0.6 word-trigram Jaccard, and `splits.json` records the finding per pool.
+Against the corpus the encoder is actually fitted on the result is 0 exact and 0
+near, the closest pair reaching 0.389.
+
+Against `fka/awesome-chatgpt-prompts` it is 3 exact and 6 near: that corpus
+carries the DAN prompt and so does the evaluation set. It used to carry
+`role: train`, from before the evaluation set was external, when the overlap
+cost nothing. It carries `role: excluded` now, because the day somebody adds
+that corpus to the training mix, 6 evaluation rows stop being held out and the
+ship bar becomes partly a memorisation test with nothing in the number saying
+so.
+
+**That rule is enforced, not written down.** `training.splits.leaks` fails if
+any pool the manifest admits for training overlaps the evaluation set, reading
+the measured overlap rather than a list of names, and `build` raises through it
+so a contaminated split cannot be written in the first place. Corpora are
+matched by `base_id`, so re-pinning a name to another revision does not make it
+a corpus nobody has measured. The same function fails if a twin is separated
+across the line between train and dev, because that is the same leak through
+the other door and two checks in two files drift apart.
 
 ### The split, and why it is by cluster of twins
 

@@ -377,10 +377,13 @@ file is reproduced here, which is what section 4(d) of that licence asks for:
 - SPDX identifier: `Apache-2.0`
 - Licence text: <https://www.apache.org/licenses/LICENSE-2.0>
 
-The other corpus admitted for training, `fka/awesome-chatgpt-prompts`, is
-CC0-1.0. A public-domain dedication asks for nothing, so there is no obligation
-to discharge and it is named here only so that the two admitted sources can be
-read in one place.
+`fka/awesome-chatgpt-prompts`, CC0-1.0, was admitted for training until the
+evaluation set became external and the two were compared: it carries the DAN
+prompt and so does `jackhhao/jailbreak-classification`, 3 rows exactly and 6
+near. It is `role: excluded` for that reason. A public-domain dedication asks
+for nothing, so nothing was owed either way, and it is named here because it
+was named here before and a corpus that quietly disappears from an attribution
+file is a corpus nobody can check the history of.
 
 **No corpus in this section may be scored on.** The screen for that lives in
 `tests/test_training_data.py`, not in this document, and the reason it applies

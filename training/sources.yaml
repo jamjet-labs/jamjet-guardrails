@@ -50,27 +50,10 @@
 # before.
 
 # --------------------------------------------------------------------------
-# Usable for training.
+# Usable for training. One entry: the other candidate was demoted below when
+# the evaluation set became external and its overlap with that set started to
+# count.
 # --------------------------------------------------------------------------
-
-- name: fka/awesome-chatgpt-prompts
-  url: "https://huggingface.co/datasets/fka/awesome-chatgpt-prompts/resolve/fdf38571f7696abd71610f5ce2883454ed48bebc/prompts.csv"
-  license: CC0-1.0
-  sha256: "317a26e814a21b23227bd72e293bcfbe5d349d6ef14461270eec620f0fc0bafc"
-  role: train
-  note: >
-    Benign instruction prompts, the negative class. CC0-1.0 read from the
-    dataset card's licence tag on 2026-09-01: a public-domain dedication, so
-    this is the one source here that leaves nothing to attribute.
-    Value-screened clean on 2026-09-01 -- 120,141 lines read, no fingerprint
-    matched. Read 5,647,532 bytes.
-    ProtectAI's v1 card names this corpus as its own training data, so it may
-    never carry role eval; train is not a preference here, it is the only role
-    left open. The repository has since been renamed and now answers under a
-    different id (https://huggingface.co/datasets/fka/prompts.chat); the name
-    recorded here is the one the reference card uses and the one the pinned
-    URL still serves, and the rename is written down because an id-based
-    denylist does not follow a rename.
 
 - name: yanismiraoui/prompt_injections
   url: "https://huggingface.co/datasets/yanismiraoui/prompt_injections/resolve/bd55359f2f332afc35f277ac3dd08f7111b024c9/prompt_injections.csv"
@@ -155,6 +138,52 @@
     to be different: training/evalset.py compares every eval row against the
     synthetic corpus and every role train source here, exact and near-duplicate,
     and the finding is recorded in training/generated/splits.json.
+
+# --------------------------------------------------------------------------
+# Excluded because it overlaps the evaluation set. One entry, and neither
+# screen below refused it: the licence is CC0-1.0 and the values are clean.
+# What refuses it is the corpus it shares rows WITH.
+#
+# This is the exclusion an id-based rule cannot make. The overlap was found by
+# comparing content, training/generated/splits.json keeps the measurement so
+# the reason stays checkable, and training.splits.leaks fails if the corpus is
+# admitted for training again.
+# --------------------------------------------------------------------------
+
+- name: fka/awesome-chatgpt-prompts
+  url: "https://huggingface.co/datasets/fka/awesome-chatgpt-prompts/resolve/fdf38571f7696abd71610f5ce2883454ed48bebc/prompts.csv"
+  license: CC0-1.0
+  sha256: "317a26e814a21b23227bd72e293bcfbe5d349d6ef14461270eec620f0fc0bafc"
+  role: excluded
+  note: >
+    Benign instruction prompts. Excluded because it OVERLAPS THE EVALUATION
+    SET: it carries the DAN prompt and so does
+    jackhhao/jailbreak-classification, and comparing the two by content found
+    3 exact and 6 near-duplicate rows at 0.6 word-trigram Jaccard. Fit on this
+    corpus and 6 of the 1,998 evaluation rows stop being held out, which turns
+    the ship bar partly into a memorisation test with nothing in the number
+    saying so.
+    That is why the role is excluded and not train. It carried role train while
+    the evaluation set was still going to be a held-out slice of the synthetic
+    corpus, where the overlap cost nothing. The evaluation set became external
+    in this same stage and the overlap started to matter.
+    The measured finding is kept in training/generated/splits.json rather than
+    deleted along with the entry -- training.splits.SCREENED is what keeps
+    comparing it -- because an exclusion whose evidence has been tidied away is
+    an exclusion the next reader undoes. training.splits.leaks fails if this
+    corpus is admitted for training again, by content and not by name, so the
+    rule does not depend on anybody reading this note.
+    Nothing else refuses it. CC0-1.0 read from the dataset card's licence tag
+    on 2026-09-01: a public-domain dedication, so it leaves nothing to
+    attribute. Value-screened clean on 2026-09-01 -- 120,141 lines read, no
+    fingerprint matched. Read 5,647,532 bytes.
+    ProtectAI's v1 card also names this corpus as its own training data, so it
+    may never carry role eval either. The repository has since been renamed and
+    now answers under a different id
+    (https://huggingface.co/datasets/fka/prompts.chat); the name recorded here
+    is the one the reference card uses and the one the pinned URL still serves,
+    and the rename is written down because an id-based denylist does not follow
+    a rename.
 
 # --------------------------------------------------------------------------
 # Excluded on values. The licence field passed; the rows did not.
