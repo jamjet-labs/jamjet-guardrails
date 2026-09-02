@@ -3005,6 +3005,46 @@ def test_the_corpus_cannot_be_sorted_inside_a_pair_either() -> None:
     )
 
 
+def test_the_conditional_probe_pools_rows_and_does_not_average_pairs() -> None:
+    """A thin pair must not weigh as much as a thick one.
+
+    Averaging the eight per-pair accuracies and pooling the eight hit counts
+    give the same answer while the pairs are near-equal in size, which they are
+    here, so nothing measured on the committed corpus can tell the two apart.
+    That is exactly the shape of claim that goes untested for years: true today,
+    unobservable today, and wrong the first time a pair is dropped or a run
+    falls over part way through one.
+
+    So it is checked on groups built to disagree. One group of 40 rows the probe
+    can sort, one of 8 it cannot: pooling weights them 40 to 8, averaging weights
+    them equally, and the two answers are far apart.
+    """
+    features = []
+    labels = []
+    groups = []
+    for index in range(40):
+        label = index % 2
+        features.append([float(label) * 10.0, 0.0])
+        labels.append(label)
+        groups.append("easy")
+    for index in range(8):
+        label = index % 2
+        features.append([0.0, 1.0 if index in (0, 3, 5, 6) else -1.0])
+        labels.append(label)
+        groups.append("hard")
+    pooled = conditional_accuracy(features, labels, groups, folds=2)
+    easy = cross_validated_accuracy(features[:40], labels[:40], folds=2)
+    hard = cross_validated_accuracy(features[40:], labels[40:], folds=2)
+    expected = (easy * 40 + hard * 8) / 48
+    assert pooled == pytest.approx(expected), (
+        f"pooled {pooled:.4f} is not the row-weighted figure {expected:.4f}"
+    )
+    assert abs(expected - (easy + hard) / 2) > 0.05, (
+        "the two groups do not disagree enough for this to distinguish pooling from "
+        "averaging, so the test measures nothing"
+    )
+
+
 def test_no_single_word_sorts_a_pair() -> None:
     """One token, one pair, the whole vocabulary, both polarities.
 
