@@ -43,6 +43,7 @@ from training.backbone import (
     verified,
 )
 from training.cluster import (
+    EMBED_MODEL,
     THRESHOLD,
     ClusterError,
     cluster_ids,
@@ -115,6 +116,24 @@ from training.generate import (
     prompt_digest,
     prompt_id,
     seeds_from_rows,
+)
+from training.measure import (
+    EXPORT_RECORD,
+    HOLDS,
+    METRICS,
+    QUANTISATION_BUDGET,
+    SPEC_STRIDE,
+    SPEC_WINDOW,
+    STRIDE_DIVISORS,
+    WINDOWS,
+    Config,
+    MeasureError,
+    agreement,
+    choose,
+    configurations,
+    constant,
+    covered,
+    starts_for,
 )
 from training.scoring import (
     NEGATIVE,
@@ -193,6 +212,26 @@ TRAINING_RUN = ARTIFACTS / "training_run.json"
 #: The same configuration, the same seed, a second process. The reproducibility
 #: claim is a comparison between two files rather than a sentence.
 TRAINING_RUN_REPEAT = ARTIFACTS / "training_run_repeat.json"
+
+#: The same checkpoint exported a second time, in a second process. Same shape
+#: as the pair above, and a stronger claim: export and quantisation have no
+#: non-deterministic reduction to lose, so these two are compared BY DIGEST
+#: where the training runs are compared by confusion count.
+EXPORT_RECORD_REPEAT = ARTIFACTS / "export_repeat.json"
+
+#: The two modules that export the checkpoint and measure it. `training/export.py`
+#: imports torch, onnx and onnxruntime at the top and is read here as TEXT only,
+#: the way `TRAINER` is. `training/measure.py` is imported as well as read,
+#: because it takes numpy and onnxruntime inside the functions that need them
+#: on purpose: the windowing geometry and the selection rule are what 2b-2
+#: ports, and they are testable here only because of that.
+EXPORTER = ROOT / "training" / "export.py"
+MEASURER = ROOT / "training" / "measure.py"
+
+#: The published note on reading this export under the two pinned onnxruntime
+#: versions. Held to the records below, because every size and every count in it
+#: is a claim about data that lives in `training/artifacts/`.
+CROSS_VERSION = ROOT / "docs" / "measurements" / "2026-09-02-onnx-export-cross-version.md"
 
 #: The module that legitimately reads the evaluation set, used as the positive
 #: control for the scan that requires `TRAINER` never to.
@@ -5231,6 +5270,861 @@ def test_the_readme_states_the_dev_metrics_the_run_recorded() -> None:
     assert record["truncated_rows"] == 1, (
         f"the README says one row was truncated and the record says {record['truncated_rows']}"
     )
+
+
+# --------------------------------------------------------------------------
+# The export, the quantisation and the window sweep.
+#
+# Two kinds of check, and the split matters. The first kind reads the committed
+# records, the way every other screen in this file does. The second kind
+# exercises `training/measure.py` directly, which is possible only because that
+# module imports numpy and onnxruntime INSIDE the functions that need them: the
+# windowing geometry and the selection rule are what 2b-2 ports into the
+# detector, and a rule nothing exercises is a rule nobody has checked.
+# --------------------------------------------------------------------------
+
+
+def _metrics() -> dict[str, Any]:
+    record: dict[str, Any] = json.loads(METRICS.read_text(encoding="utf-8"))
+    return record
+
+
+def _export(path: Path = EXPORT_RECORD) -> dict[str, Any]:
+    record: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+    return record
+
+
+def test_every_document_position_is_read_by_some_window() -> None:
+    """The property the whole windowing exists for, over a grid rather than one case.
+
+    A detector that reads part of a document is a detector with a blind spot,
+    and the blind spot is at the end, which is the part a test written by hand
+    is least likely to reach for. Every length here is checked against every
+    legal stride, including the lengths that are exactly one window, one window
+    plus one token, and a whole number of strides.
+    """
+    for window in (8, 128, 256, 512):
+        content = window - 2
+        for divisor in (2, 4):
+            stride = window // divisor
+            for length in (0, 1, content - 1, content, content + 1, content + stride, 999):
+                assert covered(length, content, stride) == set(range(length)), (
+                    f"window {window} stride {stride} does not read all {length} tokens"
+                )
+
+
+def test_a_span_no_longer_than_the_overlap_lies_wholly_inside_one_window() -> None:
+    """Containment, which is what the stride buys and coverage does not.
+
+    Coverage says every token is read by SOME window. That is not enough for a
+    detector: a payload cut in half across two windows is two halves of an
+    injection, and half an injection is what a classifier scores as benign. The
+    guarantee is that any span up to `content - stride + 1` tokens sits entirely
+    within one window, and it is asserted at exactly that length and refuted one
+    token past it, because a bound tested only in its comfortable middle is a
+    bound nobody has located.
+    """
+    content, stride, length = 254, 128, 900
+    starts = starts_for(length, content, stride)
+    guaranteed = content - stride + 1
+    for begin in range(length - guaranteed + 1):
+        span = range(begin, begin + guaranteed)
+        assert any(start <= span[0] and span[-1] < start + content for start in starts), (
+            f"a {guaranteed}-token span at {begin} is split across every window"
+        )
+    # And one token longer is not guaranteed, which is why the bound is written
+    # down rather than assumed generous.
+    too_long = guaranteed + 1
+    assert not all(
+        any(start <= begin and begin + too_long - 1 < start + content for start in starts)
+        for begin in range(length - too_long + 1)
+    ), f"a {too_long}-token span is always contained, so the bound above is not the bound"
+
+
+def test_the_last_window_is_pulled_back_to_the_end_of_the_document() -> None:
+    """A tail shorter than the stride still gets read.
+
+    Without the pull-back the final window ends before the document does, and a
+    payload in the last few tokens of a long page is unreachable. That is the
+    failure this detector is most likely to meet and least likely to be tested
+    on, because a test corpus built by hand puts the interesting text near the
+    front.
+    """
+    content, stride = 254, 128
+    starts = starts_for(768, content, stride)
+    assert starts[-1] + content == 768
+    assert starts[-2] + content < 768, "the pull-back window is not the one that reaches the end"
+    # And nothing is appended when the last regular window already reaches it.
+    exact = starts_for(content + stride, content, stride)
+    assert exact == [0, stride]
+    assert exact[-1] + content == content + stride
+
+
+def test_a_document_shorter_than_one_window_is_read_once() -> None:
+    """One window, not zero and not two.
+
+    Zero would silently score nothing. Two would score the same text twice and
+    let the max over windows drift on nothing but padding.
+    """
+    for length in (0, 1, 100, 254):
+        assert starts_for(length, 254, 128) == [0]
+
+
+@pytest.mark.parametrize(
+    ("content", "stride", "expected"),
+    [
+        (254, 255, "steps past 1 tokens no window covers"),
+        (0, 128, "reads nothing"),
+        (-2, 128, "reads nothing"),
+        (254, 0, "never advances"),
+        (254, -1, "never advances"),
+    ],
+)
+def test_a_geometry_that_cannot_read_the_document_is_refused(
+    content: int, stride: int, expected: str
+) -> None:
+    """Refused, not clamped.
+
+    A stride wider than the window leaves a gap no window covers, and clamping
+    it to the window would turn a configuration that cannot see part of the
+    document into one that reads as working. The sweep is allowed to find a
+    setting bad; it is not allowed to be handed one that is silently broken.
+    """
+    with pytest.raises(MeasureError) as raised:
+        starts_for(1000, content, stride)
+    assert expected in str(raised.value)
+
+
+def test_the_configurations_swept_are_the_ones_the_module_declares() -> None:
+    """Every window against every stride, and the stride is a fraction of the window."""
+    built = configurations()
+    assert len(built) == len(WINDOWS) * len(STRIDE_DIVISORS)
+    assert {config.window for config in built} == set(WINDOWS)
+    for config in built:
+        assert config.content == config.window - 2, "a window pays for [CLS] and [SEP]"
+        assert config.window % config.stride == 0
+        assert config.window // config.stride in STRIDE_DIVISORS
+    assert Config(SPEC_WINDOW, SPEC_STRIDE) in built, (
+        "the configuration the spec starts at is not in the sweep, so the sweep cannot say "
+        "whether the evidence moved it"
+    )
+
+
+def test_the_chosen_configuration_is_the_smallest_window_that_holds_the_metric() -> None:
+    """The selection rule, exercised on numbers chosen to make each half fail alone.
+
+    Three properties, and the third is the one a rule written as "take the best"
+    would get wrong: a smaller window that holds the metric wins over a bigger
+    one that scores marginally higher, a smaller window that does NOT hold it
+    loses, and two configurations that tie go to the wider stride, which reads
+    fewer windows over a long page and so has fewer chances to false-positive.
+
+    Run over both summaries, because which one the rule is applied to is the
+    question the sweep turned on, and a rule tested only on the column it was
+    written for is a rule with an untested parameter.
+    """
+    for key in ("f1", "accuracy"):
+        rows: list[dict[str, Any]] = [
+            {"window": 128, "stride": 64, key: 0.90},
+            {"window": 256, "stride": 128, key: 0.94},
+            {"window": 256, "stride": 64, key: 0.94},
+            {"window": 512, "stride": 256, key: 0.941},
+        ]
+        assert choose(rows, key) == Config(256, 128), "the tie did not go to the wider stride"
+
+        holding = [dict(row) for row in rows]
+        holding[0][key] = 0.941 - HOLDS
+        assert choose(holding, key) == Config(128, 64), (
+            f"a smaller window that holds {key} was not taken"
+        )
+
+        losing = [dict(row) for row in rows]
+        losing[0][key] = 0.941 - HOLDS - 1e-9
+        assert choose(losing, key) == Config(256, 128), (
+            "a window outside the tolerance was taken anyway"
+        )
+
+
+def test_the_selection_rule_refuses_an_empty_sweep_and_a_column_it_cannot_read() -> None:
+    """Nothing swept is not a configuration, and a default here would read as one.
+
+    A column the sweep does not carry is refused for the same reason. Reading a
+    missing key as zero would make every row tie at the bottom, and the rule
+    would return the smallest window with no evidence behind it at all.
+    """
+    with pytest.raises(MeasureError):
+        choose([], "f1")
+    with pytest.raises(MeasureError) as raised:
+        choose([{"window": 256, "stride": 128, "f1": 0.9}], "accuracy")
+    assert "cannot be chosen on" in str(raised.value)
+
+
+def test_a_detector_that_flags_everything_scores_well_above_zero_on_f1() -> None:
+    """The reference that shows what an F1 column can and cannot choose between.
+
+    F1 counts no true negatives, so on a balanced set the constant classifier
+    reaches 0.667 without looking at its input. Accuracy on the same set reaches
+    exactly 0.5. Asserted here rather than described, because the sweep's window
+    choice rests on that difference.
+    """
+    labels = [POSITIVE] * 359 + [NEGATIVE] * 359
+    everything = constant(labels)["flag_everything"]
+    assert everything["recall"] == 1.0
+    assert everything["precision"] == pytest.approx(0.5)
+    assert everything["f1"] == pytest.approx(2 / 3, abs=1e-9)
+    assert everything["accuracy"] == pytest.approx(0.5)
+    assert everything["fn"] == 0 and everything["tn"] == 0
+
+
+def test_agreement_counts_decisions_and_not_probabilities() -> None:
+    """Two models agree when they DECIDE alike, whatever the gap between them.
+
+    Probabilities 0.2 apart that never cross the threshold are the same
+    detector; probabilities 0.002 apart that straddle it are not. A similarity
+    reported over the probabilities would call the first pair different and the
+    second pair the same, which is backwards for both.
+    """
+    far = agreement([0.10, 0.95], [0.30, 0.75])
+    assert far["decided_alike"] == 2
+    assert far["rate"] == 1.0
+    assert far["max_probability_gap"] == pytest.approx(0.20)
+
+    near = agreement([0.499, 0.95], [0.501, 0.95])
+    assert near["decided_differently"] == 1
+    assert near["rate"] == 0.5
+    assert near["max_probability_gap"] == pytest.approx(0.002, abs=1e-9)
+
+
+def test_agreement_refuses_two_sets_of_different_sizes() -> None:
+    """`zip` truncates, and an agreement rate over the shorter half is still a number."""
+    with pytest.raises(MeasureError):
+        agreement([0.1, 0.2], [0.1])
+
+
+def test_the_measurement_and_the_export_name_the_same_record() -> None:
+    """Two tables, and they have to agree.
+
+    `training/measure.py` cannot import `training/export.py`, because that
+    module imports torch at the top and this suite runs without it. The path
+    they both name is therefore written twice, so it is held equal here by
+    reading the exporter as text. The alternative -- importing it -- is what
+    would make the windowing rules above untestable in CI.
+    """
+    source = EXPORTER.read_text(encoding="utf-8")
+    assert EXPORT_RECORD.relative_to(ROOT).as_posix() == "training/artifacts/export.json"
+    assert 'RECORD = ROOT / "training" / "artifacts" / "export.json"' in source, (
+        "the exporter writes its record somewhere training/measure.py does not read"
+    )
+    assert METRICS.parent == EXPORT_RECORD.parent == ARTIFACTS
+
+
+def test_neither_the_export_nor_the_measurement_can_reach_the_evaluation_set() -> None:
+    """The same scan the trainer is held to, over the two modules that came after it.
+
+    The rule does not stop at the model. A quantisation scheme, a window, a
+    stride or a threshold chosen by scoring the evaluation set would make the
+    one number this stage publishes a measurement of the choosing, and the
+    choosing is exactly what these two modules do.
+
+    The positive control is `training/splits.py`, which reaches the evaluation
+    set legitimately, and it is re-used here rather than assumed: a scan that
+    had stopped looking at anything reports both new modules clean.
+    """
+    forbidden = {"evalset", "ship_bar", "load_eval", "EVAL_SOURCE", "balance"}
+
+    def reached(path: Path) -> set[str]:
+        found: set[str] = set()
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Import):
+                found |= {alias.name.rsplit(".", 1)[-1] for alias in node.names}
+            elif isinstance(node, ast.ImportFrom):
+                found |= {(node.module or "").rsplit(".", 1)[-1]}
+                found |= {alias.name for alias in node.names}
+            elif isinstance(node, ast.Attribute):
+                found.add(node.attr)
+            elif isinstance(node, ast.Name):
+                found.add(node.id)
+        return found & forbidden
+
+    assert reached(SPLIT_BUILDER) == forbidden - {"ship_bar"}, (
+        "the scan does not find the evaluation reads in the module that legitimately makes "
+        "them, so it would find none anywhere"
+    )
+    for path in (EXPORTER, MEASURER):
+        assert reached(path) == set(), (
+            f"{path.name} reaches the evaluation set; a window, a stride or a quantisation "
+            "scheme chosen through it makes the ship bar measure the choosing"
+        )
+        literals = " ".join(
+            node.value
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+            if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        )
+        assert base_id(EVAL_SOURCE) not in _base_ids_in(literals), (
+            f"{path.name} carries the evaluation corpus id in a string literal"
+        )
+
+
+def test_the_export_is_the_checkpoint_the_run_record_selected() -> None:
+    """The chain from the fitted weights to the exported bytes, held link by link.
+
+    The weights are not in this repository, so a record that named the wrong run
+    would be uncheckable from here forever. Both digests are asserted: the run
+    record's own, so the summary copied out of it can be shown to be a summary
+    of THIS file, and every weight file's, so the directory that was exported is
+    the directory that was fitted.
+    """
+    export, run = _export(), _training_run()
+    provenance = export["provenance"]
+    assert provenance["training_run"] == str(TRAINING_RUN.relative_to(ROOT))
+    assert provenance["training_run_sha256"] == sha256_of(TRAINING_RUN)
+    assert provenance["trained_utc"] == run["trained_utc"]
+    assert provenance["seed"] == run["hyperparameters"]["seed"] == SPLIT_SEED
+    assert provenance["selected_epoch"] == run["selected"]["epoch"]
+    assert provenance["dev_f1_in_torch"] == run["selected"]["dev"]["f1"]
+    assert provenance["backbone_revision"] == run["backbone"]["revision"] == BACKBONE.revision
+    assert provenance["parameters"] == BACKBONE.parameters
+    assert provenance["weights"] == run["weights"]
+    assert provenance["rows_sha256"] == sha256_of(GENERATED)
+    assert provenance["split_sha256"] == sha256_of(SPLITS)
+    assert provenance["max_length"] == run["hyperparameters"]["max_length"]
+
+
+def test_the_exported_graph_takes_a_dynamic_sequence_and_not_only_a_dynamic_batch() -> None:
+    """The axis that makes the sweep possible at all.
+
+    A graph traced with only the batch axis dynamic is pinned at the length it
+    was traced at, and every window other than 256 in the sweep below would be
+    a crash rather than a number. That is not a hypothetical: it is what the
+    brief's sketch would have produced.
+    """
+    export = _export()
+    assert export["dynamic_axes"] == ["batch", "sequence"]
+    assert export["traced_at_length"] == _training_run()["hyperparameters"]["max_length"]
+    assert export["inputs"] == ["input_ids", "attention_mask"], (
+        "an input the training loop never filled is an input a caller can feed something "
+        "the model was not fitted on"
+    )
+    assert max(WINDOWS) <= export["max_position_embeddings"], (
+        f"the sweep runs at {max(WINDOWS)} tokens and the model carries "
+        f"{export['max_position_embeddings']} positions"
+    )
+
+
+def test_the_exported_labels_name_the_positive_class_rather_than_numbering_it() -> None:
+    """Polarity by name, because an index is what inverts in silence.
+
+    `benchmarks/run.py:classifier` resolves the injection class by reading
+    `id2label` for the string, which is the harness the ship bar is measured
+    through. A checkpoint exported with `LABEL_0`/`LABEL_1` would give that
+    lookup nothing to find.
+    """
+    labels = _export()["id2label"]
+    assert labels[str(POSITIVE)] == "INJECTION"
+    assert labels[str(NEGATIVE)] == "SAFE"
+    assert set(labels) == {"0", "1"}
+
+
+def test_the_export_reproduced_byte_for_byte_in_a_second_process() -> None:
+    """The determinism claim, measured rather than described.
+
+    Two full exports of one checkpoint, in separate processes, recorded
+    separately and compared here by digest. This is a STRONGER claim than the
+    one the training run can make, and the difference is worth stating: the
+    training run reproduces its DEV confusion counts and not its weights,
+    because MPS does not fix a reduction order. Export and dynamic quantisation
+    have no such reduction; given the same weights they emit the same bytes, and
+    that is asserted rather than hoped for.
+
+    What does NOT follow is that the digest below is reproducible from the seed.
+    It is reproducible from the WEIGHTS, and the weights are not.
+    """
+    first, second = _export(), _export(EXPORT_RECORD_REPEAT)
+    assert first["provenance"]["weights"] == second["provenance"]["weights"], (
+        "the two exports read different checkpoints, so they are not a repeat"
+    )
+    assert first["versions"] == second["versions"]
+    assert first["opset_requested"] == second["opset_requested"]
+    assert first["quantisation"] == second["quantisation"]
+    for which in ("fp32", "int8"):
+        assert first["files"][which]["sha256"] == second["files"][which]["sha256"], (
+            f"the {which} export is not byte-reproducible from the same weights"
+        )
+        assert first["files"][which]["bytes"] == second["files"][which]["bytes"]
+    assert first["tokenizer_files"] == second["tokenizer_files"]
+    assert first["directory"] != second["directory"], (
+        "both records name one directory, so they are one export read twice"
+    )
+
+
+def test_the_exported_models_are_not_in_this_repository() -> None:
+    """Where the ONNX files live and what they hash to, instead of the ONNX files.
+
+    88 MiB and 22 MiB in git is that much in every clone and every source
+    distribution forever, and `training/README.md` records that nothing excludes
+    this tree from the sdist. The brief asked for the chosen artifact to be
+    committed beside its metrics; it is not, and the record is the substitute.
+    """
+    for record in (_export(), _export(EXPORT_RECORD_REPEAT)):
+        assert record["directory"].startswith("data/"), (
+            f"the export is recorded at {record['directory']}, which is inside the repository"
+        )
+        for which in ("fp32", "int8"):
+            assert HEX64.match(record["files"][which]["sha256"])
+            assert record["files"][which]["bytes"] > 1_000_000, "that is not a model"
+        for digest in record["tokenizer_files"].values():
+            assert HEX64.match(digest)
+    assert "/data/" in (ROOT / ".gitignore").read_text(encoding="utf-8")
+    assert not sorted(ROOT.glob("training/**/*.onnx")), "an ONNX file is committed under training/"
+
+
+def test_the_metrics_record_names_the_models_the_export_wrote() -> None:
+    """Two tables, and they have to agree.
+
+    The sizes and digests published in `metrics.json` are the ones `export.json`
+    recorded for the files the sessions actually loaded. A size restated in a
+    second file drifts and both files go on looking right alone, which is the
+    failure this stage has already had once with a figure in KB.
+    """
+    metrics, export = _metrics(), _export()
+    for which in ("fp32", "int8"):
+        assert metrics["models"][which]["sha256"] == export["files"][which]["sha256"]
+        assert metrics["models"][which]["bytes"] == export["files"][which]["bytes"]
+        assert metrics["models"][which]["file"] == export["files"][which]["name"]
+        assert metrics["models"][which]["mib"] == pytest.approx(
+            export["files"][which]["bytes"] / 1024 / 1024, abs=1e-9
+        )
+    assert metrics["models"]["int8"]["bytes"] < metrics["models"]["fp32"]["bytes"]
+    assert metrics["provenance"]["export_record_sha256"] == sha256_of(EXPORT_RECORD)
+    assert metrics["provenance"]["exported_utc"] == export["exported_utc"]
+
+
+def test_every_rate_in_the_metrics_record_is_the_one_its_counts_give() -> None:
+    """Recomputed from four integers rather than trusted as eight decimals.
+
+    Every scored line, in the sweep and at the chosen configuration, for both
+    models and both sets. The counts have to add up to the set they were taken
+    on as well, which is what catches a metric computed over a subset -- and the
+    two sets have the same number of rows here on purpose, since the probe
+    buries each DEV row rather than sampling them.
+    """
+    metrics = _metrics()
+    rows = metrics["dev_rows"]
+    entries = [
+        entry
+        for model in ("fp32", "int8")
+        for which in ("dev", "buried")
+        for entry in [
+            *metrics["sweep"][model][which],
+            metrics["at_the_chosen_configuration"][model][which],
+        ]
+    ]
+    assert len(entries) == 2 * 2 * (len(WINDOWS) * len(STRIDE_DIVISORS) + 1)
+    for entry in entries:
+        tp, fp, fn, tn = (int(entry[key]) for key in ("tp", "fp", "fn", "tn"))
+        assert tp + fp + fn + tn == rows, f"{entry} does not cover the {rows} rows"
+        precision = tp / (tp + fp) if tp + fp else 0.0
+        recall = tp / (tp + fn) if tp + fn else 0.0
+        f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+        assert entry["precision"] == pytest.approx(precision, abs=1e-9)
+        assert entry["recall"] == pytest.approx(recall, abs=1e-9)
+        assert entry["f1"] == pytest.approx(f1, abs=1e-9)
+        assert entry["accuracy"] == pytest.approx((tp + tn) / rows, abs=1e-9)
+
+
+def test_the_sweep_records_the_losing_rows_and_not_only_the_winner() -> None:
+    """Every configuration, for both models, on both sets.
+
+    A sweep reported as its winner is a choice nobody can revisit on evidence,
+    only on taste. The window counts are here for the same reason: a
+    configuration that reads three times as many windows for the same F1 is one
+    the record should be able to reject without re-running anything.
+    """
+    metrics = _metrics()
+    wanted = {(config.window, config.stride) for config in configurations()}
+    for model in ("fp32", "int8"):
+        for which in ("dev", "buried"):
+            rows = metrics["sweep"][model][which]
+            assert {(row["window"], row["stride"]) for row in rows} == wanted
+            for row in rows:
+                assert row["content"] == row["window"] - 2
+                assert row["windows_read"] >= metrics["dev_rows"], "a row was read by no window"
+                assert row["windows_per_document"] == pytest.approx(
+                    row["windows_read"] / metrics["dev_rows"], abs=1e-9
+                )
+    # On DEV as it stands every setting reads every row whole, and the record
+    # has to be able to say so: this is why the buried probe exists at all.
+    for model in ("fp32", "int8"):
+        assert {row["windows_read"] for row in metrics["sweep"][model]["dev"]} == {
+            metrics["dev_rows"]
+        }, "some DEV row needs more than one window, so the note about the probe is wrong"
+        assert min(row["windows_read"] for row in metrics["sweep"][model]["buried"]) > (
+            2 * metrics["dev_rows"]
+        ), "the buried probe fits in one window, so it measures nothing about windowing"
+
+
+def test_the_chosen_configuration_is_what_the_recorded_rule_returns() -> None:
+    """The choice, re-derived through the function that made it rather than read.
+
+    Through `choose`, not by imitating it. A test that re-implements the rule
+    passes over a rule that went to the wrong column, which is exactly the
+    mutation the tree has already had survive a hand-written comparison.
+    """
+    metrics = _metrics()
+    window = metrics["windowing"]["chosen"]
+    chosen = Config(window["window"], window["stride"])
+    assert metrics["windowing"]["chose_on"] == "accuracy"
+    assert chosen == choose(metrics["sweep"]["fp32"]["buried"], "accuracy"), (
+        "the recorded window and stride are not the ones the rule returns for the recorded sweep"
+    )
+    # And the answer the same rule gives on F1 is recorded beside it, because
+    # the metric was switched after the sweep ran and a record that kept only
+    # the answer it used would be hiding that.
+    on_f1 = metrics["windowing"]["rule_returned_on_f1"]
+    assert Config(on_f1["window"], on_f1["stride"]) == choose(
+        metrics["sweep"]["fp32"]["buried"], "f1"
+    )
+    assert chosen in configurations()
+    assert metrics["windowing"]["holds_within"] == HOLDS
+    assert metrics["windowing"]["chosen"]["content"] == chosen.window - 2
+    assert metrics["windowing"]["spec_start"] == {
+        "window": SPEC_WINDOW,
+        "stride": SPEC_STRIDE,
+        "content": SPEC_WINDOW - 2,
+    }
+    # And the numbers at the chosen configuration are the sweep's own row for
+    # it, not a second scoring pass that could disagree with the sweep.
+    for model in ("fp32", "int8"):
+        row = next(
+            entry
+            for entry in metrics["sweep"][model]["dev"]
+            if (entry["window"], entry["stride"]) == (chosen.window, chosen.stride)
+        )
+        for key in ("tp", "fp", "fn", "tn", "precision", "recall", "f1"):
+            assert metrics["at_the_chosen_configuration"][model]["dev"][key] == row[key], (
+                f"{model} scores {key} differently in the sweep and at the chosen setting"
+            )
+
+
+def test_the_float_export_reaches_the_counts_the_training_run_recorded() -> None:
+    """The control that makes the quantisation delta mean anything.
+
+    Read at the length the model was fitted at, the ONNX float model has to
+    reach the same confusion counts on DEV that the torch run recorded, row for
+    row. Without it the delta below would be measured against an fp32 number
+    that had already moved, and a tracing or tokenisation fault would be
+    invisible because both sides of the comparison would carry it.
+
+    Counts, not rates. Two rates agreeing to four decimals is what a rounded
+    copy looks like; four integers agreeing is not.
+    """
+    control, run = _metrics()["export_control"], _training_run()
+    assert control["at"]["window"] == run["hyperparameters"]["max_length"]
+    keys = ("tp", "fp", "fn", "tn", "precision", "recall", "f1")
+    assert control["torch_dev"] == {key: run["selected"]["dev"][key] for key in keys}, (
+        "the control compares against something other than the checkpoint that was selected"
+    )
+    assert control["onnx_fp32_dev"] == control["torch_dev"], (
+        "the ONNX export decides DEV rows differently from the torch checkpoint it came from"
+    )
+
+
+def test_the_f1_column_of_the_probe_does_not_separate_a_detector_from_a_constant() -> None:
+    """The reason the selection metric was switched, held to the numbers that caused it.
+
+    Two facts, both parameter-free, and the record's explanation stands or falls
+    with them. First, the F1 column and the accuracy column pick different
+    configurations, so which one the rule reads is a real choice and not a
+    formality. Second, at least one configuration scores no better on F1 than a
+    detector that flags every input, which is what a column that ignores true
+    negatives does on a balanced set.
+
+    If either stops holding, the sentence in `metrics.json` explaining the
+    switch has stopped describing anything, and the switch should be re-argued
+    rather than inherited.
+    """
+    metrics = _metrics()
+    rows = metrics["sweep"]["fp32"]["buried"]
+    everything = metrics["windowing"]["constant_classifier"]["flag_everything"]
+    assert choose(rows, "f1") != choose(rows, "accuracy"), (
+        "the two columns now agree, so the recorded reason for reading accuracy instead of "
+        "F1 no longer describes anything"
+    )
+    assert sum(1 for row in rows if row["f1"] <= everything["f1"]) >= 1, (
+        "every configuration now beats a detector that flags every input on F1, so the "
+        "recorded finding about that column no longer holds"
+    )
+    beat_on_f1 = max(row["f1"] for row in rows) - everything["f1"]
+    beat_on_accuracy = max(row["accuracy"] for row in rows) - everything["accuracy"]
+    assert beat_on_accuracy > beat_on_f1, (
+        "F1 now separates the sweep from a constant classifier better than accuracy does, "
+        "which is the opposite of the record's argument"
+    )
+
+
+def test_the_probe_reports_that_no_configuration_works_on_long_documents() -> None:
+    """The finding that matters more than the window, asserted so it cannot be dropped.
+
+    Every configuration on the buried-payload probe is far below the DEV score,
+    and the mechanism is in the counts: max-pooling over N windows gives a
+    per-window false positive rate N chances to fire, so precision falls as the
+    document lengthens. A record that stated the chosen window and not this
+    would hand 2b-2 a setting and not the reason it is not yet enough.
+    """
+    metrics = _metrics()
+    on_dev = metrics["at_the_chosen_configuration"]["fp32"]["dev"]["f1"]
+    for row in metrics["sweep"]["fp32"]["buried"]:
+        assert row["f1"] < on_dev - 0.2, (
+            "a configuration now scores near its DEV F1 on the buried probe, so the caveat "
+            "recorded against these numbers is no longer the caveat that applies"
+        )
+    # And the shape of the failure: it is precision, not recall, at the narrow
+    # windows, which is what compounding over more windows produces.
+    narrow = min(metrics["sweep"]["fp32"]["buried"], key=lambda row: row["window"])
+    wide = max(metrics["sweep"]["fp32"]["buried"], key=lambda row: row["window"])
+    assert narrow["recall"] > wide["recall"], "a narrower window did not find more payloads"
+    assert narrow["precision"] < wide["precision"], (
+        "a narrower window did not cost precision, so reading more windows is not what is "
+        "driving the false positives and the recorded mechanism is wrong"
+    )
+
+
+def test_the_quantisation_decision_follows_the_rule_that_was_fixed_first() -> None:
+    """The rule from the brief, applied to the numbers rather than described beside them.
+
+    Recomputed here from the two recorded F1s, so a record that shipped int8
+    while its own delta says otherwise fails. The budget is asserted against the
+    module constant as well: a threshold that lives only in the artifact is a
+    threshold the next run can quietly widen.
+    """
+    quantisation = _metrics()["quantisation"]
+    assert quantisation["budget"] == QUANTISATION_BUDGET
+    delta = quantisation["dev_f1_int8"] - quantisation["dev_f1_fp32"]
+    assert quantisation["dev_f1_delta"] == pytest.approx(delta, abs=1e-12)
+    assert quantisation["within_budget"] is (abs(delta) <= QUANTISATION_BUDGET)
+    assert quantisation["ship"] == ("int8" if abs(delta) <= QUANTISATION_BUDGET else "fp32")
+    assert quantisation["scheme"]["scheme"] == "dynamic"
+    assert quantisation["scheme"]["calibration_set"] is None, (
+        "a calibration set for this detector could only have been drawn from the corpus it "
+        "is measured against once"
+    )
+
+
+def test_the_two_models_are_compared_at_the_decisions_and_not_only_the_rates() -> None:
+    """Agreement, because two F1s that match are also what one model scored twice looks like.
+
+    Equal precision and equal recall in two rows of a results table is the shape
+    a copied number makes. The disagreement count is what tells the two apart,
+    and `training/ship_bar.json` records the same quantity for the same reason
+    about the two reference classifiers.
+    """
+    metrics = _metrics()
+    for which in ("dev", "buried"):
+        found = metrics["quantisation"]["agreement"][which]
+        assert found["inputs"] == metrics["dev_rows"]
+        assert found["decided_alike"] + found["decided_differently"] == found["inputs"]
+        assert found["rate"] == pytest.approx(found["decided_alike"] / found["inputs"], abs=1e-12)
+        assert found["max_probability_gap"] > 0.0, (
+            "int8 and fp32 produced identical probabilities on every input, which is not what "
+            "quantising the weights does; the same session was probably scored twice"
+        )
+
+
+def test_the_windowing_was_cross_checked_against_the_path_2b2_ports() -> None:
+    """The batched driver and the per-window reference, held equal on real rows.
+
+    Every number in this record is taken through the batched path, and the
+    per-window path is the one 2b-2 ports into the detector. A batching bug
+    would move the published numbers and leave the ported detector scoring
+    something else, and the two would go on looking like one implementation.
+    """
+    checked = _metrics()["windowing"]["batched_and_per_window_paths_differ_by"]
+    assert checked <= 1e-6, f"the two windowing paths disagree by {checked}"
+
+
+def test_the_record_carries_the_evidence_for_slicing_ids_instead_of_re_encoding() -> None:
+    """The deviation from the brief's sketch, measured rather than argued.
+
+    The sketch decoded each window back to text and tokenised it again. That is
+    not the identity: a window that comes back longer than it went in is a
+    window `max_length` truncation cuts, so the loop would read less of the
+    document than it says it does. The count is recorded so the choice can be
+    revisited on evidence.
+    """
+    found = _metrics()["windowing"]["round_trip"]
+    assert found["windows"] > 0
+    assert found["changed"] > 0, (
+        "the round trip changed nothing, so the reason given for not using it no longer holds "
+        "and the record says something it cannot support"
+    )
+    assert found["grew_past_the_window"] > 0
+    assert found["grew_past_the_window"] <= found["changed"] <= found["windows"]
+
+
+def test_the_probe_is_built_from_dev_rows_and_reaches_past_one_window() -> None:
+    """The long documents, held to the two properties that make them worth scoring.
+
+    Built from DEV and from nothing else, and buried deep enough that the first
+    window cannot reach the payload. A probe whose payloads sat inside the first
+    256 tokens would be a second copy of the DEV set wearing a longer text, and
+    every row of the sweep would agree for the wrong reason.
+    """
+    metrics = _metrics()
+    probe = metrics["probe"]
+    assert probe["seed"] == SPLIT_SEED
+    assert probe["documents"] == metrics["dev_rows"]
+    assert HEX64.match(probe["sha256"])
+    assert probe["payload_depth_tokens"]["min"] >= SPEC_WINDOW - 2, (
+        "a payload inside the first window makes the sweep measure nothing"
+    )
+    assert probe["document_length_tokens"]["min"] > max(WINDOWS) - 2, (
+        "a document that fits in the widest window is not a windowing probe"
+    )
+    assert "DEV" in probe["built_from"]
+
+
+def test_the_metrics_record_carries_the_cluster_statistics_the_split_recorded() -> None:
+    """Two tables, and they have to agree.
+
+    The cluster statistics are what the train and dev division was made from, so
+    a metrics file that restated them differently would describe a model fitted
+    through a split that does not exist.
+    """
+    found, split = _metrics()["clusters"], _split_record()
+    for key in (
+        "model",
+        "model_digest",
+        "threshold",
+        "clusters",
+        "largest_cluster",
+        "clustered_rows",
+    ):
+        assert found[key] == split["embedding"][key], f"the record and the split disagree on {key}"
+    assert found["rows"] == split["rows"]
+    assert found["model"] == EMBED_MODEL
+
+
+def test_the_metrics_record_carries_the_hyperparameters_and_the_seed_of_the_run() -> None:
+    """Copied off the run record rather than retyped, and asserted equal to it."""
+    metrics = _metrics()
+    assert metrics["hyperparameters"] == _training_run()["hyperparameters"]
+    assert metrics["seed"] == SPLIT_SEED == metrics["hyperparameters"]["seed"]
+    assert (
+        metrics["threshold"] == _training_run()["selected"]["dev_at_tuned_threshold"]["threshold"]
+    )
+    assert metrics["execution_provider"] == "CPUExecutionProvider"
+    assert metrics["dev_rows"] == _training_run()["data"]["dev"]["rows"]
+
+
+def test_the_published_note_on_the_two_runtimes_states_the_recorded_sizes() -> None:
+    """Two tables, and they have to agree, across a published document this time.
+
+    `docs/measurements/2026-09-02-onnx-export-cross-version.md` is prose a reader
+    outside this repository will quote, and every size and count in it is a
+    claim about data that lives in `training/artifacts/`. The headroom against
+    PyPI's per-file limit is derived here rather than copied, because a
+    subtraction written once is a subtraction nobody redoes.
+    """
+    note = " ".join(CROSS_VERSION.read_text(encoding="utf-8").split())
+    metrics = _metrics()
+    limit = 100
+    for which in ("fp32", "int8"):
+        model = metrics["models"][which]
+        row = f"| `{model['file']}` | {model['bytes']:,} | {model['mib']:.2f} | yes, by "
+        assert row in note, f"the note does not state {row!r}"
+        assert f"{row}{round(limit - model['mib'])} MiB |" in note, (
+            f"the note does not state the headroom for {which}"
+        )
+    fp32_dev = metrics["at_the_chosen_configuration"]["fp32"]["dev"]
+    int8_dev = metrics["at_the_chosen_configuration"]["int8"]["dev"]
+    apart = metrics["quantisation"]["agreement"]["dev"]["decided_differently"]
+    for claim in (
+        (f"on the {metrics['dev_rows']} DEV rows the two models decide {apart} inputs differently"),
+        f"costs int8 {int8_dev['fp'] - fp32_dev['fp']} false positives and no recall",
+        'id2label = {"0": "SAFE", "1": "INJECTION"}',
+    ):
+        assert claim in note, f"the note does not state {claim!r}"
+
+
+def test_the_readme_states_the_export_numbers_the_record_holds() -> None:
+    """Two tables, and they have to agree.
+
+    Every figure the prose gives about the export is templated from
+    `metrics.json` here, so a sentence that stopped being true fails rather than
+    persuades. This stage has already had that failure once, with a size in KB
+    that was written down and never recomputed, and the export section is dense
+    with counts about data: the sizes, both DEV scores, the delta and what is
+    left of the budget, the sweep in full, the control against the training run,
+    what quantisation cost in false positives, the round trip that justifies
+    slicing ids, and the two numbers the metric switch rests on.
+    """
+    readme = " ".join(TRAINING_README.read_text(encoding="utf-8").split())
+    metrics = _metrics()
+    chosen = metrics["windowing"]["chosen"]
+    on_f1 = metrics["windowing"]["rule_returned_on_f1"]
+    quantisation = metrics["quantisation"]
+    control = metrics["export_control"]
+    trip = metrics["windowing"]["round_trip"]
+    everything = metrics["windowing"]["constant_classifier"]["flag_everything"]
+    buried = metrics["sweep"]["fp32"]["buried"]
+    accuracies = sorted((row["accuracy"] for row in buried), reverse=True)
+    below = sum(1 for row in buried if row["f1"] <= everything["f1"])
+    words = {1: "One", 2: "Two", 3: "Three", 4: "Four", 5: "Five", 6: "Six"}
+    fp32_dev = metrics["at_the_chosen_configuration"]["fp32"]["dev"]
+    int8_dev = metrics["at_the_chosen_configuration"]["int8"]["dev"]
+
+    claims = [
+        f"| `{metrics['models'][which]['file']}` | {metrics['models'][which]['bytes']:,} bytes "
+        f"| {metrics['models'][which]['mib']:.2f} |"
+        for which in ("fp32", "int8")
+    ]
+    claims += [
+        f"window {chosen['window']} at stride {chosen['stride']}",
+        f"On F1 it returns window {on_f1['window']} at stride {on_f1['stride']}",
+        f"DEV F1 {quantisation['dev_f1_fp32']:.4f}",
+        (
+            f"int8 reaches {quantisation['dev_f1_int8']:.4f}, a delta of "
+            f"{quantisation['dev_f1_delta']:+.4f} against the float model"
+        ),
+        f"allows {QUANTISATION_BUDGET}",
+        f"stage ships {quantisation['ship']}",
+        f"{QUANTISATION_BUDGET - abs(quantisation['dev_f1_delta']):.4f} of the budget left",
+        (
+            f"{control['torch_dev']['tp']} true positives, {control['torch_dev']['fp']} false "
+            f"positives, {control['torch_dev']['fn']} false negatives, "
+            f"{control['torch_dev']['tn']} true negatives"
+        ),
+        (
+            f"int8 adds {int8_dev['fp'] - fp32_dev['fp']} false positives, and the two models "
+            f"decide {quantisation['agreement']['dev']['decided_differently']} of the "
+            f"{metrics['dev_rows']} DEV rows differently"
+        ),
+        (
+            f"over {trip['windows']} windows cut from the probe documents, {trip['changed']} "
+            "come back as different tokens"
+        ),
+        f"They agreed to {metrics['windowing']['batched_and_per_window_paths_differ_by']}.",
+        (
+            f"between {metrics['probe']['payload_depth_tokens']['asked_for'][0]} and "
+            f"{metrics['probe']['payload_depth_tokens']['asked_for'][1]} tokens"
+        ),
+        f"narrowest at {min(WINDOWS) - 2} content tokens",
+        f"within {metrics['windowing']['holds_within']} of the best",
+        f"flags every input scores {everything['f1']:.3f}",
+        f"beats that constant by {max(row['f1'] for row in buried) - everything['f1']:.3f}",
+        f"{words[below]} of the {words[len(buried)].lower()} rows do not beat it at all",
+        f"{accuracies[0]:.4f} for the winner and {accuracies[1]:.4f} for the next",
+    ]
+    for claim in claims:
+        assert claim in readme, f"training/README.md does not state {claim!r}"
+
+    for row in buried:
+        line = (
+            f"| {row['window']} | {row['stride']} | {row['windows_per_document']:.1f} | "
+            f"{row['precision']:.4f} | {row['recall']:.4f} | {row['f1']:.4f} | "
+            f"{row['accuracy']:.4f} |"
+        )
+        assert line in readme, f"training/README.md does not state {line!r}"
 
 
 # --------------------------------------------------------------------------

@@ -984,3 +984,171 @@ The weights are not in this repository. They are 90 MB under `data/`, which
 `.gitignore` excludes, and the record names the directory and a sha256 for
 every file in it, so a copy on another machine is checkable and a copy that
 differs is not silently the same model.
+
+## The export
+
+`training/export.py` verifies the checkpoint against the digests
+`training_run.json` recorded, traces it to ONNX at opset 17, and quantises the
+weights to int8. `training/measure.py` scores both files on DEV, sweeps the
+window and the stride, and writes `training/artifacts/metrics.json`. Every
+number below is in that file and every one of them is re-derived from its
+confusion counts by `tests/test_training_data.py`.
+
+| File | Bytes | MiB |
+|---|---|---|
+| `injection-fp32.onnx` | 90,972,586 bytes | 86.76 |
+| `injection-int8.onnx` | 23,017,879 bytes | 21.95 |
+
+Both are under PyPI's 100 MiB per-file limit, which is what makes the fallback
+in the quantisation rule a real option rather than a formality.
+
+Neither is committed. The brief for this task asked for the chosen artifact to
+be committed beside its metrics and it is not, for the reason the weights are
+not: 22 MiB in git is 22 MiB in every clone and in every source distribution
+forever, and nothing in `pyproject.toml` excludes this tree from the sdist. The
+record carries the directory, the sizes and a sha256 per file, and 2b-2 pins the
+digest in code.
+
+### What quantisation cost, measured
+
+At the chosen window and stride, on DEV:
+
+| Model | DEV precision | DEV recall | DEV F1 |
+|---|---|---|---|
+| fp32 | 0.9486 | 0.9248 | DEV F1 0.9365 |
+| int8 | 0.9300 | 0.9248 | 0.9274 |
+
+Read at the length it was fitted at, the float export reaches the confusion
+counts the training run recorded exactly -- 332 true positives, 18 false
+positives, 27 false negatives, 341 true negatives, the same four integers as
+epoch 5. That is the control that makes the comparison mean something: without
+it the delta would be measured against an fp32 number that had already moved.
+
+**int8 reaches 0.9274, a delta of -0.0092 against the float model, and the rule
+fixed before anything was exported allows 0.01.** So this stage ships int8, with
+0.0008 of the budget left. That is not a comfortable margin and it is stated
+rather than rounded away.
+
+The cost is entirely precision. Recall is identical to the float model, to the
+row: the same 332 injections found and the same 27 missed. int8 adds 7 false
+positives, and the two models decide 15 of the 718 DEV rows differently. Which
+direction the cost lands in matters for this detector, and it landed in the
+better one.
+
+### The window and the stride, and what the sweep could not decide
+
+**On DEV as it stands the sweep decides nothing, and that is a fact about the
+corpus.** No DEV row needs more than one window at any width in the sweep,
+including the narrowest at 126 content tokens, so every row is read whole and
+all six configurations produce the same four integers. A sweep run only there
+would have reported six identical rows and a winner picked by tie-break.
+
+So the sweep runs on documents built for it, out of DEV rows and nothing else:
+each DEV row buried inside filler drawn from the DEV negatives, at a depth drawn
+between 258 and 520 tokens, in a document of about 768. The payload is therefore
+past the reach of a single 256-token window, which is the condition under which
+a window and a stride are worth measuring at all. It is also the shape the
+detector actually has to survive -- retrieved pages are long, indirect injection
+lives in retrieved content, and a detector that reads only the first window of a
+fetched document is inert exactly where it is needed.
+
+The float model on those documents:
+
+| window | stride | windows read per document | precision | recall | F1 | accuracy |
+|---|---|---|---|---|---|---|
+| 128 | 64 | 12.3 | 0.5199 | 0.9805 | 0.6795 | 0.5376 |
+| 128 | 32 | 23.1 | 0.5085 | 0.9972 | 0.6736 | 0.5167 |
+| 256 | 128 | 6.0 | 0.5878 | 0.7270 | 0.6501 | 0.6086 |
+| 256 | 64 | 10.3 | 0.5617 | 0.8245 | 0.6682 | 0.5905 |
+| 512 | 256 | 3.0 | 0.6747 | 0.3120 | 0.4267 | 0.5808 |
+| 512 | 128 | 4.0 | 0.6811 | 0.3510 | 0.4632 | 0.5933 |
+
+Every row is far below the DEV score, and the mechanism is in the counts.
+Scoring a document as the maximum over its windows gives a per-window false
+positive rate one chance to fire per window, so precision falls as the document
+lengthens: 12 windows at a 5% per-window rate flags most benign documents.
+Widening the window trades that back for recall, because a payload of 40 tokens
+inside 510 tokens of benign filler is diluted rather than truncated. Neither end
+of the sweep works.
+
+**The chosen configuration is window 256 at stride 128, and it was chosen on
+accuracy rather than on F1 after the sweep had already run.** That is the one
+thing in this stage that was decided after seeing a number, so it is written
+here in those words rather than presented as the plan.
+
+The rule was written first, with its tolerance, and applied to F1 first: take the
+smallest window whose score is within 0.005 of the best of any configuration,
+ties to the wider stride. On F1 it returns window 128 at stride 64, and
+`metrics.json` records that answer beside the one used. The reason it was not
+kept is a property of the metric. F1 counts no true negatives, so on a set whose
+classes are balanced by construction a detector that flags every input scores
+0.667; the F1-maximising row here reaches 0.6795, which beats that constant by
+0.013 over 718 rows and is inside the noise of the set. Three of the six rows do
+not beat it at all. A column that ranks real configurations below a constant is
+not choosing between them.
+
+Accuracy on a balanced set does not have that failure: the same constant
+classifier scores exactly 0.5, and the column separates the six clearly, with
+0.6086 for the winner and 0.5933 for the next. It picks window 256 at stride
+128 -- which is also the configuration the spec starts at, and also the length
+the model was fitted at. The switch moves the answer back to the pre-existing
+default rather than to a new one, which is the direction a self-serving change
+cannot take, and it is the whole of the defence being offered for it.
+
+`test_the_f1_column_of_the_probe_does_not_separate_a_detector_from_a_constant`
+holds the two facts that argument rests on, so if either stops being true the
+argument fails here instead of being inherited.
+
+**What 2b-2 has to take from this is the caveat and not just the setting.** No
+window and no stride makes this classifier usable on long documents at threshold
+0.5 with max pooling. The threshold and the pooling are what need work, and the
+probe in `training/measure.py` is the instrument to do it against, on DEV, where
+it belongs.
+
+### The windowing itself
+
+`window` is the whole sequence the model reads, `[CLS]` and `[SEP]` included, so
+window 256 is the length the classifier was fitted at and window 512 is exactly
+its positional limit rather than two tokens past it. Content per window is
+`window - 2`, windows start every `stride` tokens, and the last window is pulled
+back to end at the document's end so that a tail shorter than the stride still
+gets read. A stride wider than the content is refused rather than clamped: a gap
+no window covers reads as a working configuration.
+
+Windows are cut out of the token ids, not decoded back to text and tokenised
+again. The brief's sketch did the latter, and it is not the identity: measured
+over 601 windows cut from the probe documents, 24 come back as different tokens
+and every one of those comes back longer than the window, so `max_length`
+truncation would silently drop the tail of a window that was supposed to be
+whole. Slicing ids has no round trip to lose anything in, and it is what makes
+the float export reach the training run's counts exactly.
+
+`window_scores` is the per-window reference implementation, which 2b-2 ports.
+Everything above is measured through `chances`, which is the same geometry run
+in batches, and the run cross-checks the two against each other on real rows
+before it scores anything. They agreed to 0.0.
+
+### Determinism, at the level that holds
+
+**Given the weights, the export and the quantisation reproduce byte for byte.**
+Measured, not assumed: the export was run twice in separate processes into two
+directories, and `training/artifacts/export.json` and `export_repeat.json`
+record the same sha256 for both files. `test_the_export_reproduced_byte_for_byte_in_a_second_process`
+compares them.
+
+**Given the seed, they do not.** That is a weaker claim than the sentence above
+and it is the one that governs, because the input to the export is the
+checkpoint, and the checkpoint is not bit-reproducible from the seed. The
+section above records why: MPS does not fix a reduction order, so two training
+runs from one seed reach the same DEV confusion counts and different weights.
+The chain is therefore: seed reproduces decisions, decisions do not reproduce
+weights, weights reproduce ONNX bytes exactly. A digest here is a fact about a
+checkpoint, not a fact about a seed, and 2b-2 pins it as the former.
+
+**Inference reproduces exactly on one machine and one runtime, and the int8 file
+reproduces across two runtimes.** The quantised model returns bit-identical
+logits under `onnxruntime` 1.23.0 and 1.29.0; the float model does not, by up to
+1.3e-06, which is float kernels reassociating between releases. That matters
+because the ship bar is scored in the benchmark virtualenv rather than this one.
+`docs/measurements/2026-09-02-onnx-export-cross-version.md` has the measurement.
+
