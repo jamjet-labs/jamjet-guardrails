@@ -210,7 +210,7 @@ def coarsen(*partitions: Sequence[int]) -> list[int]:
 def split_by_cluster(
     rows: Sequence[T],
     ids: Sequence[int],
-    eval_fraction: float = 0.2,
+    held_out_fraction: float = 0.2,
     seed: int = 20260831,
 ) -> tuple[list[int], list[int]]:
     """Assign whole clusters, never rows, and never split one across the line.
@@ -229,15 +229,15 @@ def split_by_cluster(
     """
     if len(rows) != len(ids):
         raise ClusterError(f"{len(rows)} rows against {len(ids)} cluster ids")
-    if not 0.0 < eval_fraction < 1.0:
-        raise ClusterError(f"eval_fraction {eval_fraction} is not a share between 0 and 1")
+    if not 0.0 < held_out_fraction < 1.0:
+        raise ClusterError(f"held_out_fraction {held_out_fraction} is not a share between 0 and 1")
     members: dict[int, list[int]] = {}
     for position, cluster in enumerate(ids):
         members.setdefault(cluster, []).append(position)
 
     order = sorted(members)
     shuffle = shuffled(len(order), seed)
-    target = len(rows) * eval_fraction
+    target = len(rows) * held_out_fraction
     held: list[int] = []
     for position in shuffle:
         if len(held) >= target:

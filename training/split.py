@@ -1,4 +1,4 @@
-"""Train and eval, divided by TWIN and never by row.
+"""Train and dev, divided by TWIN and never by row.
 
 The corpus is generated in matched twins: one call produces a hard negative and
 an attack that share an opening, a length and a register, and the two rows land
@@ -7,7 +7,7 @@ being separable by style, and it creates a hazard of its own one step later.
 
 **A row-wise split leaks.** The two members of a twin are alike on purpose, and
 in one pair they were measured alike to a median word-trigram Jaccard of 0.538.
-Split the rows at random and one member lands in train and the other in eval:
+Split the rows at random and one member lands in train and the other in dev:
 the model has already seen most of the held-out text, under the opposite label.
 What it learns from that is the local difference between two near-copies, which
 generalises nowhere and scores well on the split that created it. The ship bar
@@ -21,11 +21,13 @@ built, broke one apart. Stage 2b-2 builds the split; this module is what it has
 to build it through, and `tests/test_training_data.py` fails if a twin is
 separated.
 
-Nothing here is a substitute for an independent evaluation set. Every row on
-both sides of this split came out of one generator under one of eight prompts,
-so a number measured on the eval half is optimistic by an unknown margin no
-matter how the halves were chosen. Splitting by twin removes one leak; it does
-not make a corpus its own benchmark.
+Nothing here is a substitute for an independent evaluation set, and nothing
+here is one. Every row on both sides of this split came out of one generator
+under one of eight prompts, so a number measured on the held-out half is
+optimistic by an unknown margin no matter how the halves were chosen. Splitting
+by twin removes one leak; it does not make a corpus its own benchmark. The
+evaluation set is an external public corpus, read by `training/evalset.py`, and
+the two sides here are TRAIN and DEV.
 """
 
 from __future__ import annotations
@@ -39,9 +41,13 @@ TWIN = 2
 
 #: The share of twins held out by default. Twins, not rows: because a twin
 #: contributes one row to each class, holding out a share of the twins holds out
-#: the same share of each class, and the eval half is balanced by construction
-#: rather than by stratifying afterwards.
-EVAL_SHARE = 0.2
+#: the same share of each class, and the held-out half is balanced by
+#: construction rather than by stratifying afterwards.
+#:
+#: Named for what it holds out and not for what the held-out rows are for. They
+#: are the DEV set: the EVALUATION set is external, and `Split.held_out` says
+#: why that distinction is carried in the names rather than in a comment.
+HELD_OUT_SHARE = 0.2
 
 
 class SplitError(ValueError):
@@ -74,10 +80,23 @@ def shuffled(count: int, seed: int) -> list[int]:
 
 @dataclass(frozen=True, slots=True)
 class Split:
-    """Row indices on each side, and the twins they were assigned by."""
+    """Row indices on each side of the line, by twin.
+
+    The second side is `held_out`, and the name is the point. It was called
+    `evaluation` while the plan was to score the classifier on a held-out slice
+    of the synthetic corpus, and that plan was abandoned in this same stage:
+    the corpus is separable by register, so it cannot grade itself, and the
+    EVALUATION set is now an external public corpus read by
+    `training/evalset.py`. A field still called `evaluation` would invite the
+    one reading this module exists to prevent: somebody measuring the ship bar
+    on these rows and publishing the number.
+
+    These rows are the DEV set. They choose a checkpoint and a threshold, and
+    nothing measured on them gets published.
+    """
 
     train: tuple[int, ...]
-    evaluation: tuple[int, ...]
+    held_out: tuple[int, ...]
 
 
 def twins(labels: Sequence[int], keys: Sequence[object]) -> list[tuple[int, int]]:
@@ -116,27 +135,27 @@ def twins(labels: Sequence[int], keys: Sequence[object]) -> list[tuple[int, int]
 def split(
     labels: Sequence[int],
     keys: Sequence[object],
-    eval_share: float = EVAL_SHARE,
+    held_out_share: float = HELD_OUT_SHARE,
     seed: int = 42,
 ) -> Split:
-    """Hold out `eval_share` of the TWINS, both members of each, together.
+    """Hold out `held_out_share` of the TWINS, both members of each, together.
 
     The shuffle is the same seeded linear congruential one
     `training/separability.py` folds with, so a split is reproducible without
     depending on what `random` does in a later interpreter.
     """
-    if not 0.0 < eval_share < 1.0:
-        raise SplitError(f"eval_share {eval_share} is not a share between 0 and 1")
+    if not 0.0 < held_out_share < 1.0:
+        raise SplitError(f"held_out_share {held_out_share} is not a share between 0 and 1")
     found = twins(labels, keys)
     order = shuffled(len(found), seed)
-    held = max(1, round(len(found) * eval_share))
-    evaluation = sorted(index for position in order[:held] for index in found[position])
+    held = max(1, round(len(found) * held_out_share))
+    kept = sorted(index for position in order[:held] for index in found[position])
     train = sorted(index for position in order[held:] for index in found[position])
-    return Split(tuple(train), tuple(evaluation))
+    return Split(tuple(train), tuple(kept))
 
 
 def separated_twins(labels: Sequence[int], keys: Sequence[object], made: Split) -> list[int]:
-    """Twins with one member in train and the other in eval. The enforced rule.
+    """Twins with one member on each side of the line. The enforced rule.
 
     Written to score ANY partition, not only one this module made, because that
     is what it is for: a later task builds the split, and this is the check that
@@ -147,7 +166,7 @@ def separated_twins(labels: Sequence[int], keys: Sequence[object], made: Split) 
     rows somebody can go and read.
     """
     on_left = set(made.train)
-    on_right = set(made.evaluation)
+    on_right = set(made.held_out)
     broken: list[int] = []
     for left, right in twins(labels, keys):
         sides = [(index in on_left, index in on_right) for index in (left, right)]

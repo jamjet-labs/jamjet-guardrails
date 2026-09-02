@@ -651,7 +651,7 @@ near-copies. It generalises nowhere and it scores well on the split that created
 it. The median twin in the worst pair shared 0.549 of its word trigrams with its
 own partner when this was found, so it was not a handful of rows.
 
-`training/split.py` divides by twin, holding out an eval share threshold 0.20 of
+`training/split.py` divides by twin, holding out a held-out share threshold 0.20 of
 the TWINS, which holds out that share of each class without stratifying anything
 because a twin carries one row of each. `separated_twins` scores any partition,
 however it was built, and `test_the_split_never_separates_a_twin` fails if one

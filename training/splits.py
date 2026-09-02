@@ -10,12 +10,12 @@ Three sets, and only two of them come from the same place.
   corpus it names is the right one despite being contaminated. Read it before
   reading a number measured through it.
 
-The held-out synthetic half is called `dev` here and `Split.evaluation` in
-`training/split.py`, and the two names are the same rows. `training/split.py`
-was written when the held-out half was still going to be the evaluation set;
-its own docstring says in the same breath that nothing in it is a substitute for
-an independent one. It was right, that is what changed, and the field keeps its
-name rather than being renamed under a module three other files import.
+The held-out synthetic half is called `dev` here and `Split.held_out` in
+`training/split.py`, and the two names are the same rows. That field was called
+`evaluation` while the held-out half was still going to be the evaluation set.
+It is not, so it was renamed: a field called `evaluation` holding the dev rows
+is an invitation to publish a number measured on the corpus the model was fitted
+through, which is the one mistake this whole stage is arranged to prevent.
 
 **What this writes.** `training/generated/splits.json`, committed, holding the
 indices on each side, the cluster each row was assigned, the digests of the
@@ -45,7 +45,7 @@ from training.cluster import EMBED_MODEL, THRESHOLD, cluster_ids, coarsen, embed
 from training.evalset import EVAL_SOURCE, EvalRow, balance, compare, load_eval, normalised
 from training.fetch import ROOT, Source, fetch, load_sources, sha256_of
 from training.generate import GENERATED, Row, load_generated, model_digest
-from training.split import EVAL_SHARE, Split, separated_twins, twins
+from training.split import HELD_OUT_SHARE, Split, separated_twins, twins
 
 #: Where the built split lands, beside the corpus it divides.
 SPLITS = ROOT / "training" / "generated" / "splits.json"
@@ -132,7 +132,7 @@ def training_pools(sources: Sequence[Source]) -> dict[str, list[str]]:
 
 
 def build(
-    seed: int = SEED, dev_share: float = EVAL_SHARE, threshold: float = THRESHOLD
+    seed: int = SEED, dev_share: float = HELD_OUT_SHARE, threshold: float = THRESHOLD
 ) -> dict[str, Any]:
     """The whole split, as the record that gets committed.
 
@@ -145,7 +145,7 @@ def build(
     vectors = embed([row.text for row in rows])
     semantic = cluster_ids(vectors, threshold=threshold)
     groups = coarsen(semantic, twin_ids(rows))
-    train, dev = split_by_cluster(rows, groups, eval_fraction=dev_share, seed=seed)
+    train, dev = split_by_cluster(rows, groups, held_out_fraction=dev_share, seed=seed)
 
     labels, keys = corpus_keys(rows)
     broken = separated_twins(labels, keys, Split(tuple(train), tuple(dev)))
@@ -263,7 +263,7 @@ def report(record: dict[str, Any]) -> str:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--seed", type=int, default=SEED)
-    parser.add_argument("--dev-share", type=float, default=EVAL_SHARE)
+    parser.add_argument("--dev-share", type=float, default=HELD_OUT_SHARE)
     parser.add_argument("--threshold", type=float, default=THRESHOLD)
     parser.add_argument("--out", type=Path, default=SPLITS)
     args = parser.parse_args(argv)

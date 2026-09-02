@@ -22,7 +22,7 @@ import json
 import os
 import re
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any
 
@@ -119,7 +119,7 @@ from training.separability import (
     twin_similarity,
 )
 from training.split import (
-    EVAL_SHARE,
+    HELD_OUT_SHARE,
     Split,
     SplitError,
     separated_twins,
@@ -3495,7 +3495,7 @@ def test_the_split_check_catches_a_split_made_by_row() -> None:
     labels, keys = _corpus_keys(rows)
     by_row = Split(
         train=tuple(index for index in range(len(rows)) if index % 5),
-        evaluation=tuple(index for index in range(len(rows)) if not index % 5),
+        held_out=tuple(index for index in range(len(rows)) if not index % 5),
     )
     broken = separated_twins(labels, keys, by_row)
     assert broken, "a row-wise split separated no twin, so this checker cannot see the defect"
@@ -3514,18 +3514,18 @@ def test_the_split_places_every_row_on_exactly_one_side() -> None:
     """
     rows = load_generated(GENERATED)
     labels, keys = _corpus_keys(rows)
-    made = split(labels, keys, eval_share=0.25)
-    assert sorted(made.train + made.evaluation) == list(range(len(rows)))
-    assert not set(made.train) & set(made.evaluation)
+    made = split(labels, keys, held_out_share=0.25)
+    assert sorted(made.train + made.held_out) == list(range(len(rows)))
+    assert not set(made.train) & set(made.held_out)
     # Asked for as a literal, not read back off the constant. A test that
-    # compares the result against `EVAL_SHARE` passes whatever `EVAL_SHARE`
+    # compares the result against `HELD_OUT_SHARE` passes whatever `HELD_OUT_SHARE`
     # says, which is a test of the argument reaching the function and not of
     # what it does with it. The default's VALUE is stated in
     # `training/README.md` and cross-checked there instead.
-    held = len(made.evaluation) / len(rows)
+    held = len(made.held_out) / len(rows)
     assert abs(held - 0.25) < 0.01, f"held out {held:.3f} of the rows, asked for 0.25"
-    assert EVAL_SHARE < 0.5, "the default holds out more rows than it trains on"
-    for side in (made.train, made.evaluation):
+    assert HELD_OUT_SHARE < 0.5, "the default holds out more rows than it trains on"
+    for side in (made.train, made.held_out):
         attacks = sum(labels[index] for index in side)
         assert attacks * 2 == len(side), f"{attacks} attacks in {len(side)} rows is not balanced"
 
@@ -3544,7 +3544,38 @@ def test_the_split_refuses_a_corpus_whose_twins_have_been_broken() -> None:
     with pytest.raises(SplitError):
         twins([0, 1, 0], [("a", 1), ("a", 1), ("b", 2)])
     with pytest.raises(SplitError):
-        split([0, 1], [("a", 1), ("a", 1)], eval_share=1.0)
+        split([0, 1], [("a", 1), ("a", 1)], held_out_share=1.0)
+
+
+def test_the_held_out_synthetic_rows_are_not_named_the_evaluation_set() -> None:
+    """The field was called `evaluation`, and calling it that was a trap.
+
+    It held the DEV rows -- the half of the synthetic corpus kept back to choose
+    a checkpoint and a threshold -- while the plan was still to score the
+    classifier on them. That plan was abandoned in this same stage, because the
+    corpus is separable by register and cannot grade itself, and the evaluation
+    set became an external public corpus. The rows did not change and the name
+    did not either, which left `Split.evaluation` reading like an invitation to
+    measure the ship bar on the corpus the model was fitted through.
+
+    A comment saying "these are really the dev rows" is not a fix: the reader
+    who needs it is the one writing `made.evaluation` without opening the file.
+    So the name is the fix, and this is what stops it being renamed back.
+    """
+    assert [field.name for field in fields(Split)] == ["train", "held_out"], (
+        "Split's sides are not named (train, held_out); a side called `evaluation` here holds "
+        "the dev rows and says otherwise to everybody who reads it"
+    )
+    made = Split(train=(0, 1), held_out=(2, 3))
+    assert not hasattr(made, "evaluation")
+    # And the module has to say why, where somebody about to rename it back
+    # would read it, rather than only here.
+    text = " ".join((ROOT / "training" / "split.py").read_text(encoding="utf-8").split())
+    for claim in (
+        "the EVALUATION set is now an external public corpus",
+        "These rows are the DEV set",
+    ):
+        assert claim in text, f"training/split.py does not say {claim!r}"
 
 
 def test_the_readme_states_the_separability_it_was_measured_at() -> None:
@@ -3613,7 +3644,7 @@ def test_the_readme_states_the_separability_it_was_measured_at() -> None:
         ("opener purity", OPENER_PURITY),
         ("near-duplicate", NEAR_DUPLICATE),
         ("explained ceiling", EXPLAINED_CEILING),
-        ("eval share", EVAL_SHARE),
+        ("held-out share", HELD_OUT_SHARE),
     )
     for label, threshold in thresholds:
         assert f"{label} threshold {threshold:.2f}" in readme, (
@@ -3824,7 +3855,7 @@ def test_a_cluster_is_never_split_across_the_boundary() -> None:
     see it."""
     rows = list(range(100))
     ids = [index // 5 for index in rows]  # 20 clusters of 5
-    train, held = split_by_cluster(rows, ids, eval_fraction=0.2, seed=1)
+    train, held = split_by_cluster(rows, ids, held_out_fraction=0.2, seed=1)
     train_clusters = {ids[index] for index in train}
     held_clusters = {ids[index] for index in held}
     assert not (train_clusters & held_clusters)
@@ -3908,9 +3939,9 @@ def test_split_by_cluster_refuses_input_it_cannot_divide() -> None:
     with pytest.raises(ClusterError):
         split_by_cluster([1, 2, 3], [0, 0])
     with pytest.raises(ClusterError):
-        split_by_cluster([1, 2], [0, 1], eval_fraction=1.0)
+        split_by_cluster([1, 2], [0, 1], held_out_fraction=1.0)
     with pytest.raises(ClusterError):
-        split_by_cluster([1, 2], [0, 1], eval_fraction=0.0)
+        split_by_cluster([1, 2], [0, 1], held_out_fraction=0.0)
 
 
 def test_the_cluster_split_and_the_twin_split_shuffle_the_same_way() -> None:
@@ -3928,11 +3959,9 @@ def test_the_cluster_split_and_the_twin_split_shuffle_the_same_way() -> None:
     # function rather than by copying the arithmetic here.
     labels = [0, 1] * 4
     keys = [(f"pair-{index // 2}", index // 2) for index in range(8)]
-    made = split(labels, keys, eval_share=0.25, seed=42)
+    made = split(labels, keys, held_out_share=0.25, seed=42)
     order = shuffled(4, 42)
-    assert set(made.evaluation) == {
-        index for pair in order[:1] for index in (pair * 2, pair * 2 + 1)
-    }
+    assert set(made.held_out) == {index for pair in order[:1] for index in (pair * 2, pair * 2 + 1)}
 
 
 def test_the_committed_split_was_made_from_the_committed_corpus() -> None:
@@ -4006,7 +4035,7 @@ def test_the_committed_split_is_reproducible_from_its_recorded_seed() -> None:
     train, dev = split_by_cluster(
         range(record["rows"]),
         record["cluster_of_row"],
-        eval_fraction=record["dev_share"],
+        held_out_fraction=record["dev_share"],
         seed=record["seed"],
     )
     assert train == record["train"], "the recorded train side is not what the seed produces"
