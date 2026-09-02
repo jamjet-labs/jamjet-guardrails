@@ -23,6 +23,7 @@ import json
 import math
 import os
 import re
+import subprocess
 from collections.abc import Iterable
 from dataclasses import dataclass, fields, replace
 from pathlib import Path
@@ -1061,7 +1062,15 @@ def test_every_external_identifier_in_this_tree_is_accounted_for() -> None:
     """
     assert DISTRIBUTION is not None, "pyproject.toml declares no [project] name"
     distribution = DISTRIBUTION.group(1)
-    prefixes = frozenset(entry.name.lstrip(".") for entry in ROOT.iterdir())
+    # Tracked top-level names, from git rather than the local disk. ROOT.iterdir()
+    # also sees gitignored artifact directories (data/, .venv-training/) that
+    # exist on a machine that has trained but not in CI, so the same text was
+    # green here and red there. What the repository ships is what a reader can
+    # see, and that is the tracked tree.
+    tracked = subprocess.run(
+        ["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True
+    ).stdout.splitlines()
+    prefixes = frozenset(name.split("/", 1)[0].lstrip(".") for name in tracked)
     accounted = set(DENYLIST_BASES) | set(ATTRIBUTION_BASES)
     accounted |= {base_id(model.model_id) for model in REFERENCE_MODELS}
     accounted |= {base_id(generator.weights_id) for generator in GENERATORS}
@@ -1094,11 +1103,17 @@ def test_every_external_identifier_in_this_tree_is_accounted_for() -> None:
                 # literal, so it admits this distribution and nothing else and
                 # follows the distribution if it is ever renamed.
                 continue
-            if (ROOT / token).exists() or token.split("/")[0] in prefixes:
+            if token.split("/")[0] in prefixes:
                 # A path in this repository, including one not created yet:
                 # `training/artifacts/` is made by the task that exports a
-                # model. The repository's own top-level names are read from the
-                # filesystem rather than listed, so adding a directory does not
+                # model and is covered because `training` is tracked. The
+                # top-level names come from the TRACKED tree, never from the
+                # local disk: an `(ROOT / token).exists()` check here once let
+                # `data/onnx-repeat` pass on any machine that had trained,
+                # because the gitignored artifact existed locally and not in
+                # CI, and the same text was green here and red there. A
+                # gitignored path cited in prose is written `./data/...`, which
+                # the mid-path rule above already excuses, so adding one does not
                 # mean editing this test.
                 continue
             examined.add(base_id(token))

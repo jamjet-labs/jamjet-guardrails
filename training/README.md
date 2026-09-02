@@ -98,7 +98,7 @@ PYTHONPATH=src:. /tmp/guardrails-bench/bin/python -m training.ship_bar \
 # The same export a second time, into a second directory, so the determinism
 # claim below is a comparison between two files rather than a sentence.
 ./.venv-training/bin/python -m training.export \
-  --out data/onnx-repeat --record training/artifacts/export_repeat.json
+  --out ./data/onnx-repeat --record training/artifacts/export_repeat.json
 
 # The measurement. Scores both models on DEV, sweeps the window and the stride
 # on long documents built out of DEV rows, and writes
@@ -891,7 +891,7 @@ grant covers the weights that were released, and a claim about what went into
 them is not available to anyone outside the people who trained them.
 
 The weights themselves are not committed. `training/train.py` fetches the six
-pinned files by revision into `data/backbone/`, which `.gitignore` excludes,
+pinned files by revision into `./data/backbone/`, which `.gitignore` excludes,
 and verifies every one against its digest before it loads anything. A digest
 that does not match, a revision that is a branch name, or an empty file map all
 refuse the run, and the last of those is the one a shape test passes over: an
