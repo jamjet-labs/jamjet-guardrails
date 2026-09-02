@@ -609,3 +609,30 @@ def test_a_detector_configured_with_some_types_is_still_built() -> None:
     """The false-reject control: the refusal above must be about EMPTY, not about types=."""
     guardrail = build("pii", types=frozenset({"EMAIL"}))
     assert guardrail.check("mail alice@example.com", OUT).decision == "redact"
+
+
+def test_every_registered_check_declares_the_types_it_can_report() -> None:
+    """Both directions. A check in AVAILABLE with no TYPES entry has a README
+    row nothing checks and a corpus whose labels nothing constrains; a TYPES
+    entry for a check nothing registers is a table describing something that
+    does not exist."""
+    from jamjet_guardrails.detectors import TYPES
+
+    assert set(TYPES) == set(AVAILABLE)
+
+
+def test_no_two_checks_claim_the_same_finding_type() -> None:
+    """Disjointness across checks, which generalises the pairwise test the
+    three structural signals already carry. Two checks reporting one type name
+    make a merged placeholder ambiguous about which check fired and make a
+    per-type row in the published table the sum of two different measurements."""
+    from jamjet_guardrails.detectors import TYPES
+
+    seen: dict[str, str] = {}
+    collisions: list[str] = []
+    for check, types in sorted(TYPES.items()):
+        for type_name in sorted(types):
+            if type_name in seen:
+                collisions.append(f"{type_name} claimed by {seen[type_name]} and {check}")
+            seen[type_name] = check
+    assert collisions == [], collisions

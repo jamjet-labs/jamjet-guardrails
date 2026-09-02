@@ -5,9 +5,12 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 
 from jamjet_guardrails.chain import GuardrailChain
-from jamjet_guardrails.detectors.injection_structural import InjectionStructuralGuardrail
-from jamjet_guardrails.detectors.pii import PiiGuardrail
-from jamjet_guardrails.detectors.secrets import SecretsGuardrail
+from jamjet_guardrails.detectors.injection_structural import (
+    INJECTION_TYPES,
+    InjectionStructuralGuardrail,
+)
+from jamjet_guardrails.detectors.pii import PII_TYPES, PiiGuardrail
+from jamjet_guardrails.detectors.secrets import SECRET_TYPES, SecretsGuardrail
 from jamjet_guardrails.errors import GuardrailUnavailableError
 from jamjet_guardrails.protocol import Guardrail
 from jamjet_guardrails.types import Direction
@@ -16,6 +19,28 @@ AVAILABLE: dict[str, Callable[..., Guardrail]] = {
     "injection-structural": InjectionStructuralGuardrail,
     "pii": PiiGuardrail,
     "secrets": SecretsGuardrail,
+}
+
+# The finding types each registered check can report, keyed by registry name.
+#
+# Public, and beside AVAILABLE rather than inside the Guardrail protocol,
+# because a port is held to the verdicts it produces and not to a table it
+# exposes: adding a protocol member for this would put a requirement into the
+# conformance contract that has nothing to do with conformance.
+#
+# It exists because three things need to know a check's types before running
+# it: the README row test, the corpus completeness test, and the scaffold that
+# writes a new check's files. It lived in tests/test_readme.py, where none of
+# the other two could reach it.
+#
+# For a check whose types are configured rather than fixed, this is the set the
+# PUBLISHED ROW is measured under, which is the fixture in
+# jamjet_guardrails.eval.fixtures. A user's own types at runtime are outside
+# this table and outside every claim made about it.
+TYPES: dict[str, frozenset[str]] = {
+    "injection-structural": INJECTION_TYPES,
+    "pii": PII_TYPES,
+    "secrets": SECRET_TYPES,
 }
 
 # The directions a Context can actually carry, listed literally and deliberately
@@ -229,6 +254,7 @@ __all__ = [
     "InjectionStructuralGuardrail",
     "PiiGuardrail",
     "SecretsGuardrail",
+    "TYPES",
     "build",
     "build_chain",
 ]

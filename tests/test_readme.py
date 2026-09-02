@@ -46,10 +46,7 @@ from jamjet_guardrails import (
     combine,
     saw,
 )
-from jamjet_guardrails.detectors import AVAILABLE
-from jamjet_guardrails.detectors.injection_structural import INJECTION_TYPES
-from jamjet_guardrails.detectors.pii import PII_TYPES
-from jamjet_guardrails.detectors.secrets import SECRET_TYPES
+from jamjet_guardrails.detectors import AVAILABLE, TYPES
 
 ROOT = Path(__file__).resolve().parent.parent
 README = ROOT / "README.md"
@@ -59,15 +56,6 @@ CORPORA = ROOT / "corpora"
 # PackageNotFoundError if the repository ever builds something else, which is
 # the rename this constant would otherwise hide.
 DIST = "jamjet-guardrails"
-
-# The detector each check reports its findings under. Keyed by registry name so
-# that registering a new check makes the parametrised tests below demand an
-# entry here rather than quietly leaving the new row unchecked.
-TYPES: dict[str, frozenset[str]] = {
-    "injection-structural": INJECTION_TYPES,
-    "pii": PII_TYPES,
-    "secrets": SECRET_TYPES,
-}
 
 BANNED = [
     "production-ready",
