@@ -3,6 +3,21 @@
 Build tooling for the stage 2b injection classifier. Nothing in this directory
 ships in any artifact this repository publishes.
 
+**The classifier this tree builds was measured and does not ship.** Scored once
+against a bar recorded before it existed, it reached F1 0.3672 on an external
+evaluation set against a required 0.8996, which is below the 0.5000 a detector
+that flagged everything would score on the same corpus, and it failed the
+harness's control gate as well. `jamjet-guardrails` therefore has no semantic or
+model-based check and claims none: the three checks it ships are the
+deterministic ones in `src/`. The result, the gap and what it says about
+training on a synthetic corpus are in
+[`docs/measurements/2026-08-31-phase2b1-results.md`](../docs/measurements/2026-08-31-phase2b1-results.md),
+and the verdict the comparison produced is
+`training/artifacts/ship_check.json`. Read both before reading anything below
+as a plan. Everything here is the procedure that produced that measurement,
+recorded so it can be checked and so the next attempt starts from what was
+already learned.
+
 ## Why it is a separate tree
 
 `jamjet-guardrails` declares `dependencies = []`, and that is the property that
