@@ -199,3 +199,54 @@ def test_the_declared_licence_covers_every_licence_the_corpora_carry() -> None:
     assert missing == [], (
         f"the distribution declares {declared!r} but ships corpora licensed {missing}"
     )
+
+
+def test_the_ship_bar_was_recorded_before_any_model_existed() -> None:
+    """The bar is a commitment, and a commitment made after the result is none.
+
+    Enforced by ordering rather than by trust: `training/ship_bar.json` is
+    committed in the first task of the stage, before any training run, and
+    `training/artifacts/` is where a trained model would land. A bar sitting
+    beside a model artifact is a bar that could have been written after seeing
+    the score, which is the one thing it cannot be and still mean anything.
+
+    This is the shape check. `tests/test_ship_bar.py` holds the contents to the
+    harness the numbers came from.
+
+    `tomllib` is deliberately absent: the brief wrote this file's neighbours
+    over it, and it arrived in 3.11 while this package's floor is 3.10, which
+    CI runs. The two properties that draft asserted are already asserted here
+    and in tests/test_benchmarks.py against the BUILT metadata and the wheel
+    target, which is a stronger reading of the same claim.
+    """
+    bar = json.loads((ROOT / "training" / "ship_bar.json").read_text(encoding="utf-8"))
+    for key in (
+        "metric",
+        "reference_model",
+        "reference_revision",
+        "reference_score",
+        "reference_measured_by",
+        "held_out_corpus",
+        "harness",
+        "our_minimum",
+        "structural_floor",
+        "structural_floor_level",
+        "recorded_utc",
+        "rationale",
+    ):
+        assert key in bar, f"ship_bar.json is missing {key!r}"
+    assert isinstance(bar["our_minimum"], (int, float))
+    assert 0.0 < bar["our_minimum"] <= 1.0
+    # The reference score must be OURS, measured on the held-out corpus with the
+    # same harness. A figure quoted from a vendor's own evaluation compares two
+    # datasets and is the flaw this bar was rewritten to remove.
+    assert bar["reference_measured_by"] == "this-repo", (
+        "the reference score must be measured by us on the held-out corpus, "
+        "not quoted from a published leaderboard"
+    )
+    # The ordering, asserted rather than described. No model exists yet, and the
+    # day one does it must not be able to arrive in the same commit as the bar.
+    assert not (ROOT / "training" / "artifacts").exists(), (
+        "training/artifacts/ exists, so a model is present; the bar had to be "
+        "recorded before it and this test can no longer witness that ordering"
+    )
