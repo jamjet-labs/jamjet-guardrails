@@ -131,6 +131,26 @@ files = ["src", "tests", "training"]
 # Typeshed's version gates then catch stdlib used above the supported minimum.
 python_version = "3.10"
 
+# The training tree's machine learning imports, and only those. `training/train.py`
+# needs torch, transformers, numpy and scikit-learn; none of them is installed in
+# `.venv` or in CI, because the separate `.venv-training` is the whole mechanism
+# that keeps `dependencies = []` true. Without this a bare `mypy` fails on an
+# import it is not supposed to be able to resolve, which would make the type gate
+# depend on somebody having installed a gigabyte of torch. Every other strict
+# setting stays on for these modules and for every other module in the tree.
+[[tool.mypy.overrides]]
+module = [
+  "numpy",
+  "numpy.*",
+  "sklearn",
+  "sklearn.*",
+  "torch",
+  "torch.*",
+  "transformers",
+  "transformers.*",
+]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # The repository root on sys.path, so `tests/test_training_data.py` can import

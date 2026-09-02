@@ -15,6 +15,7 @@ checked rather than a source it cleared.
 
 from __future__ import annotations
 
+import ast
 import functools
 import hashlib
 import inspect
@@ -29,6 +30,16 @@ from typing import Any
 import pytest
 import yaml
 
+from training.backbone import (
+    BACKBONE,
+    BACKBONES,
+    REVISION,
+    BackboneError,
+    digest_mismatches,
+    licence_refusals,
+    pin_faults,
+    verified,
+)
 from training.cluster import (
     THRESHOLD,
     ClusterError,
@@ -154,6 +165,15 @@ TRAINING_README = ROOT / "training" / "README.md"
 NOTICE = ROOT / "corpora" / "NOTICE.md"
 CORPUS_SCREEN = ROOT / "tests" / "test_corpora.py"
 CONFORMANCE = ROOT / "docs" / "conformance.md"
+
+#: The module that fits the classifier. Read as TEXT: nothing in `tests/`
+#: imports `training/train.py`, because importing it would import torch, which
+#: is deliberately not installed anywhere the suite runs.
+TRAINER = ROOT / "training" / "train.py"
+
+#: The module that legitimately reads the evaluation set, used as the positive
+#: control for the scan that requires `TRAINER` never to.
+SPLIT_BUILDER = ROOT / "training" / "splits.py"
 
 #: Every file under `training/` that could name a reference model. Globbed
 #: rather than listed, so a file added to the tree tomorrow is scanned without
@@ -946,10 +966,11 @@ def test_every_external_identifier_in_this_tree_is_accounted_for() -> None:
     to be something this repository already accounts for: a registered
     reference model, a registered generator, a source in the manifest, a dataset
     on the denylist or in the attribution map, a corpus recorded in
-    `corpora/NOTICE.md`, or an entry in `UNSCREENED_IDS` with a reason. Anything
-    else fails, whatever it is called.
+    `corpora/NOTICE.md`, a registered backbone or the model that backbone
+    declares itself derived from, or an entry in `UNSCREENED_IDS` with a
+    reason. Anything else fails, whatever it is called.
 
-    `GENERATORS` was added to that list rather than around it. `training/generate.py`
+    `BACKBONES` and `GENERATORS` were added to that list rather than around it. `training/generate.py`
     names the weights it produced the corpus with, and the honest way to satisfy
     a screen that demands accounting is to register the thing, not to hide the
     identifier inside a URL where the scan strips it.
@@ -969,6 +990,9 @@ def test_every_external_identifier_in_this_tree_is_accounted_for() -> None:
     accounted = set(DENYLIST_BASES) | set(ATTRIBUTION_BASES)
     accounted |= {base_id(model.model_id) for model in REFERENCE_MODELS}
     accounted |= {base_id(generator.weights_id) for generator in GENERATORS}
+    accounted |= {
+        base_id(name) for entry in BACKBONES for name in (entry.model_id, entry.upstream_id)
+    }
     accounted |= {base_id(source.name) for source in load_sources(SOURCES)}
     accounted |= _base_ids_in(NOTICE.read_text(encoding="utf-8"))
     accounted |= {base_id(name) for name in UNSCREENED_IDS}
@@ -1004,6 +1028,15 @@ def test_every_external_identifier_in_this_tree_is_accounted_for() -> None:
         assert base_id(model.model_id) in examined, (
             f"the scan did not reach {model.model_id}, so it is not reading the tree"
         )
+    # And the backbone, on both sides of its lineage. It is cited by full id in
+    # `training/backbone.py` and in the README, so both spellings have to come
+    # out of the scan; a backbone accounted for by an entry the scan never
+    # reaches is a registry nobody is being held to.
+    for entry in BACKBONES:
+        for name in (entry.model_id, entry.upstream_id):
+            assert base_id(name) in examined, (
+                f"the scan did not reach {name}, so the backbone lineage is unscreened"
+            )
     assert unaccounted == {}, (
         "these identifiers are named under training/ and accounted for by nothing: a "
         f"comparator whose training data nothing screens, or a name to record: {unaccounted}"
@@ -4625,6 +4658,214 @@ def test_the_readme_states_the_size_of_what_travels_in_the_sdist() -> None:
     assert f"{kilobytes} KB in `training/generated/`" in readme, (
         f"training/generated/ holds {kilobytes} KB and the README does not say so"
     )
+
+
+# --------------------------------------------------------------------------
+# The backbone and the training run.
+#
+# `training/train.py` imports torch, which is deliberately absent from `.venv`
+# and from CI, so nothing below imports it. The registry, the pin and the
+# licence finding live in `training/backbone.py`, which imports nothing heavier
+# than the standard library, and the run itself is checked through the record
+# it wrote. That is the same arrangement the corpus uses: the artifact is
+# committed and the suite re-derives from it rather than re-running the thing
+# that made it.
+# --------------------------------------------------------------------------
+
+
+def test_the_backbone_and_the_model_it_came_from_both_clear_the_allowlist() -> None:
+    """The licence question that reaches the WHEEL, asked twice.
+
+    A generator's licence reaches the corpus and stops there. A backbone's
+    reaches the shipped artifact: a fine-tuned checkpoint is the released
+    weights with their parameters moved, so whatever terms came with them
+    travel into an Apache-2.0 distribution.
+
+    Twice because a permissive tag on a redistribution does not establish a
+    permissive grant upstream, and this repository has already met the
+    model-shaped version of that: the 3B size of the generator family ships
+    under `qwen-research` while the 14B size it generates with is Apache-2.0.
+    """
+    assert BACKBONES, "no backbone is registered, so this checks nothing"
+    for entry in BACKBONES:
+        assert licence_refusals(entry) == [], f"{entry.model_id} is not usable here"
+        assert requires_attribution(entry.licence), (
+            f"{entry.model_id} is {entry.licence}, which asks for no notice; a backbone "
+            "under a public-domain dedication is possible and would need this line changed "
+            "rather than passing quietly"
+        )
+        assert entry.note.strip(), f"{entry.model_id} records no reasoning"
+        assert entry.read_on, f"{entry.model_id} records no date the card was read on"
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected"),
+    [
+        ("licence", "cc-by-nc-4.0", "non-commercial"),
+        ("licence", "other", "catch-all"),
+        ("licence", "", "not a licence identifier"),
+        ("upstream_licence", "qwen-research", "research-only"),
+        ("upstream_licence", "cc-by-sa-4.0", "share-alike"),
+    ],
+)
+def test_a_refused_licence_on_either_side_is_refused(field: str, value: str, expected: str) -> None:
+    """The dual of the test above, which alone cannot tell a screen from a stub.
+
+    `licence_refusals` returning `[]` is what the suite asserts, and a function
+    that returned `[]` for everything would satisfy it. Both sides are moved
+    here, separately, because a screen that reads only the top-level tag passes
+    every check written against the top-level tag.
+    """
+    moved: dict[str, Any] = {field: value}
+    refused = licence_refusals(replace(BACKBONE, **moved))
+    assert refused, f"{field}={value!r} was not refused"
+    assert expected in " ".join(refused), f"{refused} does not say why"
+    identifier = BACKBONE.model_id if field == "licence" else BACKBONE.upstream_id
+    assert identifier in " ".join(refused), "the refusal does not name which model it is about"
+
+
+def test_the_backbone_pin_identifies_bytes_and_not_a_moving_name() -> None:
+    """A revision says which commit was read; only digests say which bytes were loaded."""
+    for entry in BACKBONES:
+        assert pin_faults(entry) == [], f"{entry.model_id} pins nothing checkable"
+        assert REVISION.match(entry.revision)
+        assert HEX64.match(entry.licence_sha256)
+        assert entry.licence_declared_in, "nothing says which file the licence digest is of"
+        assert entry.files, "no file digests"
+        assert entry.parameters > 0
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected"),
+    [
+        ("revision", "main", "not a commit id"),
+        ("revision", "1110A243FDF4706B3F48F1D95DB1A4F5529B4D41", "not a commit id"),
+        ("licence_sha256", "unavailable", "not a sha256"),
+        ("files", {}, "pins no file digests"),
+        ("files", {"config.json": "deadbeef"}, "not a sha256"),
+        ("parameters", 0, "records 0 parameters"),
+    ],
+)
+def test_a_pin_that_identifies_nothing_is_refused(field: str, value: Any, expected: str) -> None:
+    """Each way the pin can be present and mean nothing, moved one at a time.
+
+    The empty `files` map is the one that matters most and the one a shape test
+    passes over: an entry with no digests clears every byte comparison there
+    is, by having none to make, so `digest_mismatches` would report a clean
+    directory for a directory holding anything at all.
+    """
+    moved: dict[str, Any] = {field: value}
+    faults = pin_faults(replace(BACKBONE, **moved))
+    assert faults, f"{field}={value!r} was accepted"
+    assert expected in " ".join(faults), f"{faults} does not say why"
+
+
+def test_a_backbone_file_that_is_absent_and_one_that_differs_are_both_reported(
+    tmp_path: Path,
+) -> None:
+    """Missing counts as a mismatch, because skipping it returns the clean answer.
+
+    A download that fetched half of what it was asked for leaves a directory
+    that passes every digest it can take. Reported over a synthetic entry
+    rather than the real one: the pinned weights are 90 MB, and a test that
+    needed them would be a test that only runs on a machine that has them.
+    """
+    body = b"the pinned bytes"
+    entry = replace(
+        BACKBONE,
+        files={"kept.txt": hashlib.sha256(body).hexdigest()},
+    )
+    (tmp_path / "kept.txt").write_bytes(body)
+    assert digest_mismatches(entry, tmp_path) == []
+
+    (tmp_path / "kept.txt").write_bytes(b"different bytes")
+    changed = digest_mismatches(entry, tmp_path)
+    assert len(changed) == 1
+    assert hashlib.sha256(b"different bytes").hexdigest() in changed[0]
+
+    (tmp_path / "kept.txt").unlink()
+    absent = digest_mismatches(entry, tmp_path)
+    assert len(absent) == 1
+    assert "is not in" in absent[0]
+
+
+def test_verified_refuses_before_it_returns_a_directory(tmp_path: Path) -> None:
+    """`verified` is what `training/train.py` starts through, so it has to raise."""
+    with pytest.raises(BackboneError, match="non-commercial"):
+        verified(replace(BACKBONE, licence="cc-by-nc-4.0"), tmp_path)
+    with pytest.raises(BackboneError, match="not in"):
+        verified(BACKBONE, tmp_path)
+
+
+def test_the_training_module_cannot_reach_the_evaluation_set() -> None:
+    """The rule this whole stage exists to keep, read off the code rather than promised.
+
+    Parsed rather than grepped, and that is the difference between a guard and
+    a coincidence: `training/train.py` names `training/evalset.py` in its
+    docstring, on purpose, to say what it is NOT allowed to touch. A string
+    scan would have to be blind to prose to be useful and blind to code to be
+    quiet, so this reads the import graph and the identifiers instead.
+
+    The positive control is the point. `training/splits.py` DOES read the
+    evaluation set, legitimately, and the same scan finds it there. Without
+    that half, a scan that had stopped looking at anything would report the
+    training module clean.
+    """
+    forbidden = {"evalset", "ship_bar", "load_eval", "EVAL_SOURCE", "balance"}
+    # What the control module genuinely reaches. `ship_bar` is left out because
+    # `training/splits.py` does not read the bar and should not: the control has
+    # to be what that module actually does, or it is a second claim being
+    # asserted rather than a check on the scan.
+    control = forbidden - {"ship_bar"}
+
+    def reached(path: Path) -> set[str]:
+        found: set[str] = set()
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Import):
+                found |= {alias.name.rsplit(".", 1)[-1] for alias in node.names}
+            elif isinstance(node, ast.ImportFrom):
+                found |= {(node.module or "").rsplit(".", 1)[-1]}
+                found |= {alias.name for alias in node.names}
+            elif isinstance(node, ast.Attribute):
+                found.add(node.attr)
+            elif isinstance(node, ast.Name):
+                found.add(node.id)
+        return found & forbidden
+
+    assert reached(SPLIT_BUILDER) == control, (
+        "the scan does not find the evaluation reads in the module that legitimately makes "
+        f"them, so it would find none anywhere: {sorted(reached(SPLIT_BUILDER))}"
+    )
+    assert reached(TRAINER) == set(), (
+        "training/train.py reaches the evaluation set; a checkpoint chosen through it makes "
+        "the ship bar measure the peeking"
+    )
+    # And no literal path or corpus id, which is how a module reads a file
+    # without importing anything that names it.
+    literals = " ".join(
+        node.value
+        for node in ast.walk(ast.parse(TRAINER.read_text(encoding="utf-8")))
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    )
+    assert base_id(EVAL_SOURCE) not in _base_ids_in(literals), (
+        "training/train.py carries the evaluation corpus id in a string literal"
+    )
+
+
+def test_the_readme_cites_the_backbone_by_its_full_id() -> None:
+    """The convention that makes the identifier scan work, held to.
+
+    A backbone cited by bare name is a backbone the scan over this tree cannot
+    see, which is exactly how two comparators reached the README in review with
+    nothing to say about them.
+    """
+    cited = _base_ids_in(TRAINING_README.read_text(encoding="utf-8"))
+    for entry in BACKBONES:
+        assert base_id(entry.model_id) in cited, f"the README never cites {entry.model_id}"
+        assert base_id(entry.upstream_id) in cited, (
+            f"the README cites {entry.model_id} and not the {entry.upstream_id} it came from, "
+            "so the licence question one step up is invisible to a reader"
+        )
 
 
 # --------------------------------------------------------------------------

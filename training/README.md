@@ -47,7 +47,7 @@ and a venv holding a gigabyte of torch is not something to find out about from
 
 ### From fetch to export
 
-Three commands exist so far, and they are written down because they run. The
+Four commands exist so far, and they are written down because they run. The
 scripts that fine-tune the encoder and export to ONNX arrive with the tasks
 that write them, and each lands here when it exists: a sequence documented
 ahead of its scripts is a list of commands that do not run, which is the class
@@ -70,6 +70,11 @@ to the modules that actually have a `__main__`, in both directions.
 PYTHONPATH=src:. /tmp/guardrails-bench/bin/python -m training.ship_bar \
   --model-dir /tmp/deberta-prompt-injection \
   --model-dir-v2 /tmp/deberta-prompt-injection-v2
+
+# The classifier. Fits on TRAIN, selects on DEV, and writes
+# training/artifacts/training_run.json. Needs the network the first time, to
+# fetch the pinned backbone; nothing after that. Weights land under data/.
+./.venv-training/bin/python -m training.train
 ```
 
 The first two write into `training/generated/`, which is committed, and both
@@ -155,9 +160,14 @@ under `training/` is therefore committed by default and a file written under
   data](#generated-data) below.
 - `training/artifacts/` is therefore committed, and it is named here rather
   than left to the general rule because it is the directory that makes the
-  published numbers reproducible: the exported model, its tokenizer and the
-  ship-bar record. It does not exist yet. The task that exports a model creates
-  it, and nothing in `.gitignore` reaches it.
+  published numbers reproducible. It now holds `training_run.json`, the record
+  of the run that fitted the classifier; the exported model and its tokenizer
+  arrive with the task that exports one. Nothing in `.gitignore` reaches it,
+  which is why what may go in it is a rule rather than a habit: records only,
+  and `test_the_run_record_points_at_weights_that_are_not_in_this_repository`
+  fails on any file there that is not a small JSON. Weights are 90 MB and 90 MB
+  in git is 90 MB in every clone and every sdist forever, so the record names
+  where they live and what they hash to instead of carrying them.
 
 The `/data/` rule is anchored with a leading slash. An unanchored `data/`
 matches a directory of that name at any depth, so it would also swallow one
@@ -783,3 +793,61 @@ why it was wrong the moment `splits.json` was committed beside the rows.
 `test_the_readme_states_the_size_of_what_travels_in_the_sdist` recomputes it
 now, and a wheel with any of this in it fails
 `tests/test_packaging.py`.
+
+## The classifier
+
+### The backbone, and why its licence is a different question
+
+The encoder is `sentence-transformers/all-MiniLM-L6-v2`, pinned at revision
+`1110a243fdf4706b3f48f1d95db1a4f5529b4d41`, 22713986 parameters over 6 layers
+with a hidden size of 384. `training/backbone.py` holds the entry and
+`training/train.py` refuses to start unless it passes.
+
+A generator's licence reaches the corpus and stops there. A backbone's reaches
+the wheel, because a fine-tuned checkpoint is the released weights with their
+parameters moved: whatever terms came with them travel into an Apache-2.0
+distribution and bind whoever installs it. That is why the screen here is
+stricter than a tag lookup and why it is written down rather than assumed.
+
+Three things were checked, on 2026-09-02, and they are three different
+questions:
+
+| Question | Answer | Pinned by |
+|---|---|---|
+| What does the card say | `apache-2.0`, the only licence it declares | sha256 of the card at the revision |
+| What does it say it came from | `nreimers/MiniLM-L6-H384-uncased`, `mit` | the card's `base_model` and the weights' own `_name_or_path` |
+| Are these the bytes | six files, one sha256 each | `digest_mismatches`, run before every fit |
+
+The repository publishes no `LICENSE` file at that revision, so the `license:`
+field in the front matter of the card **is** the grant, and its bytes are what
+`licence_sha256` pins. A model card is editable by anyone with push access;
+pinning the name and not the bytes would leave the finding resting on a file
+that can change without the name changing.
+
+Both licences go through `training/screen.py`, the same allowlist every corpus
+in `training/sources.yaml` is screened by, and both are on it: Apache-2.0 and
+MIT are permissive and attribution-conditioned. The second row is not
+ceremony. This repository has already met the model-shaped version of the
+downstream-tag problem: the 3B size of the generator family ships under
+`qwen-research`, which the same screen refuses, while the 14B size the corpus
+was written with is Apache-2.0. A grant is a property of the artifact, not of
+the family, and reading one off a sibling is how research-licensed weights
+reach something that gets published.
+
+The card text carries no acceptable-use policy, no research-only term and no
+clause reaching model outputs or derivative weights, which is the question that
+had to be asked rather than the answer that was hoped for: a term of that kind
+would follow the checkpoint into the wheel instead of stopping at this tree.
+
+What none of it establishes is anything about the corpora behind either model.
+The card names its training datasets and several carry their own terms; the
+grant covers the weights that were released, and a claim about what went into
+them is not available to anyone outside the people who trained them.
+
+The weights themselves are not committed. `training/train.py` fetches the six
+pinned files by revision into `data/backbone/`, which `.gitignore` excludes,
+and verifies every one against its digest before it loads anything. A digest
+that does not match, a revision that is a branch name, or an empty file map all
+refuse the run, and the last of those is the one a shape test passes over: an
+entry pinning no digests clears every byte comparison there is by having none
+to make.
