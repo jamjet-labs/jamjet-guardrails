@@ -243,3 +243,131 @@ def test_directions_default_to_both() -> None:
 def test_a_compiled_pattern_keeps_its_own_flags() -> None:
     guard = _guard(patterns={"SHOUT": re.compile(r"jira-\d{4,}", re.IGNORECASE)})
     assert guard._patterns[0][1].flags & re.IGNORECASE
+
+
+from jamjet_guardrails.chain import GuardrailChain
+from jamjet_guardrails.types import Context
+
+IN = Context(direction="input", origin="user")
+OUT = Context(direction="output", origin="model")
+
+
+def test_clean_content_allows_with_no_findings() -> None:
+    verdict = _guard().check("nothing to see", IN)
+    assert verdict.decision == "allow"
+    assert list(verdict.findings) == []
+    assert verdict.content is None
+
+
+def test_a_match_denies_by_default_and_carries_its_span() -> None:
+    verdict = _guard().check("see JIRA-1234 please", IN)
+    assert verdict.decision == "deny"
+    assert [(f.type, f.span) for f in verdict.findings] == [("TICKET_ID", (4, 13))]
+    assert verdict.content is None
+
+
+def test_a_redacting_guardrail_rewrites_its_own_view() -> None:
+    verdict = _guard(on_match="redact").check("see JIRA-1234 please", IN)
+    assert verdict.decision == "redact"
+    assert verdict.content == "see [REDACTED:TICKET_ID] please"
+
+
+def test_every_finding_carries_no_confidence() -> None:
+    """The constraint invariant. `Verdict` enforces it, so a finding built with
+    one would raise rather than reach a caller; this pins the value."""
+    verdict = _guard().check("JIRA-1234", IN)
+    assert [f.confidence for f in verdict.findings] == [None]
+
+
+def test_the_verdict_hashes_the_content_it_was_given() -> None:
+    from jamjet_guardrails.protocol import saw
+
+    content = "see JIRA-1234"
+    assert _guard().check(content, IN).saw == saw(content)
+
+
+def test_a_banned_substring_matches_regardless_of_case() -> None:
+    guard = _guard(patterns=None, banned={"CODENAME": ("project bluebird",)})
+    verdict = guard.check("about Project BlueBird today", IN)
+    assert [(f.type, f.span) for f in verdict.findings] == [("CODENAME", (6, 22))]
+
+
+def test_a_banned_substring_spans_the_source_when_folding_changed_its_length() -> None:
+    """The sharp s casefolds to two characters, so a span read off the folded
+    view would be one character too long and would eat the following space."""
+    guard = _guard(patterns=None, banned={"STREET": ("strasse",)})
+    verdict = guard.check("Straße 4", IN)
+    assert [(f.type, f.span) for f in verdict.findings] == [("STREET", (0, 6))]
+    assert verdict.decision == "deny"
+
+
+def test_every_occurrence_of_a_banned_substring_is_reported() -> None:
+    guard = _guard(patterns=None, banned={"CODENAME": ("bluebird",)})
+    verdict = guard.check("bluebird and bluebird", IN)
+    assert [f.span for f in verdict.findings] == [(0, 8), (13, 21)]
+
+
+def test_overlapping_occurrences_are_both_reported() -> None:
+    """`_scan` tries every start position, and the banned scan matches it, so
+    two overlapping occurrences are two findings rather than one."""
+    guard = _guard(patterns=None, banned={"REPEAT": ("aba",)})
+    verdict = guard.check("ababa", IN)
+    assert [f.span for f in verdict.findings] == [(0, 3), (2, 5)]
+
+
+def test_findings_come_back_in_span_order_across_every_source() -> None:
+    """`_merge` compares each span against the running end of the region it is
+    extending and looks no further back, so an unsorted list makes it emit
+    regions that are wrong rather than untidy. Patterns, banned substrings and
+    limits each scan the whole input independently, so their concatenation is
+    not in span order and the sort is load-bearing."""
+    guard = _guard(
+        patterns={"TICKET_ID": r"\bJIRA-\d{4,}\b"},
+        banned={"CODENAME": ("bluebird",)},
+        limits=Limits(max_chars=30),
+        on_match="redact",
+    )
+    verdict = guard.check("bluebird then JIRA-1234 then a long tail here", IN)
+    spans = [f.span for f in verdict.findings]
+    # `Finding.span` is `tuple[int, int] | None` because a classifier finding
+    # may carry none; every span a constraint's `check` produces is real, which
+    # mypy cannot see from this test alone.
+    assert spans == sorted(spans)  # type: ignore[type-var]
+    assert [f.type for f in verdict.findings] == ["CODENAME", "TICKET_ID", "LENGTH_LIMIT"]
+
+
+def test_two_types_claiming_one_region_collapse_into_one_placeholder() -> None:
+    guard = _guard(
+        patterns={"TICKET_ID": r"JIRA-\d{4,}"},
+        banned={"CODENAME": ("jira-1234",)},
+        on_match="redact",
+    )
+    assert guard.check("see JIRA-1234", IN).content == "see [REDACTED:CODENAME+TICKET_ID]"
+
+
+def test_the_decision_follows_the_direction_the_context_carries() -> None:
+    guard = _guard(on_match={"input": "redact", "output": "deny"})
+    assert guard.check("JIRA-1234", IN).decision == "redact"
+    assert guard.check("JIRA-1234", OUT).decision == "deny"
+
+
+def test_it_composes_in_a_chain_with_a_bundled_detector() -> None:
+    """The composition the chain was rebuilt for: both checks inspect the
+    content the chain was given, and the two rewrites are merged into one pass."""
+    guard = _guard(patterns={"TICKET_ID": r"JIRA-\d{4,}"}, on_match="redact")
+    from jamjet_guardrails.detectors import build
+
+    result = GuardrailChain([guard, build("secrets")]).run(
+        "JIRA-1234 and sk-abcdefghijklmnopqrstuvwxyz012345", OUT
+    )
+    assert result.decision == "redact"
+    assert result.content == "[REDACTED:TICKET_ID] and [REDACTED:OPENAI_KEY]"
+
+
+def test_a_pattern_is_searched_rather_than_anchored() -> None:
+    """`finditer` is search semantics, so `^` and `$` bind to the ends of the
+    whole content unless the caller compiled with MULTILINE. An unanchored
+    pattern therefore matches inside a longer token, which is the anchoring
+    pitfall the documentation names."""
+    guard = _guard(patterns={"MEDIA": r"packages/media/"})
+    assert guard.check("foo/packages/media/bar", IN).decision == "deny"

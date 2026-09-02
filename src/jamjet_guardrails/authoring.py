@@ -24,14 +24,11 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from jamjet_guardrails._fold import casefold_view, fold
+from jamjet_guardrails._spans import _rewrite, _scan
 from jamjet_guardrails.errors import GuardrailUnavailableError
-
-# Context, Finding, Provenance and Verdict are not referenced by this task's
-# code. Task 5 adds `_matches` and `check`, which use all four; until then
-# ruff's F401 flags them as unused, and the controller's ruling on that
-# conflict (see task-4-report.md) is to import only what this task's own code
-# uses rather than silence the check. Task 5 widens this same import line.
-from jamjet_guardrails.types import Decision, Direction, Kind
+from jamjet_guardrails.protocol import saw
+from jamjet_guardrails.types import Context, Decision, Direction, Finding, Kind, Provenance, Verdict
 
 # `re._parser` on 3.11 and later; `sre_parse` on 3.10, where `re._parser` does
 # not exist at all. Measured: on 3.10.20 the first import raises
@@ -167,9 +164,11 @@ def _walk_for_nesting(sequence: Any, inside_unbounded: bool) -> bool:
     The opcodes are compared by NAME rather than imported as constants,
     because the constants live in the same private module the import above
     already leans on and the names are stable across every version in the
-    matrix. An opcode this walk does not know is descended into where it
-    carries a subpattern and otherwise ignored, which is the safe direction:
-    an unknown opcode makes the guard miss a nesting, never invent one.
+    matrix. An opcode this walk does not recognise is ignored rather than
+    descended into, which is the safe direction: it can only make the guard
+    MISS a nesting that opcode's subpattern contained, never invent one that
+    is not there, and every opcode the parser actually produces that carries
+    a subpattern is handled by name above.
     """
     for opcode, argument in sequence:
         name = str(opcode)
@@ -307,6 +306,75 @@ class PatternGuardrail:
                     "that runs and cannot act"
                 )
         self._on_match: Mapping[Direction, Decision] = resolved
+
+    def _matches(self, content: str) -> list[tuple[str, tuple[int, int]]]:
+        """Every span every source claims, sorted by span. Nothing is dropped.
+
+        SORTED BY SPAN is a precondition of what consumes this list, not
+        tidiness. ``_merge`` tests each span against the running end of the
+        region it is extending and looks no further back, so a list in any
+        other order makes it emit regions that are wrong and ``_rewrite``
+        writes those out. The three sources here scan the whole input
+        independently and their results concatenate in source order, which is
+        not span order.
+
+        A tie on the start offset puts the shorter span first, and ``sorted``
+        is stable, so equal spans keep the order the sources produced them in.
+        """
+        found = [
+            (type_name, match.span())
+            for type_name, pattern in self._patterns
+            for match in _scan(pattern, content)
+        ]
+        found += self._banned_spans(content)
+        if self._limits is not None:
+            found += _limit_spans(content, self._limits)
+        return sorted(found, key=lambda pair: pair[1])
+
+    def _banned_spans(self, content: str) -> list[tuple[str, tuple[int, int]]]:
+        """Banned substrings, matched over a folded view and reported in source.
+
+        The view is where the match is found and the SOURCE is where the span
+        points, because that is what the chain rewrites and what a corpus
+        labels. The two are not the same length whenever folding changed a
+        character's width, and the offset map is what keeps a match over a
+        casefolded sharp s from spanning one character too many.
+
+        Every occurrence, including overlapping ones, matching what ``_scan``
+        does for patterns: the next search starts one past the previous match's
+        start rather than at its end.
+        """
+        if not self._banned:
+            return []
+        view = casefold_view(content) if self._fold_case else fold(content, lambda ch: ch)
+        found: list[tuple[str, tuple[int, int]]] = []
+        for type_name, substring in self._banned:
+            start = view.text.find(substring)
+            while start != -1:
+                found.append((type_name, view.span(start, start + len(substring))))
+                start = view.text.find(substring, start + 1)
+        return found
+
+    def check(self, content: str, context: Context) -> Verdict:
+        provenance = Provenance(kind="constraint", detector=self.name, version=self.version)
+        found = self._matches(content)
+        if not found:
+            return Verdict("allow", None, [], provenance, saw(content))
+
+        # One finding per match, each carrying its own original span, even
+        # where several collapsed into one placeholder. The output loses that
+        # detail by design; the audit record must not.
+        findings = [Finding(type=type_name, span=span) for type_name, span in found]
+
+        # The decision is read from the direction the CONTEXT carries, which
+        # the chain has already checked is one this guardrail declares.
+        if self._on_match[context.direction] == "deny":
+            return Verdict("deny", None, findings, provenance, saw(content))
+
+        # This guardrail's own view of the input, for a caller holding one
+        # guardrail. A chain merges these spans with every other guardrail's
+        # and rewrites once, through this same `_rewrite`.
+        return Verdict("redact", _rewrite(content, found), findings, provenance, saw(content))
 
 
 def _require_type_name(type_name: str) -> None:
