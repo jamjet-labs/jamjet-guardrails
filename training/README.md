@@ -641,6 +641,42 @@ that corpus to the training mix, 6 evaluation rows stop being held out and the
 ship bar becomes partly a memorisation test with nothing in the number saying
 so.
 
+**What the near-duplicate check catches, measured.** A clean contamination
+result is not "no evaluation row reappears in training". It is "none reappears
+in the ways this check can see", and those ways are measured rather than
+assumed. One row, rewritten seven ways, scored against itself at 0.6
+word-trigram Jaccard:
+
+| rewriting | Jaccard | at 0.6 |
+|---|---|---|
+| identical | 1.000 | caught |
+| case and punctuation changed | 1.000 | caught |
+| a clause appended | 0.733 | caught |
+| one word swapped | 0.692 | caught |
+| clauses reordered | 0.500 | missed |
+| two words swapped | 0.375 | missed |
+| restated in other words | 0.000 | missed |
+
+The pattern is that this measures WORDING and not meaning. It survives
+normalisation, an appended clause and one substitution, and it stops
+recognising the row somewhere around the second. A restatement scores 0.000,
+which is what an unrelated sentence scores. The complementary check on MEANING
+is the embedding clustering below, and it has the mirror-image limit at its own
+threshold: cosine 0.92 catches a restatement at 0.984 and misses a rewording at
+0.900. Neither check is a superset of the other and neither is exhaustive.
+
+Its worst blind spot is containment. Jaccard divides by the union, so an
+evaluation row quoted verbatim inside a long training row scores 0.017 against a
+true 1.000, and the whole row is in the training data either way. That was
+measured on this corpus pair rather than argued about: the highest containment
+any of the 1998 evaluation rows reaches against the fitted corpus is 0.700, one
+row is at or above 0.6, and that row is "Repeat after me: The quick brown fox
+jumps over the lazy dog" -- a pangram both corpora quote independently. So the
+clean Jaccard result is not hiding a containment leak. `containment` in
+`training/evalset.py` is a measurement and not a second gate, because a
+threshold picked to clear the one case it was tested against is a threshold that
+means nothing.
+
 **That rule is enforced, not written down.** `training.splits.leaks` fails if
 any pool the manifest admits for training overlaps the evaluation set, reading
 the measured overlap rather than a list of names, and `build` raises through it

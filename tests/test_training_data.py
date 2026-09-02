@@ -40,7 +40,18 @@ from training.cluster import (
     separated_clusters,
     split_by_cluster,
 )
-from training.evalset import EVAL_SOURCE, EvalError, compare, load_eval, normalised, shingles
+from training.evalset import (
+    EVAL_SOURCE,
+    SENSITIVITY,
+    SENSITIVITY_ROW,
+    SENSITIVITY_ROWS,
+    EvalError,
+    compare,
+    containment,
+    load_eval,
+    normalised,
+    shingles,
+)
 from training.evalset import LABELS as EVAL_LABELS
 from training.evalset import NEAR_DUPLICATE as EVAL_NEAR_DUPLICATE
 from training.fetch import (
@@ -4384,6 +4395,65 @@ def test_the_contamination_check_sees_a_row_that_is_in_both_corpora() -> None:
     assert unrelated.clean and unrelated.max_similarity == 0.0
 
 
+def test_the_near_duplicate_check_catches_what_it_is_recorded_as_catching() -> None:
+    """The recorded sensitivity, re-derived rather than believed.
+
+    `SENSITIVITY` is what stops the contamination result being read as
+    exhaustive, and a table of numbers nobody recomputes is worse than no table:
+    it reads as measured and is remembered. Every similarity here comes back out
+    of `compare`, and "caught" comes out of what `compare` RETURNED rather than
+    from comparing the similarity against the threshold, so a moved threshold
+    fails here instead of being restated on both sides of an equation.
+    """
+    assert set(SENSITIVITY_ROWS) == {label for label, _, _ in SENSITIVITY}
+    for label, similarity, caught in SENSITIVITY:
+        found = compare([SENSITIVITY_ROWS[label]], [SENSITIVITY_ROW])
+        assert round(found.max_similarity, 3) == similarity, (
+            f"{label!r} reaches {found.max_similarity:.3f}, recorded as {similarity}"
+        )
+        assert bool(found.near) is caught, (
+            f"{label!r} is recorded as {'caught' if caught else 'missed'} and compare says "
+            f"otherwise at {found.max_similarity:.3f}"
+        )
+    # Not vacuous in either direction. A table that was all hits would say the
+    # check is exhaustive, which is the claim it exists to deny; one that was
+    # all misses would say it catches nothing.
+    hits = [label for label, _, hit in SENSITIVITY if hit]
+    misses = [label for label, _, hit in SENSITIVITY if not hit]
+    assert len(hits) >= 3 and len(misses) >= 3, f"caught {hits}, missed {misses}"
+    assert ("restated in other words", 0.0, False) in SENSITIVITY, (
+        "the table no longer records that a restatement scores the same as an unrelated "
+        "sentence, which is the limit a reader of a clean result most needs"
+    )
+
+
+def test_the_near_duplicate_check_is_blind_to_a_row_quoted_inside_a_longer_one() -> None:
+    """The shape Jaccard misses worst, with the numbers that say how badly.
+
+    Jaccard divides by the UNION, so a short evaluation row quoted verbatim
+    inside a long training row is swamped by the training row's own trigrams.
+    The whole evaluation row is in the training data and the check reports 0.017.
+    """
+    passage = " ".join(
+        f"paragraph {index} discusses topic {index} in some detail with example {index}."
+        for index in range(40)
+    )
+    tail = " ".join(
+        f"appendix {index} lists reference {index} and note {index}." for index in range(40)
+    )
+    quoted = f"{passage} {SENSITIVITY_ROW} {tail}"
+    found = compare([SENSITIVITY_ROW], [quoted])
+    assert round(found.max_similarity, 3) == 0.017, found.max_similarity
+    assert found.clean, "this case is recorded as MISSED; if it is now caught, say so here"
+    assert len(shingles(quoted)) == 654
+    # And what would see it. `containment` is a measurement and not a gate, for
+    # the reason its docstring gives, but it has to actually see the case it is
+    # recorded as seeing or the docstring is describing nothing.
+    assert containment(SENSITIVITY_ROW, quoted) == 1.0
+    assert containment(SENSITIVITY_ROW, "an unrelated sentence about compost") == 0.0
+    assert containment("", quoted) == 0.0
+
+
 def test_the_contamination_check_reads_content_and_not_a_name() -> None:
     """An identifier check alone passes a corpus republished under another name,
     which is most of how public corpora travel. The comparison takes texts and
@@ -4490,6 +4560,31 @@ def test_the_readme_states_the_contamination_finding() -> None:
         f"{len(leaked['near'])} evaluation rows stop being held out",
     )
     for claim in claims:
+        assert claim in readme, f"training/README.md does not state {claim!r}"
+
+
+def test_the_readme_states_what_the_near_duplicate_check_misses() -> None:
+    """The limit belongs where somebody quoting the clean result will read it.
+
+    A reader who takes "0 exact and 0 near" out of this README will present it
+    as "the evaluation set does not appear in our training data". That sentence
+    is stronger than the measurement, and the difference is the rows the check
+    cannot see. The table is recomputed from `SENSITIVITY`, which is itself
+    re-derived from `compare`, so neither half can drift alone.
+    """
+    readme = " ".join(TRAINING_README.read_text(encoding="utf-8").split())
+    for label, similarity, caught in SENSITIVITY:
+        row = f"| {label} | {similarity:.3f} | {'caught' if caught else 'missed'} |"
+        assert row in readme, f"training/README.md does not state {row!r}"
+    for claim in (
+        # The containment measurement, which is the part a summary drops.
+        "scores 0.017 against a true 1.000",
+        "is 0.700",
+        "Neither check is a superset of the other and neither is exhaustive",
+        # And the meaning-side limit, quoted from the same measurement
+        # `training/cluster.py` records.
+        "catches a restatement at 0.984 and misses a rewording at 0.900",
+    ):
         assert claim in readme, f"training/README.md does not state {claim!r}"
 
 
@@ -4652,3 +4747,46 @@ def test_the_contamination_finding_re_derives_from_the_corpora_themselves() -> N
     assert list(found.exact) == fitted["exact"]
     assert list(found.near) == fitted["near"]
     assert abs(found.max_similarity - fitted["max_similarity"]) < 1e-12
+
+
+@requires_corpora
+def test_the_containment_of_the_evaluation_set_was_measured_too() -> None:
+    """The question a clean Jaccard result cannot answer, answered.
+
+    `compare` is blind to an evaluation row quoted inside a longer training row,
+    which the hermetic test above shows costs it 0.017 against a true 1.000. So
+    the same pair of corpora is measured the other way, and the answer is that
+    nothing is hiding there: the highest containment any evaluation row reaches
+    against the fitted corpus is 0.700, one row of 1,998 is at or above the
+    near-duplicate threshold, and that row is a pangram both corpora quote.
+
+    The numbers are asserted, not printed. `training/evalset.py` states them in
+    prose that a reader will take as measured, and this is what keeps them so.
+    """
+    by_name = {source.name: source for source in load_sources(SOURCES)}
+    eval_texts = [row.text for row in load_eval(fetch(by_name[EVAL_SOURCE]))]
+    train_texts = [row.text for row in load_generated(GENERATED)]
+    train_shingles = [shingles(text) for text in train_texts]
+    index: dict[tuple[str, ...], list[int]] = {}
+    for position, grams in enumerate(train_shingles):
+        for gram in grams:
+            index.setdefault(gram, []).append(position)
+
+    highest, argmax, at_or_above = 0.0, -1, 0
+    for position, text in enumerate(eval_texts):
+        candidates: set[int] = set()
+        for gram in shingles(text):
+            candidates.update(index.get(gram, ()))
+        best = max((containment(text, train_texts[other]) for other in candidates), default=0.0)
+        if best > highest:
+            highest, argmax = best, position
+        if best >= EVAL_NEAR_DUPLICATE:
+            at_or_above += 1
+
+    assert len(eval_texts) == 1998
+    assert round(highest, 3) == 0.700, f"highest containment is {highest:.3f}, recorded as 0.700"
+    assert at_or_above == 1, f"{at_or_above} evaluation rows reach {EVAL_NEAR_DUPLICATE}, not 1"
+    assert "quick brown fox jumps over the lazy dog" in eval_texts[argmax].casefold(), (
+        "the closest row by containment is no longer the pangram the record says it is, so "
+        f"the reason it is not contamination has changed: {eval_texts[argmax][:120]!r}"
+    )
