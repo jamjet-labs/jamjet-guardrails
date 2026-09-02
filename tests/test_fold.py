@@ -58,6 +58,20 @@ def test_a_match_that_starts_inside_an_expanded_product_still_finds_its_source()
     assert source[slice(*span)] == "ße"
 
 
+def test_a_match_starting_on_the_second_half_of_a_product_still_covers_it_whole() -> None:
+    """A different boundary from the match above, whose match starts on the
+    product's FIRST view character. This one's match is only the SECOND of
+    the sharp s's two view characters, plus the letter after it, and the
+    source span still comes back as the WHOLE source character the product
+    came from rather than half of one, because half a source character
+    cannot be redacted."""
+    source = "Straße"
+    view = casefold_view(source)
+    span = view.span(5, 7)
+    assert span == (4, 6)
+    assert source[slice(*span)] == "ße"
+
+
 def test_a_fold_that_deletes_a_character_spans_the_run_that_carried_it() -> None:
     """A marker laundered with a zero-width space matches in the view, and the
     span has to cover the zero-width space too: a redaction that left it
@@ -69,6 +83,24 @@ def test_a_fold_that_deletes_a_character_spans_the_run_that_carried_it() -> None
     span = view.span(start, start + len("<|im_start|>"))
     assert span == (0, 13)
     assert source[slice(*span)] == source
+
+
+def test_a_match_ending_immediately_before_a_deleted_character_stops_at_it() -> None:
+    """The end is the last matched character's source index PLUS ONE, never
+    the source index of the character after the match, and here that is not
+    a detail: source index 5 is the deleted zero-width space, missing from
+    ``origin``, so the map jumps straight from 4 to 6. Reading ``origin[end]``
+    instead of ``origin[end - 1] + 1`` would read 6, where the match's last
+    character maps to 4, and swallow the deleted character into a span the
+    match never touched. A redaction over that span would remove a byte
+    nothing detected, which is the defect class this module exists to
+    prevent."""
+    source = "<|im_\u200bstart|>"
+    view = fold(source, lambda ch: "" if ch == "\u200b" else ch)
+    assert view.origin == (0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12)
+    span = view.span(0, 5)
+    assert span == (0, 5)
+    assert source[slice(*span)] == "<|im_"
 
 
 def test_every_character_of_the_view_has_exactly_one_source_index() -> None:
