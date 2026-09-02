@@ -26,6 +26,7 @@ from jamjet_guardrails import build_chain as build_chain_from_the_root
 from jamjet_guardrails.chain import GuardrailChain
 from jamjet_guardrails.detectors import AVAILABLE, PiiGuardrail, build, build_chain
 from jamjet_guardrails.errors import GuardrailUnavailableError
+from jamjet_guardrails.eval.fixtures import options_for
 from jamjet_guardrails.protocol import Guardrail, saw
 from jamjet_guardrails.types import Context, Direction, Kind, Provenance, Verdict
 
@@ -33,7 +34,7 @@ OUT = Context(direction="output", origin="model")
 
 
 def test_every_bundled_detector_is_registered() -> None:
-    assert set(AVAILABLE) == {"injection-structural", "pii", "secrets"}
+    assert set(AVAILABLE) == {"injection-structural", "pii", "rules", "secrets"}
 
 
 def test_build_returns_a_working_guardrail() -> None:
@@ -53,8 +54,11 @@ def test_build_returns_the_guardrail_asked_for_and_not_a_default(name: str) -> N
     pins the key to the detector's own name, which is what `provenance.detector`
     carries into the audit record: a key that disagreed with it would make the
     audit trail name a guardrail the config never asked for.
+
+    `**options_for(name)` because `rules` refuses to build with no options at
+    all; every other entry's fixture is empty, so this is a no-op for them.
     """
-    assert build(name).name == name
+    assert build(name, **options_for(name)).name == name
 
 
 def test_build_passes_options_through() -> None:
@@ -609,3 +613,30 @@ def test_a_detector_configured_with_some_types_is_still_built() -> None:
     """The false-reject control: the refusal above must be about EMPTY, not about types=."""
     guardrail = build("pii", types=frozenset({"EMAIL"}))
     assert guardrail.check("mail alice@example.com", OUT).decision == "redact"
+
+
+def test_every_registered_check_declares_the_types_it_can_report() -> None:
+    """Both directions. A check in AVAILABLE with no TYPES entry has a README
+    row nothing checks and a corpus whose labels nothing constrains; a TYPES
+    entry for a check nothing registers is a table describing something that
+    does not exist."""
+    from jamjet_guardrails.detectors import TYPES
+
+    assert set(TYPES) == set(AVAILABLE)
+
+
+def test_no_two_checks_claim_the_same_finding_type() -> None:
+    """Disjointness across checks, which generalises the pairwise test the
+    three structural signals already carry. Two checks reporting one type name
+    make a merged placeholder ambiguous about which check fired and make a
+    per-type row in the published table the sum of two different measurements."""
+    from jamjet_guardrails.detectors import TYPES
+
+    seen: dict[str, str] = {}
+    collisions: list[str] = []
+    for check, types in sorted(TYPES.items()):
+        for type_name in sorted(types):
+            if type_name in seen:
+                collisions.append(f"{type_name} claimed by {seen[type_name]} and {check}")
+            seen[type_name] = check
+    assert collisions == [], collisions

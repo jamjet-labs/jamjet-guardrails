@@ -58,6 +58,7 @@ REQUIRED_SECTIONS = [
     "## The saw hash",
     "## Corpus schema",
     "## The injection-structural constraint",
+    "## The rules constraint",
     "## Third-party corpora",
     "## What is deliberately unspecified",
 ]
@@ -610,19 +611,22 @@ def test_the_span_vector_the_document_publishes_is_the_case_it_names() -> None:
         )
 
 
-def test_every_case_in_the_injection_corpus_carries_the_direction_the_document_claims() -> None:
-    """The document says this check's direction is specified here and measured nowhere.
+def test_the_injection_corpus_carries_both_directions_the_document_claims() -> None:
+    """The document says this check runs in both directions and that the corpus
+    now measures it. Both halves are checked here: the corpus really does carry
+    output cases, and the document really does claim both.
 
-    That rests on one fact about the corpus: every case is `input`, so a port
-    declaring `output` as well scores identically and the corpus cannot object.
-    Add one output case and the sentence becomes false, with nothing else in the
-    repository disagreeing.
-    """
+    The previous version of this test asserted the opposite, that every case was
+    `input`, and it was correct for 0.1.0. It is kept in this shape rather than
+    deleted because the sentence it guards moved rather than went away: what the
+    corpus can and cannot tell a port is still the point."""
     corpus = load_corpus(INJECTION_CORPUS, name="injection-structural")
     assert corpus.cases, "the injection corpus is empty; this check would prove nothing"
     directions = {case.direction for case in corpus.cases}
-    assert directions == {"input"}, f"the corpus carries directions {sorted(directions)}"
-    assert "`direction: input`" in _section(INJECTION)
+    assert directions == {"input", "output"}, f"the corpus carries directions {sorted(directions)}"
+    section = _section(INJECTION)
+    assert "runs on input and on output" in section
+    assert "`direction: input`" not in section
 
 
 # ==========================================================================
@@ -766,3 +770,27 @@ def test_the_count_of_allow_cases_riding_on_an_exemption_is_the_measured_union()
     assert f"{len(union)} of its {len(cases)} `allow` cases" in section, (
         f"the document does not state the measured figures, which are {len(union)} of {len(cases)}"
     )
+
+
+def test_the_conformance_document_prints_the_fixture_the_row_was_measured_under() -> None:
+    """A configuration quoted in prose is a claim, and this one is the whole
+    meaning of the rules row. A fixture that changed without this section
+    changing would publish a number under a configuration nobody used."""
+    from jamjet_guardrails.eval.fixtures import options_for
+
+    section = _section("## The rules constraint")
+    fixture = options_for("rules")
+    patterns = fixture["patterns"]
+    assert isinstance(patterns, dict)
+    for type_name, pattern in patterns.items():
+        assert type_name in section, f"the document does not print the {type_name} rule"
+        assert pattern in section, f"the document prints a different pattern for {type_name}"
+    banned = fixture["banned"]
+    assert isinstance(banned, dict)
+    for type_name, substrings in banned.items():
+        assert type_name in section
+        for substring in substrings:
+            assert substring in section
+    limits = fixture["limits"]
+    assert f"max_chars: {limits.max_chars}" in section  # type: ignore[attr-defined]
+    assert f"on_match: {fixture['on_match']}" in section

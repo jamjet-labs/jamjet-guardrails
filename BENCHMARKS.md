@@ -5,9 +5,10 @@ every score. How to read them is under the table.
 
 | Check | Corpus | Source | Version | Cases | Precision | Recall | F1 | TP | FP | FN | Wrong decisions |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| injection-structural | injection-structural/in-repo | in-repo | `b11692946044` | 146 | 0.971 | 0.870 | 0.917 | 100 | 3 | 15 | 8 |
+| injection-structural | injection-structural/in-repo | in-repo | `b704703f431d` | 154 | 0.972 | 0.873 | 0.920 | 103 | 3 | 15 | 8 |
 | pii | pii/in-repo | in-repo | `06fb3b601aba` | 81 | 0.631 | 0.872 | 0.732 | 41 | 24 | 6 | 24 |
 | pii | pii/third-party | nvidia/Nemotron-PII@b70ffaf | `c25ef538d677` | 300 | 0.960 | 0.997 | 0.978 | 340 | 14 | 1 | 6 |
+| rules | rules/in-repo | in-repo | `f1b809114b13` | 40 | 1.000 | 1.000 | 1.000 | 28 | 0 | 0 | 0 |
 | secrets | secrets/in-repo | in-repo | `e9e0ed70dc37` | 39 | 0.957 | 0.880 | 0.917 | 22 | 1 | 3 | 4 |
 
 ## How to read this
@@ -71,13 +72,13 @@ of false alarms, capped at 5 per corpus. Every miss is in
 `benchmarks.json`, and every score to four decimals there unless the sentence
 above clamped it.
 
-## Per type: injection-structural on injection-structural/in-repo (in-repo, `b11692946044`)
+## Per type: injection-structural on injection-structural/in-repo (in-repo, `b704703f431d`)
 
 | Type | Precision | Recall | TP | FP | FN |
 |---|---:|---:|---:|---:|---:|
-| BIDI_OVERRIDE | 0.882 | 1.000 | 15 | 2 | 0 |
-| INVISIBLE_TAG_CHARS | 1.000 | 1.000 | 20 | 0 | 0 |
-| ZERO_WIDTH_SMUGGLING | 0.985 | 0.812 | 65 | 1 | 15 |
+| BIDI_OVERRIDE | 0.889 | 1.000 | 16 | 2 | 0 |
+| INVISIBLE_TAG_CHARS | 1.000 | 1.000 | 21 | 0 | 0 |
+| ZERO_WIDTH_SMUGGLING | 0.985 | 0.815 | 66 | 1 | 15 |
 
 ## Per type: pii on pii/in-repo (in-repo, `06fb3b601aba`)
 
@@ -97,6 +98,15 @@ above clamped it.
 | PHONE_NUMBER | 0.991 | 1.000 | 115 | 1 | 0 |
 | US_SSN | 0.750 | 0.960 | 24 | 8 | 1 |
 
+## Per type: rules on rules/in-repo (in-repo, `f1b809114b13`)
+
+| Type | Precision | Recall | TP | FP | FN |
+|---|---:|---:|---:|---:|---:|
+| INTERNAL_HOST | 1.000 | 1.000 | 9 | 0 | 0 |
+| LENGTH_LIMIT | 1.000 | 1.000 | 4 | 0 | 0 |
+| PROJECT_CODENAME | 1.000 | 1.000 | 7 | 0 | 0 |
+| TICKET_ID | 1.000 | 1.000 | 8 | 0 | 0 |
+
 ## Per type: secrets on secrets/in-repo (in-repo, `e9e0ed70dc37`)
 
 | Type | Precision | Recall | TP | FP | FN |
@@ -109,7 +119,7 @@ above clamped it.
 | PRIVATE_KEY | 0.750 | 1.000 | 3 | 1 | 0 |
 | SLACK_TOKEN | 1.000 | 0.750 | 3 | 0 | 1 |
 
-## Worst misses: injection-structural on injection-structural/in-repo (in-repo, `b11692946044`)
+## Worst misses: injection-structural on injection-structural/in-repo (in-repo, `b704703f431d`)
 
 | Case | Kind | Expected | Predicted |
 |---|---|---|---|
@@ -144,6 +154,10 @@ above clamped it.
 | `nemotron-us-0d5de439e848400396da9d25efaf92aa` | decision_mismatch | allow | redact |
 
 ...and 16 more, in `benchmarks.json`.
+
+## Worst misses: rules on rules/in-repo (in-repo, `f1b809114b13`)
+
+No misses on this corpus.
 
 ## Worst misses: secrets on secrets/in-repo (in-repo, `e9e0ed70dc37`)
 

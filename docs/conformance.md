@@ -316,13 +316,11 @@ scoring that pairing would publish a number for a run that never happens.
 
 ## The injection-structural constraint
 
-`pii` and `secrets` are patterns over what a document says, and the sections
-above are enough to port them: their type names are the labels their corpora
-use, and their bar is the score on those corpora. This check constrains how a
-document is ENCODED rather than what it says, and reproducing its numbers is not
-the same as reproducing it. 29 of its 94 `allow` cases stop allowing when one of
-the exemptions or exclusions below is switched off, and neither an exemption nor
-an exclusion is visible in a precision figure.
+`pii` and `secrets` are patterns over what a document says, and the sections above are enough to port them:
+their type names are the labels their corpora use, and their bar is the score on those corpora. This check
+constrains how a document is ENCODED rather than what it says, and reproducing its numbers is not the same
+as reproducing it. 33 of its 99 `allow` cases stop allowing when one of the exemptions or exclusions below
+is switched off, and neither an exemption nor an exclusion is visible in a precision figure.
 
 Its `kind` is `constraint`, so the invariant above applies unchanged: no finding
 it produces carries a `confidence`. Its corpus is
@@ -360,18 +358,21 @@ code units. A port that indexes in either -- the natural choice in Java,
 JavaScript, Go or Rust -- reports a span this corpus scores as a miss, and
 redacts the wrong bytes.
 
-### It runs on input only
+### It runs on input and on output
 
-`directions` holds `input` and nothing else, so a chain skips this check on
-output entirely. That is a restriction on what it covers rather than a detail of
-how it is wired: a model that emits tag characters into its own output is
-smuggling to whatever reads that output next, and this check does not look.
+`directions` holds both, so a chain runs this check in either direction. That is
+a statement about coverage rather than about wiring: a model that emits tag
+characters into its own output is smuggling to whatever reads that output next,
+which in an agent chain is another model, and a check that looked only at input
+could not see it.
 
-**The corpora cannot tell a port this.** Every case in the corpus carries
-`direction: input`, and scoring calls `check` with the case's own direction, so
-a port that declared `output` as well would score exactly the same. Like the
-combination order and the single-pass rule, this is specified here and measured
-nowhere.
+It shipped input-only at 0.1.0 and widened at 0.2.0. **The corpora could not
+have told a port either version.** Scoring calls `check` with each case's own
+direction, so while every case carried an `input` direction a port declaring
+output as well scored identically. The corpus now carries cases in both
+directions, which measures that a port runs in both; what it still cannot
+measure is a port that declares MORE directions than these two, and there are no
+more to declare.
 
 ### The exemptions
 
@@ -387,8 +388,8 @@ rather than left to go stale.
   presence of a control. Reporting every control instead denies these, all
   labelled `allow`: `inj-0027`, `inj-0028`, `inj-0029`, `inj-0030`, `inj-0031`,
   `inj-0032`, `inj-0035`, `inj-0036`, `inj-0037`, `inj-0038`, `inj-0096`,
-  `inj-0141` and `inj-0142`. They are balanced embeddings, overrides and
-  isolates around Latin, digits, Hebrew and Arabic. Right-to-left text is
+  `inj-0141`, `inj-0142` and `inj-0153`. They are balanced embeddings, overrides
+  and isolates around Latin, digits, Hebrew and Arabic. Right-to-left text is
   written with these controls, so a check that reported them would report a
   language.
 
@@ -397,26 +398,26 @@ rather than left to go stale.
   flags of England, Scotland and Wales, each written as U+1F3F4, the tag
   spelling of its subdivision code, and U+E007F CANCEL TAG. Unicode defines
   those three and no others, so the set is closed. Dropping the exemption denies
-  these, all labelled `allow`: `inj-0002`, `inj-0015`, `inj-0016`, `inj-0017`
-  and `inj-0018`, which carry all three flags singly and in a row. A check that
-  denies the Scotland flag is a check that gets switched off.
+  these, all labelled `allow`: `inj-0002`, `inj-0015`, `inj-0016`, `inj-0017`,
+  `inj-0018` and `inj-0150`, which carry all three flags singly and in a row. A
+  check that denies the Scotland flag is a check that gets switched off.
 
 - **The joiner exemption is contextual, by script.** ZWJ and ZWNJ are
   orthography in the scripts that write them and structure inside an emoji
   sequence, and nothing anywhere else, so what excuses one is its NEIGHBOURS and
   never its identity. Dropping the exemption denies these, all labelled `allow`:
-  `inj-0055` and `inj-0089`, which are family emoji; `inj-0061`, which is
-  Devanagari conjuncts; and `inj-0063`, `inj-0079`, `inj-0087` and `inj-0095`,
-  which are Persian and Arabic, both written in the Arabic script. A port that
-  exempts a joiner wherever it appears has exempted the attack along with the
-  orthography; one that exempts it nowhere denies conjunct Devanagari, ZWNJ in
-  the Arabic script, and every emoji ZWJ sequence. Those are what these seven
-  carry, and they are narrower than the eight ranges this implementation
-  declares.
+  `inj-0055`, `inj-0089` and `inj-0151`, which are family emoji; `inj-0061` and
+  `inj-0152`, which are Devanagari conjuncts; and `inj-0063`, `inj-0079`,
+  `inj-0087` and `inj-0095`, which are Persian and Arabic, both written in the
+  Arabic script. A port that exempts a joiner wherever it appears has exempted
+  the attack along with the orthography; one that exempts it nowhere denies
+  conjunct Devanagari, ZWNJ in the Arabic script, and every emoji ZWJ sequence.
+  Those are what these nine carry, and they are narrower than the eight ranges
+  this implementation declares.
 
   Every other joiner case in the corpus still allows with the exemption
   disabled, because it carries too few joiners to reach either bound. Those
-  seven are what hold the rule.
+  nine are what hold the rule.
 
 ### Where this implementation falls short of its own corpus
 
@@ -464,6 +465,94 @@ otherwise assume closed, pulled out because they are the ones that surprise.
   measured encoder for each. **No minimum cost for getting a payload past this
   check is published**, and the absence is deliberate: a minimum is a claim
   about every possible encoding, and a measurement only ever exhibits one.
+
+## The rules constraint
+
+`rules` is the only check here whose finding types are chosen by the caller, and
+that changes what its published row means. The row is measured under one fixed
+configuration, recorded below, and it measures the ENGINE: whether a span is
+right, whether two rules claiming one stretch of text collapse into one
+placeholder, whether a limit fires one character past its bound and not at it.
+It is not a measurement of any rule a user writes, and a port reproducing it has
+reproduced the engine and nothing about rule content.
+
+Its `kind` is `constraint`, so no finding it produces carries a `confidence`.
+
+**A user's rule may name a finding type a built-in check also reports.**
+Finding types are the caller's; nothing here refuses `rules` a type that
+collides with one PII, secrets or injection-structural already reports, an
+`EMAIL` from `rules` beside the `EMAIL` from `pii`, for instance. The two
+verdicts stay separable by detector regardless, because each guardrail's own
+`Verdict` keeps its own findings and its own span; only where a redaction
+merges their spans does the collision show, in one placeholder that names the
+colliding type once rather than twice. This is not refused, because refusing
+it needs knowledge this primitive does not have: it cannot see what else is
+running beside it in a chain.
+
+### The configuration the row was measured under
+
+    patterns:
+      TICKET_ID:      \bJIRA-\d{4,}\b
+      INTERNAL_HOST:  \b[a-z0-9][a-z0-9-]*\.corp\.example\b
+    banned:
+      PROJECT_CODENAME: ["project bluebird"]
+    limits:
+      max_chars: 2000
+    on_match: redact
+
+A conforming implementation scores `corpora/rules/in-repo.jsonl` with these
+options. `on_match` is `redact` rather than the registered default `deny`
+because a deny never reaches the rewrite, so the spans would be published
+without ever being applied and the corpus would grade nothing that matters
+here.
+
+**The published row exercises only one of the three limit kinds.** The
+fixture sets `max_chars` and neither `max_bytes` nor `max_lines`, so the
+byte-boundary and line-boundary branches of `_limit_spans` are never reached
+by anything this row measures. A limit the row cannot exercise is a limit the
+row does not cover, not a limit proven correct. `README.md` carries the same
+disclosure beside the published figures.
+
+### What is fixed and what is not
+
+Fixed, because the corpus measures it:
+
+- **Matching is search, not anchoring.** A pattern matches anywhere in the
+  content, so `packages/media/` matches inside `foo/packages/media/bar`. A port
+  that anchors implicitly fails cases labelled for the unanchored behaviour.
+- **Every occurrence is a finding, except a match wholly contained within one
+  already reported, which is dropped.** `aba` in `ababa` is two findings at
+  (0, 3) and (2, 5), not one: overlapping matches that are not contained are
+  both kept. `X.{0,4}` over `XabcX` is ONE finding spanning (0, 5), not two,
+  because the second match, `X` alone at (4, 5), is wholly inside the first.
+  Dropping a contained match cannot uncover a character: the container already
+  covers every offset the contained match covered.
+- **Banned substrings match case-insensitively**, over a case-folded view, and
+  the span reported is the SOURCE span. Where folding changes a character's
+  width the two differ, and the corpus carries a case that separates them.
+- **Size limits count characters, bytes and lines**, and a limit fires one past
+  its bound and not at it. The finding is `LENGTH_LIMIT` and its span runs from
+  the first excess character to the end of the content. Several limits breached
+  produce ONE finding, from the earliest breach.
+
+Not fixed:
+
+- **The type names.** They are the caller's, and here they are the fixture's.
+- **Whether an implementation refuses a pattern that nests unbounded repeats.**
+  This implementation does, at construction, and says in its own documentation
+  that the guard catches the textbook shape and is not a proof. A port may
+  refuse differently, or not at all, and still reach every verdict in the
+  corpus.
+- **What a size limit does on a `redact`.** This implementation truncates at the
+  limit and writes the placeholder. Nothing in the corpus compares rewritten
+  content, so a port may spell the truncation differently.
+
+### There is no token limit
+
+Counting tokens needs a tokenizer, this library carries none, and a limit that
+approximately counts tokens is a limit nobody can reason about. A deployment
+that needs a token ceiling derives a character ceiling from a ratio it measured
+on its own traffic, which is a number it can check.
 
 ## Third-party corpora
 

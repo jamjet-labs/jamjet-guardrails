@@ -88,6 +88,47 @@ docstring. Credential-shaped strings carry `EXAMPLEONLY` or `notarealtoken`
 inside their own bodies, and `tests/test_packaging.py` runs the shipped secrets
 detector over every tracked file to hold that repository-wide.
 
+## Adding a check
+
+A check is about 25 lines of detector plus a corpus. The engine, the spans, the
+merging and the refusals are already written: `jamjet_guardrails.authoring`
+holds `PatternGuardrail`, and a check is that class configured with typed
+regular expressions, banned substrings and size limits.
+
+Start with the scaffold, which writes the detector, a starter corpus and a test
+module:
+
+    ./.venv/bin/python scripts/new_check.py my-check
+
+It deliberately leaves four edits to you, and `tests/test_completeness.py` fails
+until each is done, naming the one that is missing:
+
+1. Register it in `src/jamjet_guardrails/detectors/__init__.py`, in both
+   `AVAILABLE` and `TYPES`.
+2. Record the baseline with `--write-baselines`, as above.
+3. Add a section to `docs/conformance.md`. A check nobody can port is a check
+   whose corpus cannot grade a port.
+4. Add an entry to `corpora/NOTICE.md` for your corpus.
+
+Then the rules that apply to every check in this repository: the corpus labels
+what should happen and not what your code does, every exemption is derived from
+a property rather than listed by hand, and every test is mutation-checked
+before the pull request.
+
+If your check needs options to run at all, it also needs an entry in
+`src/jamjet_guardrails/eval/fixtures.py`, because the harness builds every check
+by name. The published row is then measured under that fixture and promises
+nothing about other configurations, and your conformance section has to print
+the fixture and say so.
+
+Two things the engine will refuse, both at construction and both on purpose: a
+pattern that matches the empty string, because a zero-width span is a
+non-detection wearing a detection's clothes, and a pattern that nests unbounded
+repeats, such as `(a+)+`. That second guard catches the textbook shape and is
+not a proof: `(a|aa)+` is exponential and passes it. Pure-Python `re` cannot be
+timed out, so a pattern's running time is the author's responsibility and this
+library says so rather than implying otherwise.
+
 ## Mutation-check your tests
 
 **A test that has never been watched failing is a test nobody has evidence

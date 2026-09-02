@@ -57,10 +57,13 @@ def test_it_is_registered_under_its_corpus_directory_name() -> None:
     assert isinstance(build("injection-structural"), InjectionStructuralGuardrail)
 
 
-def test_it_declares_itself_a_constraint_running_on_input() -> None:
+def test_it_declares_itself_a_constraint_running_on_input_and_output() -> None:
+    """Widened at 0.2.0. It shipped `{"input"}` only; this is the same test kept
+    in shape rather than deleted, because what it guards moved rather than went
+    away -- see `test_it_runs_on_output_as_well_as_input` for why."""
     guardrail = InjectionStructuralGuardrail()
     assert guardrail.kind == "constraint"
-    assert guardrail.directions == frozenset({"input"})
+    assert guardrail.directions == frozenset({"input", "output"})
 
 
 def test_clean_text_allows_and_records_the_hash_it_inspected() -> None:
@@ -91,21 +94,22 @@ def test_it_runs_on_retrieved_input_not_only_typed_input() -> None:
     assert InjectionStructuralGuardrail().check(content, RETRIEVED).decision == "allow"
 
 
-def test_a_chain_skips_it_on_output() -> None:
+def test_a_chain_now_runs_it_on_output() -> None:
     """Pins the declared direction as behaviour rather than as an attribute.
 
-    Output-side detection was considered and deliberately deferred, not
-    overlooked. The case for it is real: a model that emits tag characters into
-    its own output is smuggling to whatever consumes that output next. The check
-    is input-only regardless, for now.
+    This is the test the note above used to name: "THIS is the test that
+    changes" if output detection were ever wanted. It was wanted, at 0.2.0, for
+    the reason the note already gave -- a model that emits tag characters into
+    its own output is smuggling to whatever consumes that output next.
 
-    If it is ever wanted, THIS is the test that changes, which is the point of
-    pinning it. Adding "output" to `directions` widens a published contract
-    rather than extending it -- every caller already running this check on input
-    would begin running it on output too, and the default is deny.
+    A chain used to skip this check on output entirely, so `result.verdicts`
+    was `()` here. Now it runs, and clean output content still allows: what
+    changed is whether the check runs at all, not the verdict on ordinary text.
+    `test_a_chain_now_runs_this_check_on_output` in this file is the same
+    widening on a payload rather than on clean text.
     """
     result = GuardrailChain([InjectionStructuralGuardrail()]).run("anything", OUT)
-    assert result.verdicts == ()
+    assert [v.provenance.detector for v in result.verdicts] == ["injection-structural"]
     assert result.decision == "allow"
 
 
@@ -3216,3 +3220,42 @@ def test_all_three_bundled_checks_rewrite_one_string_in_one_pass() -> None:
     assert result.content == (
         "mail [REDACTED:EMAIL][REDACTED:INVISIBLE_TAG_CHARS] key [REDACTED:AWS_ACCESS_KEY]"
     )
+
+
+def test_it_runs_on_output_as_well_as_input() -> None:
+    """The 2a open question, closed. A model that emits tag characters into its
+    own output is smuggling to the next agent in the chain, and a chain that
+    skipped this check on output could not see it.
+
+    A contract change: a chain that previously ran this check only on input now
+    denies on output too, which is why the detector version moves."""
+    guardrail = build("injection-structural")
+    assert guardrail.directions == frozenset({"input", "output"})
+
+
+def test_a_payload_in_model_output_is_denied() -> None:
+    smuggled = "Summarise this.\U000e0069\U000e0067\U000e006e\U000e006f\U000e0072\U000e0065"
+    verdict = build("injection-structural").check(
+        smuggled, Context(direction="output", origin="model")
+    )
+    assert verdict.decision == "deny"
+    assert [f.type for f in verdict.findings] == ["INVISIBLE_TAG_CHARS"]
+
+
+def test_a_chain_now_runs_this_check_on_output() -> None:
+    """The behaviour that actually changed for a caller. Before this release the
+    chain skipped it and reported allow over the same content."""
+    smuggled = "Summarise this.\U000e0069\U000e0067\U000e006e\U000e006f\U000e0072\U000e0065"
+    result = build_chain(["injection-structural"]).run(
+        smuggled, Context(direction="output", origin="model")
+    )
+    assert result.decision == "deny"
+
+
+def test_the_version_moved_for_the_widened_direction() -> None:
+    """Widening `directions` is a contract change for any caller already running
+    this check on input: they now deny on output too. Nothing else in this
+    suite pins `version` itself -- the two tests above pin the behaviour, and
+    both stayed green with `_VERSION` mutated back to `"0.1.0"`, which is a
+    missing guard this test closes rather than a behaviour it adds."""
+    assert InjectionStructuralGuardrail().version == "0.2.0"

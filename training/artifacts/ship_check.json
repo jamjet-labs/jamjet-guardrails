@@ -1,12 +1,12 @@
 {
-  "measured_utc": "2026-09-02T10:46:25+00:00",
+  "measured_utc": "2026-09-02T17:00:16+00:00",
   "measured_once": "This is the first and only run of this measurement. Nothing was tuned after it: the window, the stride, the pooling and the threshold were fixed on DEV in training/artifacts/metrics.json before the evaluation set was touched, and a second run taken after reading this one would measure the choosing.",
   "judged_against": {
     "file": "training/ship_bar.json",
-    "sha256": "92d6c734ada7e28c081af635e24fea6d53b4fd250056f6fbb3bbc1f0b259cfbc",
+    "sha256": "74fb86231e6ef98813d09433041d032989ce7ed1512fb6c03d00d7e672eb2ae0",
     "recorded_utc": "2026-09-02T06:22:35+00:00",
     "our_minimum": 0.8995918367346939,
-    "structural_floor": 0.885,
+    "structural_floor": 0.891,
     "structural_floor_level": "decision"
   },
   "model": {
@@ -92,15 +92,15 @@
   },
   "structural": {
     "corpus": "corpora/injection-structural/in-repo.jsonl",
-    "cases": 146,
+    "cases": 154,
     "counts": {
-      "tp": 46,
+      "tp": 49,
       "fp": 2,
       "fn": 6,
-      "tn": 92
+      "tn": 97
     },
-    "recall": 0.8846153846153846,
-    "floor": 0.885
+    "recall": 0.8909090909090909,
+    "floor": 0.891
   },
   "references": [
     {
@@ -144,10 +144,10 @@
       "corpus": "jackhhao/jailbreak-classification"
     },
     "structural": {
-      "measured": 0.8846153846153846,
-      "floor": 0.8846153846153846,
-      "floor_published_as": 0.885,
-      "floor_note": "The recall the floor was derived from, not its three-decimal rendering. round(0.8846153846, 3) is 0.885, which is ABOVE the value it renders, so comparing against the rendering fails an unchanged layer by 0.00038. Both numbers are recorded in training/ship_bar.json and neither was edited.",
+      "measured": 0.8909090909090909,
+      "floor": 0.8909090909090909,
+      "floor_published_as": 0.891,
+      "floor_note": "The recall the floor was derived from, not its three-decimal rendering. round(0.8909090909, 3) is 0.891, which is ABOVE the value it renders, so comparing against the rendering fails an unchanged layer by 0.00009. Both numbers are recorded in training/ship_bar.json, byte-pinned by SHIP_BAR_SHA256.",
       "comparison": ">=",
       "holds": true,
       "margin": 0.0,

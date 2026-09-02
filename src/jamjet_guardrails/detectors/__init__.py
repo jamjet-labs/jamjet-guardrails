@@ -5,9 +5,13 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 
 from jamjet_guardrails.chain import GuardrailChain
-from jamjet_guardrails.detectors.injection_structural import InjectionStructuralGuardrail
-from jamjet_guardrails.detectors.pii import PiiGuardrail
-from jamjet_guardrails.detectors.secrets import SecretsGuardrail
+from jamjet_guardrails.detectors.injection_structural import (
+    INJECTION_TYPES,
+    InjectionStructuralGuardrail,
+)
+from jamjet_guardrails.detectors.pii import PII_TYPES, PiiGuardrail
+from jamjet_guardrails.detectors.rules import RULES_TYPES, build_rules
+from jamjet_guardrails.detectors.secrets import SECRET_TYPES, SecretsGuardrail
 from jamjet_guardrails.errors import GuardrailUnavailableError
 from jamjet_guardrails.protocol import Guardrail
 from jamjet_guardrails.types import Direction
@@ -15,7 +19,31 @@ from jamjet_guardrails.types import Direction
 AVAILABLE: dict[str, Callable[..., Guardrail]] = {
     "injection-structural": InjectionStructuralGuardrail,
     "pii": PiiGuardrail,
+    "rules": build_rules,
     "secrets": SecretsGuardrail,
+}
+
+# The finding types each registered check can report, keyed by registry name.
+#
+# Public, and beside AVAILABLE rather than inside the Guardrail protocol,
+# because a port is held to the verdicts it produces and not to a table it
+# exposes: adding a protocol member for this would put a requirement into the
+# conformance contract that has nothing to do with conformance.
+#
+# It exists because three things need to know a check's types before running
+# it: the README row test, the corpus completeness test, and the scaffold that
+# writes a new check's files. It lived in tests/test_readme.py, where none of
+# the other two could reach it.
+#
+# For a check whose types are configured rather than fixed, this is the set the
+# PUBLISHED ROW is measured under, which is the fixture in
+# jamjet_guardrails.eval.fixtures. A user's own types at runtime are outside
+# this table and outside every claim made about it.
+TYPES: dict[str, frozenset[str]] = {
+    "injection-structural": INJECTION_TYPES,
+    "pii": PII_TYPES,
+    "rules": RULES_TYPES,
+    "secrets": SECRET_TYPES,
 }
 
 # The directions a Context can actually carry, listed literally and deliberately
@@ -31,9 +59,12 @@ _RUNNABLE_DIRECTIONS: frozenset[Direction] = frozenset({"input", "output"})
 def build(name: str, **options: object) -> Guardrail:
     """Construct one guardrail by name, or refuse to hand one back at all.
 
-    Raises ``GuardrailUnavailableError`` -- here, at construction, never from
-    inside a run -- in five cases. They are one mistake in five costumes: a
-    check that is configured and would not check.
+    Raises ``GuardrailUnavailableError`` in five cases, all at construction.
+    They are one mistake in five costumes: a check that is configured and
+    would not check. A caller holding a guardrail built by this function may
+    still raise this error from ``PatternGuardrail.check`` if they call it
+    with a direction the guardrail does not declare, but a chain does not:
+    it filters directions before calling check.
 
     - **The name is not registered.** The message names what IS installed, read
       from ``AVAILABLE`` rather than written out, so a detector living behind an
@@ -226,9 +257,11 @@ def build_chain(names: Iterable[str]) -> GuardrailChain:
 
 __all__ = [
     "AVAILABLE",
+    "TYPES",
     "InjectionStructuralGuardrail",
     "PiiGuardrail",
     "SecretsGuardrail",
     "build",
     "build_chain",
+    "build_rules",
 ]

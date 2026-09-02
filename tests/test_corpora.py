@@ -23,6 +23,7 @@ from jamjet_guardrails.detectors.injection_structural import _DEFAULT_IGNORABLE
 from jamjet_guardrails.detectors.pii import PII_TYPES
 from jamjet_guardrails.detectors.secrets import SECRET_TYPES
 from jamjet_guardrails.eval.corpus import Corpus, load_corpus
+from jamjet_guardrails.eval.fixtures import options_for
 from jamjet_guardrails.eval.metrics import evaluate
 from jamjet_guardrails.eval.report import to_markdown
 from jamjet_guardrails.types import Context
@@ -39,6 +40,7 @@ EXPECTED = [
     ("injection-structural", "in-repo"),
     ("pii", "in-repo"),
     ("pii", "third-party"),
+    ("rules", "in-repo"),
     ("secrets", "in-repo"),
 ]
 
@@ -146,7 +148,7 @@ def test_the_detectors_actually_score_on_their_corpora() -> None:
     """A smoke floor, not the published number. CI's gate is the real bar."""
     for check, source in EXPECTED:
         corpus = load_corpus(CORPORA / check / f"{source}.jsonl", name=f"{check}/{source}")
-        ev = evaluate(build(check), corpus)
+        ev = evaluate(build(check, **options_for(check)), corpus)
         assert ev.overall.precision > 0.5, f"{check}/{source} precision floor"
         assert ev.overall.recall > 0.5, f"{check}/{source} recall floor"
 
@@ -354,7 +356,10 @@ def test_the_published_report_carries_the_attribution_pointer() -> None:
     words: the reader gets the dataset in the Source column and the rest one
     click away, and the formatter states nothing corpus-specific it cannot know.
     """
-    evaluations = [evaluate(build(check), _load(check, source)) for check, source in EXPECTED]
+    evaluations = [
+        evaluate(build(check, **options_for(check)), _load(check, source))
+        for check, source in EXPECTED
+    ]
     markdown = to_markdown(evaluations)
 
     assert "corpora/NOTICE.md" in markdown
@@ -407,7 +412,7 @@ def test_a_case_that_records_a_miss_is_not_labelled_with_what_the_detector_does(
     """
     corpus = _load(check, "in-repo")
     case = next(c for c in corpus.cases if c.id == case_id)
-    guardrail = build(check)
+    guardrail = build(check, **options_for(check))
     verdict = guardrail.check(case.text, Context(direction=case.direction, origin="model"))
 
     labelled = sorted((f.type, f.span) for f in case.expect_findings)

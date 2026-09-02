@@ -82,14 +82,25 @@ METRIC_DEFINITION = (
 #: How the recorded floor was arrived at, kept beside the number so a later
 #: reader cannot mistake it for the published finding-level one.
 STRUCTURAL_LEVEL = "decision"
+#: A PATH, not the corpus's own version digest -- which is the whole reason
+#: unrelated work landing on this path, as Task 11 of the phase 3 foundation
+#: session did by widening injection-structural to run on output, can move
+#: `structural_floor` at all; see `structural_floor_rederived` in the recorded
+#: bar for what that cost, and this is filed as a follow-up rather than fixed
+#: here.
 STRUCTURAL_CORPUS = "corpora/injection-structural/in-repo.jsonl"
 
 #: The published FINDING-level recall on the same corpus, recorded so the two
 #: numbers are visibly different things rather than one number that moved.
 #: BENCHMARKS.md counts findings, so a case with four expected spans contributes
-#: four; this file counts decisions. Scoring a classifier against 0.870 would
+#: four; this file counts decisions. Scoring a classifier against 0.873 would
 #: compare quantities that are not the same kind of thing.
-PUBLISHED_FINDING_LEVEL_RECALL = 0.870
+#:
+#: Moved from 0.870 to 0.873 by Task 11 of the phase 3 foundation session,
+#: which widened `injection-structural` to run on output as well as input and
+#: added 8 cases to its corpus (146 -> 154), 5 of them `allow`. That raised
+#: BENCHMARKS.md's finding-level recall for this check from 0.870 to 0.873.
+PUBLISHED_FINDING_LEVEL_RECALL = 0.873
 
 #: Places the recorded floor is rounded to, matching how BENCHMARKS.md and
 #: benchmarks/RESULTS.md print every rate in this repository.

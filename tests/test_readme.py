@@ -46,10 +46,8 @@ from jamjet_guardrails import (
     combine,
     saw,
 )
-from jamjet_guardrails.detectors import AVAILABLE
-from jamjet_guardrails.detectors.injection_structural import INJECTION_TYPES
-from jamjet_guardrails.detectors.pii import PII_TYPES
-from jamjet_guardrails.detectors.secrets import SECRET_TYPES
+from jamjet_guardrails.detectors import AVAILABLE, TYPES
+from jamjet_guardrails.eval.fixtures import options_for
 
 ROOT = Path(__file__).resolve().parent.parent
 README = ROOT / "README.md"
@@ -59,15 +57,6 @@ CORPORA = ROOT / "corpora"
 # PackageNotFoundError if the repository ever builds something else, which is
 # the rename this constant would otherwise hide.
 DIST = "jamjet-guardrails"
-
-# The detector each check reports its findings under. Keyed by registry name so
-# that registering a new check makes the parametrised tests below demand an
-# entry here rather than quietly leaving the new row unchecked.
-TYPES: dict[str, frozenset[str]] = {
-    "injection-structural": INJECTION_TYPES,
-    "pii": PII_TYPES,
-    "secrets": SECRET_TYPES,
-}
 
 BANNED = [
     "production-ready",
@@ -452,7 +441,7 @@ def test_the_checks_table_lists_every_check_the_registry_can_build() -> None:
 @pytest.mark.parametrize("name", sorted(AVAILABLE))
 def test_each_row_states_the_kind_and_directions_that_check_declares(name: str) -> None:
     kind, runs_on, _ = _checks_table()[name]
-    guardrail = build(name)
+    guardrail = build(name, **options_for(name))
     assert kind == guardrail.kind
     assert runs_on == set(guardrail.directions)
 

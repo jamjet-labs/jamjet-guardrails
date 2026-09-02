@@ -20,6 +20,7 @@ so in-repo and third-party numbers can never be merged into one score.
 |---|---|---|
 | `corpora/injection-structural/in-repo.jsonl` | `in-repo` | `Apache-2.0` |
 | `corpora/pii/in-repo.jsonl` | `in-repo` | `Apache-2.0` |
+| `corpora/rules/in-repo.jsonl` | `in-repo` | `Apache-2.0` |
 | `corpora/secrets/in-repo.jsonl` | `in-repo` | `Apache-2.0` |
 | `corpora/pii/third-party.jsonl` | `nvidia/Nemotron-PII@b70ffaf` | `CC-BY-4.0` |
 
@@ -78,6 +79,35 @@ numbers are.
 
 Numbers measured on them are **self-graded**: we wrote both the detector and the
 labels. That is why the third-party corpus below exists.
+
+### `corpora/rules/in-repo.jsonl`
+
+Written for this repository and covered by its Apache-2.0 licence. It is not a
+corpus of rules; it is a corpus of ENGINE behaviour, so its cases are built
+around one fixed set of rules recorded in `docs/conformance.md` and are chosen
+for the mechanics they separate: a span that must not run one character too far
+when case folding changed a character's width, two rules claiming one stretch of
+text, a limit at its bound and one past it, and an unanchored pattern matching
+inside a longer path.
+
+Every value in it is invented. The ticket ids are not any tracker's, the host
+names use the `example` label reserved by RFC 2606, and the codename is a
+colour and a bird.
+
+**The disclosed misses.** There are none. The fixture scores 1.000 precision
+and 1.000 recall over all 40 cases, with zero wrong decisions. That is a claim
+about the engine under one fixed configuration and not about any rule a user
+writes, so it carries none of the weight a perfect score on a heuristic check
+like `pii` or `secrets` would: a corpus a detector passes completely is a
+corpus that has stopped measuring. The two cases nearest a boundary are
+`rules-0018`, 2,000 characters exactly at `max_chars` and labelled `allow`, and
+`rules-0019`, the same text with one character appended, 2,001 characters,
+labelled `redact` with a `LENGTH_LIMIT` finding at `[2000, 2001]`.
+
+**There is no third-party corpus for this check**, and there could not be one:
+the numbers depend on the rules, so a corpus somebody else wrote would measure
+their rules through our engine. The row is self-graded in the same way the
+secrets row is.
 
 ## How to read the numbers these corpora produce
 
