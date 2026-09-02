@@ -77,6 +77,33 @@ def test_every_registered_check_has_a_corpus() -> None:
     )
 
 
+def test_every_corpus_directory_names_a_registered_check() -> None:
+    """The other direction of the test above, and it fails louder than it reads.
+
+    `eval.cli.discover` globs `corpora/<check>/<source>.jsonl` and hands the
+    directory name straight to `build`. A directory naming a check that is not
+    in `AVAILABLE` is therefore not merely unmeasured: `build` raises
+    `GuardrailUnavailableError`, `main` collects it as a corpus it could not
+    score, and the whole run exits 1 with NOTHING published, because a set of
+    numbers missing the corpora that would not score is a smaller benchmark
+    wearing the full one's name.
+
+    So a corpus committed ahead of the detector that reads it turns CI red and
+    takes every other published number down with it. This stage met that: its
+    plan asked for `corpora/injection/in-repo.jsonl` in the same task that
+    decides whether an injection classifier ships at all, and the corpus cannot
+    land until the check that reads it is registered.
+    """
+    directories = sorted(entry.name for entry in CORPORA.iterdir() if entry.is_dir())
+    assert directories, "no corpus directories found, so this guard would prove nothing"
+    unregistered = [name for name in directories if name not in AVAILABLE]
+    assert unregistered == [], (
+        f"{unregistered} hold corpora for checks that are not registered in AVAILABLE; "
+        "discover() hands each directory name to build(), which refuses, and the run "
+        "publishes nothing and exits 1"
+    )
+
+
 @pytest.mark.parametrize(("check", "source"), EXPECTED)
 def test_decision_and_findings_agree(check: str, source: str) -> None:
     """For a constraint, redact means findings and allow means none."""
