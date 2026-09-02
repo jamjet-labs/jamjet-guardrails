@@ -188,7 +188,13 @@ class Row:
 
 @dataclass(frozen=True, slots=True)
 class Generator:
-    """A model used to produce training data, and the licence finding on it.
+    """A model a committed artifact depends on, and the licence finding on it.
+
+    "Produce" covers more than writing rows. The generator wrote the corpus and
+    the embedding model decides which rows are near-duplicates and so which side
+    of the split they land on, and both are pinned here for the same reason: a
+    committed artifact derived from a mutable tag is an artifact nobody can
+    reproduce once the tag moves.
 
     Registered rather than named in passing, for the same reason
     `REFERENCE_MODELS` in `tests/test_training_data.py` is a registry: the
@@ -224,8 +230,12 @@ class Generator:
 
 #: Every model that produced data in this tree.
 #:
-#: One entry today. The finding on it is size-specific and does NOT generalise
-#: to the family it belongs to: the 3B size of the same generation ships under
+#: Two entries: the model that wrote the rows, and the model that decides which
+#: side of the split each row lands on. Neither ships, and both are screened,
+#: because "produced" here means anything a committed artifact depends on.
+#:
+#: The finding on the generator is size-specific and does NOT generalise to the
+#: family it belongs to: the 3B size of the same generation ships under
 #: `qwen-research`, a licence restricting use to research, which
 #: `training/screen.py` refuses. Reading "Qwen2.5 is Apache-2.0" off one size and
 #: applying it to another is the same class of mistake as reading a corpus
@@ -252,6 +262,29 @@ GENERATORS: tuple[Generator, ...] = (
             "generator, which Alibaba Cloud has not published; the grant covers the weights "
             "that were released, and a claim about what went into them is not available to "
             "anyone outside it."
+        ),
+    ),
+    Generator(
+        tag="nomic-embed-text",
+        weights_id="nomic-ai/nomic-embed-text-v1.5",
+        licence="apache-2.0",
+        licence_sha256="c95bae1d1ce0235ecccd3560b772ec1efb97f348a79f0fbe0a634f0c2ccefe2c",
+        read_on="2026-09-02",
+        note=(
+            "Not a generator of rows. It is what `training/cluster.py` embeds the corpus "
+            "with, so it decides which rows are near-duplicates of each other and therefore "
+            "which side of the train and dev split each one lands on. That is a committed "
+            "artifact -- `training/generated/splits.json` -- derived from a model, and the "
+            "registry is where a model this tree depends on gets its licence screened and "
+            "its weights pinned. A tag can be repointed, and a split derived from weights "
+            "nobody recorded is a split nobody can reproduce. Apache-2.0, read on 2026-09-02 "
+            "from the licence text the local artifact itself carries, printed by `ollama show "
+            "--license nomic-embed-text` and hashed above; the tag resolves to a 137M "
+            "parameter nomic-bert with 768 embedding dimensions, which is the v1.5 release "
+            "named in `weights_id`. Nothing here rests on the embedding being good: a worse "
+            "one under-merges, which leaves a near-duplicate pair splittable rather than "
+            "collapsing the corpus, and `separated_twins` still holds the twin rule "
+            "independently."
         ),
     ),
 )

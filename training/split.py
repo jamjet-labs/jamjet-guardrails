@@ -48,6 +48,30 @@ class SplitError(ValueError):
     """The rows are not the twin-structured corpus this module can divide."""
 
 
+def shuffled(count: int, seed: int) -> list[int]:
+    """`range(count)` in a seeded order that does not depend on the interpreter.
+
+    A seeded linear congruential shuffle rather than `random.shuffle`, for the
+    reason `split` records: a split has to be reproducible from the seed alone,
+    and `random` is documented to produce the same stream for a seed but its
+    `shuffle` has changed algorithm before now. A committed split that a later
+    Python re-derives differently is a split nobody can check.
+
+    Public, and used by `training/cluster.py` as well as by `split` below.
+    Written once for the reason two copies of a rule are always written once
+    here: the cluster-wise split and the twin-wise split have to be the same
+    shuffle, and two implementations of a Fisher-Yates loop drift by one
+    character while both sides go on looking right.
+    """
+    order = list(range(count))
+    state = seed
+    for i in range(len(order) - 1, 0, -1):
+        state = (1103515245 * state + 12345) % (1 << 31)
+        j = state % (i + 1)
+        order[i], order[j] = order[j], order[i]
+    return order
+
+
 @dataclass(frozen=True, slots=True)
 class Split:
     """Row indices on each side, and the twins they were assigned by."""
@@ -104,12 +128,7 @@ def split(
     if not 0.0 < eval_share < 1.0:
         raise SplitError(f"eval_share {eval_share} is not a share between 0 and 1")
     found = twins(labels, keys)
-    order = list(range(len(found)))
-    state = seed
-    for i in range(len(order) - 1, 0, -1):
-        state = (1103515245 * state + 12345) % (1 << 31)
-        j = state % (i + 1)
-        order[i], order[j] = order[j], order[i]
+    order = shuffled(len(found), seed)
     held = max(1, round(len(found) * eval_share))
     evaluation = sorted(index for position in order[:held] for index in found[position])
     train = sorted(index for position in order[held:] for index in found[position])

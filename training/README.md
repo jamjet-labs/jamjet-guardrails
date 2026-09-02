@@ -145,13 +145,13 @@ what it may be used for. `training/fetch.py` reads it and downloads against
 the recorded hash; `tests/test_training_data.py` screens it in CI.
 
 `role` decides what a source may be used for, and the three values are not
-interchangeable. As of 2026-09-01 the manifest holds 10 sources:
+interchangeable. As of 2026-09-02 the manifest holds 13 sources:
 
 | `role` | sources | meaning |
 |---|---|---|
 | `train` | 2 | may be fitted on |
-| `eval` | 0 | may be scored on |
-| `excluded` | 8 | neither, with the reason recorded in the entry itself |
+| `eval` | 1 | may be scored on |
+| `excluded` | 10 | neither, with the reason recorded in the entry itself |
 
 The counts are in the table because a number in prose that counts rows in a
 file is a claim like any other, and this one went stale the moment the manifest
@@ -159,15 +159,22 @@ grew past the two entries the plan required by name.
 `test_the_readme_states_the_roles_the_manifest_records` recomputes all three
 from `training/sources.yaml` and fails when they disagree.
 
-**No public corpus carries `role: eval`, and that is a decision.** The
-contamination denylist below is the union of what two model cards happen to
-name, and neither card names all of it: v2's licence summary counts more source
-datasets than it names, and v1's card gives no total at all. A public injection
-corpus published before those models is a plausible member of what they count
-and never name, so absence from the denylist is not provenance. Evaluation
-stays where the classifier design puts it: our own held-out rows, and a
-third-party benchmark we do not control. The counts themselves are stated once,
-below, where a test recomputes them.
+**One public corpus carries `role: eval`, and its card names it as a reference
+model's training data.** An earlier revision of this file said no corpus ever
+would, and that decision was reversed rather than eroded. The reasoning is in
+`training/evalset.py`, in the manifest entry, and in [The three sets](#the-three-sets-and-why-eval-is-not-ours)
+below, and the short form is two sentences. The synthetic corpus is separable by
+register and cannot grade itself, so the evaluation set has to come from
+outside. Contamination in an evaluation set biases towards whichever model
+memorised it, so a corpus the reference model trained on can fail us unfairly
+and cannot pass us unfairly, which is the right way round for a ship bar.
+
+That is one name, enumerated in `tests/test_training_data.py` as
+`CONTAMINATED_EVAL` with its reason beside it, and it changes nothing about the
+rule. Every other corpus on the denylist is still refused in role `eval`, and
+the denylist is still known to be partial: v2's licence summary counts more
+source datasets than it names and v1's card gives no total at all, so absence
+from it is not provenance.
 
 Four rules hold this manifest to more than a reviewer's attention, and they
 are enforced in different places, which is worth knowing before relying on any
@@ -251,7 +258,7 @@ of them:
 
   Written as an allowlist rather than as a list of forbidden terms, because a
   denylist fails open: the restriction nobody thought of reads as clean. 4 of
-  the 8 excluded entries are refused here, and for four different reasons --
+  the 10 excluded entries are refused here, and for four different reasons --
   one non-commercial, one share-alike, one declaring no licence at all, and one
   declaring two different licences in the same card. The last two are recorded
   in the manifest as `none-declared` and `conflicting`, which are not SPDX
@@ -284,14 +291,17 @@ is what holds it there. A branch under a recorded hash either starts failing
 verification, which is at least loud, or gets its hash updated to match, which
 changes the corpus under every number measured on it.
 
-6 entries carry no digest, and the absence means three different things, which
+7 entries carry no digest, and the absence means four different things, which
 each entry's note says outright. One cannot be fetched at all: every Hugging
 Face endpoint for it answered HTTP 401. Four were refused on their licence and
 never downloaded, because a corpus this repository may not use is not one it
 should be keeping a copy of to prove a point, and one of those four is gated as
-well, so it could not have been hashed either way. The last was refused on its
-own authors' recommendation rather than on its licence. `load_sources` confines
-an absent digest to `excluded` and requires a note beside it in every case.
+well, so it could not have been hashed either way. One was refused on its own
+authors' recommendation rather than on its licence. The last is published only
+as parquet, which nothing pinned in `training/requirements.txt` can read, so it
+could not have been value-screened and was not downloaded to sit unscreened.
+`load_sources` confines an absent digest to `excluded` and requires a note
+beside it in every case.
 
 The count in that paragraph was wrong when it was written -- it said five --
 and `test_the_readme_states_how_many_entries_carry_no_digest` is why it is not
@@ -518,7 +528,66 @@ and only a second statement of the number can object.
   vocabulary: a pattern matching nothing would clear the ceiling and fail the
   floor, one matching everything would do the reverse.
 
-### The split, and why it is by twin
+### The three sets, and why eval is not ours
+
+The corpus above is divided into **train** and **dev**, and the **eval** set is
+somewhere else entirely. `training/splits.py` builds all three and writes
+`training/generated/splits.json`, which is committed.
+
+| set | rows | from | for |
+|---|---|---|---|
+| train | 2866 | the generated corpus | fitting the encoder |
+| dev | 718 | the generated corpus | choosing a checkpoint and a threshold |
+| eval | 1998 | `jackhhao/jailbreak-classification` | the published comparison, and nothing else |
+
+**Why eval is external.** An earlier plan carved it out of the generated corpus,
+and that would have measured the wrong thing. These rows are separable by
+register: a classifier reading no content word at all scores 0.848 within a pair
+against 0.907 for a full bag of words. That is structural rather than a wording
+bug, because one generator writing both labels produces register that correlates
+with the label, and there is no wording that escapes it: make the twins more
+alike and near-duplicates leak across the split instead. So a fine-tuned encoder
+scored on a held-out slice could take its number from an artifact the reference
+models have never seen, and the comparison would be measuring artifact
+exploitation rather than detection. That is the one failure the ship bar exists
+to rule out.
+
+**Why a contaminated corpus is the right external one.** ProtectAI's v2 card
+names `jackhhao/jailbreak-classification` as its own training data. Everywhere
+else in this tree that disqualifies a corpus. Here it does not, because of which
+way the bias runs: DeBERTa may have memorised these rows and our encoder has
+seen none of them, so the gate can fail us unfairly and cannot pass us unfairly.
+A win measured through it is meaningful; **a loss is inconclusive and has to be
+reported as inconclusive.**
+
+Three caveats, and none of them is small.
+
+- It is JAILBREAK classification. A jailbreak talks a model out of its own
+  policy and an injection talks it out of its caller's instructions; the two
+  overlap without coinciding.
+- Its own label correlates with its own upstream sources: the jailbreak rows
+  come from the `jailbreak_llms` collection and the benign rows from OpenOrca
+  and GPTeacher.
+- **The external evaluation rests on one corpus.** Three further candidates were
+  screened on 2026-09-02 and all three are recorded in `training/sources.yaml`
+  with what refused each: one whose own licence column marks 7,249 of its 23,699
+  rows as share-alike or otherwise unshippable, one whose negative class was
+  written by two language models while its positives were collected, and one
+  published only as parquet, which nothing pinned in
+  `training/requirements.txt` can read.
+
+**The eval set is checked against the training data by content, not by name.**
+`training/evalset.py` compares every eval row against the synthetic corpus and
+against every `role: train` source, exact and near-duplicate at 0.6 word-trigram
+Jaccard, and `splits.json` records the finding per pool. Against the corpus the
+encoder is actually fitted on the result is 0 exact and 0 near, the closest pair
+reaching 0.389. Against `fka/awesome-chatgpt-prompts` it is 3 exact and 6 near:
+that corpus carries the DAN prompt and so does the evaluation set. Nothing in
+stage 2b is fitted on it, so nothing leaks today, and the finding is recorded
+rather than filed away because the day somebody adds that corpus to the
+training mix, 6 evaluation rows stop being held out.
+
+### The split, and why it is by cluster of twins
 
 Rows are generated in twins and land adjacent in `rows.jsonl`: a hard negative
 and an attack from one call, sharing an opening, a length and a register. That
@@ -526,7 +595,7 @@ pairing is what stopped the classes being separable by style, and it creates a
 hazard one step later.
 
 Split the rows at random and one member of a twin lands in train and the other
-in eval. The model has then read most of the held-out text already, under the
+in dev. The model has then read most of the held-out text already, under the
 opposite label, and what it learns from that is the local difference between two
 near-copies. It generalises nowhere and it scores well on the split that created
 it. The median twin in the worst pair shared 0.549 of its word trigrams with its
@@ -536,14 +605,29 @@ own partner when this was found, so it was not a handful of rows.
 the TWINS, which holds out that share of each class without stratifying anything
 because a twin carries one row of each. `separated_twins` scores any partition,
 however it was built, and `test_the_split_never_separates_a_twin` fails if one
-is broken apart. The task that builds the split for stage 2b-2 builds it through
-that module, and the requirement is enforced rather than described.
+is broken apart.
 
-None of that makes this corpus its own benchmark. Every row on both sides came
-out of one generator under one of eight prompts, so a number measured on the
-eval half is optimistic by an unknown margin however the halves were chosen.
-Splitting by twin removes one leak. An independent evaluation set is a different
-problem and it is still open.
+A twin is not the only thing two near-identical rows can be. Two rows from
+DIFFERENT calls can come out saying the same thing in different words, which the
+generator's own trigram deduplication cannot see and an embedding can.
+`training/cluster.py` embeds every row with `nomic-embed-text`, groups rows above
+cosine 0.92 into clusters, and `coarsen` merges those clusters with the twins by
+union-find, so the unit that gets assigned to a side is a paraphrase family with
+whole twins inside it. Over the committed corpus that is 1749 units across 3584
+rows, and the largest holds 12 rows, 0.3% of the corpus: no single paraphrase
+family dominates, so the split can balance. It holds out 0.200 of the rows,
+359 of each class in dev and 1433 of each in train.
+
+The embedding model is registered in `GENERATORS` beside the generator, with its
+licence screened by the same allowlist and the sha256 of the weights blob the tag
+resolves to, because a split derived from weights nobody recorded is a split
+nobody can reproduce.
+
+None of that makes this corpus its own benchmark, and it is no longer asked to
+be one. Every row on both sides of the train and dev line came out of one
+generator under one of eight prompts, so dev is for choosing a checkpoint and a
+threshold and for nothing that gets published. What gets published is measured
+on the external set above.
 
 ### What produced them, and what that is checkable against
 
@@ -592,5 +676,11 @@ files alone.
 ### Where it lands
 
 Nothing under `training/` is in the wheel, so none of this reaches an installed
-package. It is all in the sdist, for the reason the section above gives, so
-these 1580 KB travel with every source distribution.
+package. It is all in the sdist, for the reason the section above gives, so the
+1671 KB in `training/generated/` travel with every source distribution.
+
+That number was 1580 KB and was written down once and never recomputed, which is
+why it was wrong the moment `splits.json` was committed beside the rows.
+`test_the_readme_states_the_size_of_what_travels_in_the_sdist` recomputes it
+now, and a wheel with any of this in it fails
+`tests/test_packaging.py`.

@@ -387,6 +387,42 @@ read in one place.
 to corpora nobody has denylisted is that the denylist is known to be partial:
 ProtectAI's v2 card counts 22 source datasets and names 7.
 
+## Evaluation corpus
+
+The stage 2b injection classifier is scored on
+`jackhhao/jailbreak-classification` by Jack Hao, licensed under the Apache
+License, Version 2.0. That corpus is not a file in this repository; it is
+downloaded against a recorded digest by `training/fetch.py` and it is named here
+because a published figure is a use, which is the rule this document states
+about itself at the top.
+
+- Dataset: <https://huggingface.co/datasets/jackhhao/jailbreak-classification>
+- Revision: `2f2ceeb39658696fd3f462403562b6eea5306287`
+- File: `default/jailbreak_dataset_full.csv`, sha256
+  `79a7b90b0abe00e3586cc5048353c3236543cca228a1ee261fe3b57a7cb7e29f`
+- SPDX identifier: `Apache-2.0`
+- Licence text: <https://www.apache.org/licenses/LICENSE-2.0>
+
+The repository ships no NOTICE file of its own, so there is none to reproduce;
+the attribution above is what section 4 of that licence asks for in its absence.
+
+Its own card records where its rows came from, and reading it is part of reading
+any number measured on it. The jailbreak prompts are from the `jailbreak_llms`
+collection by Xinyue Shen and colleagues, and the benign prompts from
+`Open-Orca/OpenOrca` and the `GPTeacher` collection. So the label correlates
+with the upstream source, which is a limit on what the corpus can show and is
+recorded rather than left to be discovered.
+
+**This corpus is on the contamination denylist and is scored on anyway.**
+ProtectAI's v2 card names it as that model's own training data. The reasoning
+for using it regardless is in `training/evalset.py` and in its
+`training/sources.yaml` entry, and the short form is that contamination in an
+evaluation set biases towards whichever model memorised it: DeBERTa may have
+these rows, our encoder has seen none of them, so a win for us is meaningful and
+a loss is inconclusive. It is also jailbreak classification rather than prompt
+injection, which are adjacent and not the same task, and it is the only external
+evaluation corpus this stage has.
+
 ## What is deliberately absent, and why
 
 **There is no third-party secrets corpus.** No compatibly-licensed one was

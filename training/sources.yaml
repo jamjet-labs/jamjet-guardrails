@@ -26,15 +26,28 @@
 # 2026-09-01 and the date is recorded per entry, because a card can be edited
 # and a licence taken from one without a date is a licence nobody can re-check.
 #
-# NO SOURCE HERE CARRIES `role: eval`, and that is a decision rather than an
-# omission. The contamination denylist is the union of what two ProtectAI
-# cards name, 19 datasets, and v2's own licence summary counts 22 while naming
-# 7. So 15 corpora that model was trained on are named nowhere, and a public
-# injection corpus published before it is a plausible member of that 15. A
-# corpus absent from the denylist is one nobody has established the provenance
-# of, not one the denylist cleared, so nothing public is scored on here.
-# Evaluation stays where the classifier design puts it: our own held-out rows,
-# and a third-party benchmark we do not control.
+# ONE SOURCE HERE CARRIES `role: eval`, AND ITS CARD NAMES IT AS A REFERENCE
+# MODEL'S TRAINING DATA. That is deliberate, it is the opposite of what an
+# earlier revision of this header decided, and the reasoning is written out at
+# the entry itself and in training/evalset.py because on its face it is the
+# exact mistake every screen in this file exists to prevent.
+#
+# The short form. The synthetic corpus TRAINS and a public corpus EVALUATES,
+# because the synthetic corpus is separable by register and cannot grade
+# itself: a classifier reading no content word scores 0.848 within a pair on
+# it. And contamination in the EVALUATION set biases towards the REFERENCE
+# model, never towards ours, since ours has seen none of those rows. A gate
+# that can fail us unfairly and cannot pass us unfairly is the right asymmetry
+# for a ship bar.
+#
+# What that does not do is make the denylist safe to ignore. It is the union of
+# what two ProtectAI cards name, 19 datasets, and v2's own licence summary
+# counts 22 while naming 7. So 15 corpora that model was trained on are named
+# nowhere. A corpus absent from the denylist is one nobody has established the
+# provenance of, not one the denylist cleared. The exemption is enumerated in
+# tests/test_training_data.py as CONTAMINATED_EVAL, one name with a written
+# reason, and every other denylisted corpus is refused in role eval exactly as
+# before.
 
 # --------------------------------------------------------------------------
 # Usable for training.
@@ -77,6 +90,71 @@
     absence from a partial denylist is not provenance. The card declares seven
     languages and the planned encoder is English-only, which is a labelling
     question for the task that builds the splits and not a licence one.
+
+# --------------------------------------------------------------------------
+# Usable for evaluation. One entry, and it is on the contamination denylist.
+#
+# Read the note below before reading any number measured through it. The full
+# argument is in training/evalset.py; the exemption is enumerated in
+# tests/test_training_data.py, which refuses any other denylisted corpus in
+# this role.
+# --------------------------------------------------------------------------
+
+- name: jackhhao/jailbreak-classification
+  url: "https://huggingface.co/datasets/jackhhao/jailbreak-classification/resolve/2f2ceeb39658696fd3f462403562b6eea5306287/default/jailbreak_dataset_full.csv"
+  license: Apache-2.0
+  sha256: "79a7b90b0abe00e3586cc5048353c3236543cca228a1ee261fe3b57a7cb7e29f"
+  role: eval
+  note: >
+    THE EVALUATION CORPUS, and ProtectAI's v2 card names it as that model's own
+    training data. Both halves of that sentence are true and the second is not a
+    reason to refuse it here.
+    Why the evaluation set is not a held-out slice of our synthetic rows. That
+    corpus is separable by register: a classifier reading no content word at all
+    scores 0.848 within a pair against 0.907 for a full bag of words. One
+    generator writing both labels produces register that correlates with the
+    label, and no wording escapes it, because making the twins more alike
+    creates near-duplicate leakage across any split instead. Scored on its own
+    held-out half, a fine-tuned encoder could take its number from an artifact
+    the reference models have never seen, and the ship bar would be measuring
+    artifact exploitation rather than detection.
+    Why contamination is acceptable HERE and nowhere else in this file.
+    Contamination in an evaluation set biases towards whichever model memorised
+    it. DeBERTa may have these rows; our encoder has seen none of them. So a win
+    for us is meaningful and a loss is inconclusive, and a gate that can fail us
+    unfairly but never pass us unfairly is the correct asymmetry for a ship bar.
+    Reverse the roles -- train on this and evaluate elsewhere -- and the
+    asymmetry reverses with them, which is why
+    test_no_corpus_is_both_an_exempted_eval_source_and_a_training_source exists.
+    A third caveat, read off its own card on 2026-09-02 rather than assumed: its
+    jailbreak rows come from the jailbreak_llms collection and its benign rows
+    from OpenOrca and GPTeacher, so the label here correlates with the upstream
+    source too. That is a limit on what any number measured on it shows, and it
+    is the same objection the zn candidate below is refused on. The difference
+    is that this corpus is the reference model's own training distribution,
+    which is what makes the asymmetry above hold; the objection therefore
+    weakens a win rather than manufacturing one.
+    Two further caveats, and neither is small. This is JAILBREAK classification,
+    which
+    is adjacent to prompt injection and not the same task, and it sits inside
+    the reference model's own training distribution, so it is maximally
+    favourable to the reference on both counts at once. And the external
+    evaluation rests on this one corpus; the candidates screened for a second
+    are recorded below with what refused each.
+    Pinned to the dataset repository's commit
+    2f2ceeb39658696fd3f462403562b6eea5306287 and to one file within it rather
+    than to the landing page the plan quoted: a branch name moves, and a landing
+    page downloads HTML whose hash says nothing about the corpus. Read
+    2026-09-01, 2143822 bytes, 1998 rows, 1332 benign and 666 jailbreak.
+    Re-fetched and value-screened on 2026-09-01 and again on 2026-09-02: the
+    recorded digest still describes what the pinned URL serves, and no
+    fingerprint matched over 12,006 lines. The licence is the dataset
+    repository's own apache-2.0 tag, which agrees with ProtectAI's card, and it
+    carries an attribution condition that corpora/NOTICE.md discharges.
+    Content-screened against the training data on 2026-09-02 rather than trusted
+    to be different: training/evalset.py compares every eval row against the
+    synthetic corpus and every role train source here, exact and near-duplicate,
+    and the finding is recorded in training/generated/splits.json.
 
 # --------------------------------------------------------------------------
 # Excluded on values. The licence field passed; the rows did not.
@@ -190,35 +268,18 @@
     fetched.
 
 # --------------------------------------------------------------------------
-# Excluded on contamination. ProtectAI's cards name both as their own training
+# Excluded on contamination. ProtectAI's cards name this as their own training
 # data, and this stage publishes numbers against both of their models.
-# Scoring a detector on a corpus a reference model memorised publishes
-# memorisation as recall, so neither may ever carry role: eval.
 #
-# Two is the floor and not the set. NAMED_TRAINING_DATA in
-# tests/test_training_data.py is the union of what both cards name, 19 names,
-# and it is still partial: v2 counts 22 datasets and names 7, and v1 counts
-# none at all.
+# The corpus above carries `role: eval` under an enumerated exemption with its
+# reasoning written out. This one does not, and could not: it cannot be fetched
+# at all, so nothing about it has been verified by anybody here.
+#
+# Two names from the denylist are recorded in this file and that is the floor,
+# not the set. NAMED_TRAINING_DATA in tests/test_training_data.py is the union
+# of what both cards name, 19 names, and it is still partial: v2 counts 22
+# datasets and names 7, and v1 counts none at all.
 # --------------------------------------------------------------------------
-
-- name: jackhhao/jailbreak-classification
-  url: "https://huggingface.co/datasets/jackhhao/jailbreak-classification/resolve/2f2ceeb39658696fd3f462403562b6eea5306287/default/jailbreak_dataset_full.csv"
-  license: Apache-2.0
-  sha256: "79a7b90b0abe00e3586cc5048353c3236543cca228a1ee261fe3b57a7cb7e29f"
-  role: excluded
-  note: >
-    Named in ProtectAI's model card as training data. Usable for training if we
-    choose; never for evaluation. Pinned to the dataset repository's commit
-    2f2ceeb39658696fd3f462403562b6eea5306287 and to one file within it rather
-    than to the landing page the plan quoted: a branch name moves, and a
-    landing page downloads HTML whose hash says nothing about the corpus.
-    Read 2026-09-01, 2143822 bytes. The licence is the dataset repository's own
-    apache-2.0 tag, which agrees with ProtectAI's card.
-    Re-fetched and value-screened on 2026-09-01: the recorded digest still
-    describes what the pinned URL serves, and no fingerprint matched over
-    12,006 lines. The licence field is now screened as well as recorded --
-    Apache-2.0 is on the allowlist and carries an attribution condition -- so
-    the only thing standing between this corpus and a role is contamination.
 
 - name: Harelix/Prompt-Injection-Mixed-Techniques-2024
   url: "https://huggingface.co/datasets/Harelix/Prompt-Injection-Mixed-Techniques-2024"
@@ -226,13 +287,93 @@
   sha256: "unavailable"
   role: excluded
   note: >
-    Same exclusion as above, and additionally unfetchable, so there is no
-    content to hash. Every Hugging Face endpoint for this repository answered
-    HTTP 401 on 2026-09-01 -- the dataset page, the API record and the resolve
-    path -- and the API's dataset list for the author Harelix came back empty.
-    Apache-2.0 is recorded here as ProtectAI's claim on their own model card,
-    which is the only reading of it available to us, not as a licence anyone
-    here has verified. The entry is kept precisely because it cannot be
+    Named by ProtectAI's card as training data, and additionally unfetchable, so
+    there is no content to hash. Every Hugging Face endpoint for this repository
+    answered HTTP 401 on 2026-09-01 -- the dataset page, the API record and the
+    resolve path -- and the API's dataset list for the author Harelix came back
+    empty. Apache-2.0 is recorded here as ProtectAI's claim on their own model
+    card, which is the only reading of it available to us, not as a licence
+    anyone here has verified. The entry is kept precisely because it cannot be
     fetched: the name has to be in this file for anyone to check that it never
     became an evaluation source. Nothing could be value-screened, for the same
     reason nothing could be hashed.
+    It is the obvious second evaluation corpus and the reason it is not one is
+    not contamination, which the entry above is exempted from. It is that a
+    corpus nobody can download is a corpus nobody can pin, screen or score on.
+
+# --------------------------------------------------------------------------
+# Screened as a SECOND evaluation corpus, and refused. The external evaluation
+# rests on one source, which is a real limit on it, so three further candidates
+# were read on 2026-09-02 against the same two screens every entry above passes.
+# Each is recorded with what refused it, because a search that found nothing is
+# worth less than a search whose verdicts somebody can re-check or overturn.
+# --------------------------------------------------------------------------
+
+- name: tljohnsilver/zn-prompt-injection-bench
+  url: "https://huggingface.co/datasets/tljohnsilver/zn-prompt-injection-bench/resolve/eafc6c25439688f3a3b2bd727810ad5815f97354/data/corpus_v15.csv"
+  license: CC-BY-4.0
+  sha256: "a5f82345f1213f0569e652c494571771ef5efef8f42b1a7898435149b22140f3"
+  role: excluded
+  note: >
+    The closest thing to a second evaluation corpus that was found, and the
+    beki/privy lesson refuses it. Card read 2026-09-02: the corpus-level tag is
+    cc-by-4.0, which the allowlist accepts, 23,699 rows split 12,317 attack to
+    11,382 benign, documented in more detail than anything else screened here
+    and value-screened clean over all 23,699 rows on 2026-09-02, no fingerprint
+    matched.
+    Its own `license` column is what refuses it. The corpus preserves the
+    upstream licence of every row and its card says outright that those upstream
+    terms continue to govern the underlying text, and 7,249 of the 23,699 rows
+    carry a licence this repository cannot ship under: 2,209 CC-BY-SA-3.0, 1,551
+    dual CC-BY-SA-3.0 with GFDL, 1,541 ODC-BY without a version, 1,529 PSF, 273
+    IETF Trust Legal Provisions and 146 marked US public domain. Share-alike
+    upstream is not cured by a permissive tag downstream. That is the same
+    finding as beki/privy reached by a shorter route: here the corpus tells you
+    itself rather than having to be caught.
+    A licence-filtered subset is available in principle -- the 16,450 rows
+    tagged MIT, CC-BY-4.0 or Apache-2.0 -- and it is not taken here, because
+    building an evaluation corpus by filtering somebody else's on a column of
+    their own licence claims is a provenance argument resting entirely on that
+    column, and the corpus this repository would then publish numbers against is
+    one no card describes. Written down so that a later task can weigh it rather
+    than rediscover it.
+    A second objection, recorded because the licence one may some day be
+    answered. Its benign rows and its attack rows come from disjoint upstream
+    corpora, so the label correlates with the source, and that is the same
+    defect that disqualified our own synthetic rows from grading themselves.
+
+- name: hse-llm/prompt-injections
+  url: "https://huggingface.co/datasets/hse-llm/prompt-injections/resolve/6619b5e0f7a907404b8b81df6aa97c2114dd27a1/prompts_injection_50_50.csv"
+  license: MIT
+  sha256: "c8f858138dc30ac18d942cd66d82947d1c85aeb85016909318de991501bdacd2"
+  role: excluded
+  note: >
+    MIT, on the allowlist, fetched and hashed on 2026-09-02, and refused on
+    construction. Its three columns are "Malicious prompts", "Safe prompt
+    DeepSeek" and "Safe prompt Llama": the attacks are collected and the
+    negatives were written for the corpus by two language models. A negative
+    class produced by a generator and a positive class that was not is the
+    register artifact this whole stage is arranged around, and measuring on it
+    would reward whichever model best recognises how a chat assistant writes.
+    Its card is a licence tag and nothing else -- no description, no provenance,
+    no collection method -- so there is also nothing to establish where the
+    attacks came from or whether a reference model has seen them.
+
+- name: Lakera/mosscap_prompt_injection
+  url: "https://huggingface.co/datasets/Lakera/mosscap_prompt_injection"
+  license: MIT
+  sha256: "unavailable"
+  role: excluded
+  note: >
+    MIT, real attacker traffic against a live target, and not fetched, so there
+    is nothing to hash. Card read 2026-09-02. Two reasons, either alone enough.
+    It is published only as parquet and this tree's pins carry no parquet reader
+    -- training/requirements.txt lists neither pandas nor pyarrow -- so it could
+    not be value-screened, which is the same ground the deepset entry above
+    records. And it is single-class: every row is an attempt to talk a model out
+    of a password, with no negatives, so it can measure recall and says nothing
+    about precision. Pairing it with negatives from somewhere else would build
+    exactly the source-correlated label the entry above is refused for.
+    Recorded rather than dropped because it is the most interesting corpus
+    screened here: not synthetic, not scraped, and produced by people actually
+    trying. If a parquet reader ever enters this tree it is worth reading again.

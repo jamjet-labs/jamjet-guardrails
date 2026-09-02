@@ -564,15 +564,47 @@ NAMED_TRAINING_DATA: frozenset[str] = frozenset[str]().union(
     *(model.named_datasets for model in REFERENCE_MODELS)
 )
 
-#: The two the plan requires `training/sources.yaml` to record by name. A
-#: strict subset of the denylist, which is the whole point: recording these two
-#: is a floor, not a demonstration that the denylist is complete.
-RECORDED_EXCLUSIONS = frozenset(
-    {
-        "jackhhao/jailbreak-classification",
-        "Harelix/Prompt-Injection-Mixed-Techniques-2024",
-    }
-)
+#: The name from the denylist the manifest still records as `excluded`. A
+#: strict subset of the denylist together with `CONTAMINATED_EVAL`, which is the
+#: whole point: recording these is a floor, not a demonstration that the
+#: denylist is complete.
+RECORDED_EXCLUSIONS = frozenset({"Harelix/Prompt-Injection-Mixed-Techniques-2024"})
+
+#: Corpora allowed to carry `role: eval` even though a reference model's card
+#: names them as its own training data, each with the reason written out.
+#:
+#: An ENUMERATED map of exact names, in the shape `UNSCREENED_IDS` above uses
+#: and for the same reason. A rule of the form "a contaminated corpus may be
+#: evaluated on when X" is a shape test standing in for a closed set, and the
+#: day it exists every corpus that can be argued into X is an evaluation source.
+#: One name here exempts one name and nothing else, and `_contaminated` refuses
+#: every other denylisted corpus in role `eval` exactly as it did before.
+#:
+#: WHY THE EXEMPTION IS SOUND, since on its face this is the mistake the whole
+#: screen exists to prevent. Contamination in the EVALUATION set biases towards
+#: the REFERENCE model: DeBERTa may have memorised these rows and our encoder
+#: has seen none of them. So the ship bar can fail us unfairly and cannot pass
+#: us unfairly, and that is the correct asymmetry for a gate. It holds only
+#: while our model has not been fitted on the corpus, which is why
+#: `test_no_corpus_is_both_an_exempted_eval_source_and_a_training_source`
+#: exists, and only while the alternative is worse, which it is: the synthetic
+#: corpus is separable by register and cannot grade itself.
+CONTAMINATED_EVAL: dict[str, str] = {
+    "jackhhao/jailbreak-classification": (
+        "named on ProtectAI's v2 card as its own training data, and scored on anyway. "
+        "Contamination in the evaluation set biases towards the reference model and never "
+        "towards ours, which has seen none of these rows, so a win for us is meaningful and "
+        "a loss is inconclusive. The alternative was scoring on a held-out slice of the "
+        "synthetic corpus, which is separable by register and would have measured artifact "
+        "exploitation rather than detection. Two caveats travel with it: this is jailbreak "
+        "classification rather than prompt injection, which are adjacent and not the same "
+        "task, and it is the only external evaluation corpus this stage has"
+    ),
+}
+
+#: The exemption as the screen compares it, through the manifest's own name
+#: grammar rather than as written strings.
+EXEMPT_BASES = frozenset(base_id(name) for name in CONTAMINATED_EVAL)
 
 #: Datasets on the denylist whose licence requires attribution. Neither is in
 #: the manifest today. If either is ever recorded as something this repository
@@ -631,14 +663,23 @@ def _contaminated(sources: Iterable[Source]) -> list[str]:
     card was enough to walk past this rule before it normalised.
 
     Factored out of the test that applies it to the shipped manifest so the
-    same rule can be pointed at a manifest that breaks it. Today's manifest
-    declares no `eval` source at all, so applying the rule to it alone would
-    pass over an empty loop and prove nothing.
+    same rule can be pointed at a manifest that breaks it. The shipped manifest
+    declares one `eval` source and that one is exempted, so applying the rule to
+    it alone would pass over a loop that rejects nothing and prove nothing.
+
+    `EXEMPT_BASES` is the one hole and it is an enumerated list of names, not a
+    condition anything can be argued into. Read `CONTAMINATED_EVAL` for why the
+    hole is sound, and note what it does not do: every other corpus on the
+    denylist is refused in role `eval` here exactly as before, which is what
+    `test_the_contamination_rule_still_catches_a_second_denylisted_corpus`
+    demonstrates against a manifest holding both.
     """
     return sorted(
         source.name
         for source in sources
-        if source.role == "eval" and base_id(source.name) in DENYLIST_BASES
+        if source.role == "eval"
+        and base_id(source.name) in DENYLIST_BASES
+        and base_id(source.name) not in EXEMPT_BASES
     )
 
 
@@ -742,6 +783,10 @@ def test_no_evaluation_source_is_one_protectai_names_as_training_data() -> None:
 
     Passing this is necessary and nowhere near sufficient: the denylist is the
     union of what two cards happen to name. See `NAMED_TRAINING_DATA`.
+
+    One corpus is exempted from this rule by name, with its reasoning in
+    `CONTAMINATED_EVAL`, and the tests under "The evaluation set is external"
+    below are what hold that exemption to one name with a written reason.
     """
     assert _contaminated(load_sources(SOURCES)) == []
 
@@ -804,9 +849,14 @@ def test_the_denylist_is_recorded_as_partial_and_not_as_a_clearance() -> None:
     screens for, model by model, and that the two recorded exclusions are a
     strict subset rather than the whole of it.
     """
-    assert RECORDED_EXCLUSIONS < NAMED_TRAINING_DATA, (
-        "the recorded exclusions are no longer a strict subset of the denylist, so the "
-        "manifest's two entries are being treated as the whole of it"
+    recorded = RECORDED_EXCLUSIONS | frozenset(CONTAMINATED_EVAL)
+    assert recorded < NAMED_TRAINING_DATA, (
+        "the names the manifest records from the denylist are no longer a strict subset of "
+        "it, so the manifest's entries are being treated as the whole of it"
+    )
+    assert RECORDED_EXCLUSIONS and CONTAMINATED_EVAL, (
+        "one of the two ways a denylisted corpus is recorded has emptied out, so the "
+        "subset check above is about the other one alone"
     )
     assert REFERENCE_MODELS, "no reference model is registered, so the denylist is empty"
     for model in REFERENCE_MODELS:
@@ -1004,6 +1054,14 @@ def test_the_manifest_records_the_exclusions_the_plan_requires() -> None:
         assert name in by_name, f"{name} is not recorded in sources.yaml"
         assert by_name[name].role == "excluded", f"{name} is recorded as usable"
         assert by_name[name].note.strip(), f"{name} is excluded with no reason recorded"
+    # The other name the plan required is now the evaluation corpus rather than
+    # an exclusion, and it still has to be RECORDED. Dropping it from the
+    # manifest would leave nothing here to check either way, so it is checked
+    # here under the role it now carries.
+    for name in sorted(CONTAMINATED_EVAL):
+        assert name in by_name, f"{name} is exempted for a role it does not hold in sources.yaml"
+        assert by_name[name].role == "eval", f"{name} is exempted but carries another role"
+        assert by_name[name].note.strip(), f"{name} is scored on with no reason recorded"
 
 
 def test_a_source_under_an_attribution_licence_is_named_in_the_notice() -> None:
@@ -3635,10 +3693,20 @@ def test_the_recorded_licence_is_the_one_the_local_artifact_carries() -> None:
     more than a note is this: the sha256 of the licence text the model artifact
     itself ships is recorded too, so a re-pull that quietly changed the terms
     fails here instead of being discovered by somebody downstream.
+
+    Over EVERY registered model rather than over `GENERATORS[0]`. The registry
+    held one entry when this was written, so indexing it read as harmless, and
+    it stopped being harmless the moment a second model was registered: the
+    check would have gone on passing about the first while saying nothing about
+    the one that had just arrived.
     """
-    generator = GENERATORS[0]
-    assert licence_digest(generator.tag) == generator.licence_sha256, (
-        f"the licence text {generator.tag} ships no longer hashes to the recorded value, so "
-        "the grant this corpus was produced under has changed since it was read on "
-        f"{generator.read_on}"
+    assert len(GENERATORS) > 1, (
+        "the registry holds one model, so a loop over it proves no more than an index "
+        "would; this assertion exists to fail if it shrinks back"
     )
+    for generator in GENERATORS:
+        assert licence_digest(generator.tag) == generator.licence_sha256, (
+            f"the licence text {generator.tag} ships no longer hashes to the recorded value, "
+            "so the grant this corpus was produced under has changed since it was read on "
+            f"{generator.read_on}"
+        )
