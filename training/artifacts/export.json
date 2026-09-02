@@ -1,0 +1,100 @@
+{
+  "directory": "data/onnx",
+  "dynamic_axes": [
+    "batch",
+    "sequence"
+  ],
+  "exported_on": "2026-09-02",
+  "exported_utc": "2026-09-02T09:39:17.288197+00:00",
+  "files": {
+    "fp32": {
+      "bytes": 90972586,
+      "ir_version": 8,
+      "name": "injection-fp32.onnx",
+      "opset": [
+        {
+          "domain": "ai.onnx",
+          "version": 17
+        }
+      ],
+      "sha256": "f198d4a88cdd86dab9f76119832e3930bfa1ac30b4d72ae53083bad08bd8f06c"
+    },
+    "int8": {
+      "bytes": 23017879,
+      "ir_version": 8,
+      "name": "injection-int8.onnx",
+      "opset": [
+        {
+          "domain": "ai.onnx",
+          "version": 17
+        }
+      ],
+      "sha256": "80db99fae298b4d3ca9894768b784e03207fac2cfdb1b4668f711018dc105cea"
+    }
+  },
+  "id2label": {
+    "0": "SAFE",
+    "1": "INJECTION"
+  },
+  "inputs": [
+    "input_ids",
+    "attention_mask"
+  ],
+  "max_position_embeddings": 512,
+  "opset_requested": 17,
+  "outputs": [
+    "logits"
+  ],
+  "provenance": {
+    "backbone": "sentence-transformers/all-MiniLM-L6-v2",
+    "backbone_revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+    "dev_f1_in_torch": 0.9365303244005643,
+    "fitted_on": "training/generated/rows.jsonl",
+    "max_length": 256,
+    "parameters": 22713986,
+    "rows_sha256": "ce698f62dc86f510cb7ff5fafabb87cfb3ce808dff2ad810ec7d3118d0a49423",
+    "seed": 20260831,
+    "selected_epoch": 5,
+    "split": "training/generated/splits.json",
+    "split_seed": 20260831,
+    "split_sha256": "998ee0e18ac5168ebb4f482da6b90d1b42e5df4e58a4523942f9599ad241e72f",
+    "trained_utc": "2026-09-02T09:09:34.290754+00:00",
+    "training_run": "training/artifacts/training_run.json",
+    "training_run_sha256": "e5cfef4774f4de6b1b871749faf50a08780dda45a4ef5000e022e215f31a0dcb",
+    "weights": {
+      "files": {
+        "config.json": "71d3a1a27ceaeccd6e39d76bde1f61696343e40739acb4bb0c827706313da134",
+        "model.safetensors": "e61339b46bdda7861d33934ce99abd7cbe29d690c54ad48b1315f16ff306ed30",
+        "special_tokens_map.json": "5d5b662e421ea9fac075174bb0688ee0d9431699900b90662acd44b2a350503a",
+        "tokenizer.json": "0d3aef594edd5f9b53e7f814277a9171dc70ff93eb66bda6e01f7aa53997d963",
+        "tokenizer_config.json": "ccb4eb21a03e1442ee5c3f85431b9c307960a04579942537d74778dc8080a48c",
+        "vocab.txt": "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3"
+      },
+      "path": "data/model/selected"
+    }
+  },
+  "quantisation": {
+    "calibration_set": null,
+    "scheme": "dynamic",
+    "weight_type": "QInt8",
+    "why_dynamic": "static quantisation needs a calibration set, and the only inputs with a claim to represent what this detector meets are in the corpus it is measured against once. Dynamic quantisation needs no such set."
+  },
+  "size_ratio_int8_over_fp32": 0.25301994822923907,
+  "tokenizer_files": {
+    "config.json": "3ee8c0b2d1edf757ed05d59e017f560561f9336fc56f2395ab500d350f8348aa",
+    "special_tokens_map.json": "5d5b662e421ea9fac075174bb0688ee0d9431699900b90662acd44b2a350503a",
+    "tokenizer.json": "0d3aef594edd5f9b53e7f814277a9171dc70ff93eb66bda6e01f7aa53997d963",
+    "tokenizer_config.json": "ccb4eb21a03e1442ee5c3f85431b9c307960a04579942537d74778dc8080a48c",
+    "vocab.txt": "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3"
+  },
+  "traced_at_length": 256,
+  "versions": {
+    "numpy": "2.5.2",
+    "onnx": "1.19.0",
+    "onnxruntime": "1.23.0",
+    "platform": "Darwin 25.6.0 arm64",
+    "python": "3.13.2",
+    "torch": "2.8.0",
+    "transformers": "4.57.1"
+  }
+}

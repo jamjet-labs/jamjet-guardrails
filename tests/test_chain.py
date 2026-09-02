@@ -288,13 +288,18 @@ def test_a_redact_without_content_raises_instead_of_forwarding_the_original() ->
 # The composition leak, and the property that prevents the class of it.
 # ==========================================================================
 
-# The exact token from the report. Canonical Slack bot-token shape: `xoxb-`, a
-# 10-digit team id, a 13-digit bot-user id and a 24-character secret. The middle
-# segment is Luhn-valid and starts with a 2, so the PII detector's bare-card
-# branch matches it: a payment card is exactly "13 to 19 digits, leading 2 to 6,
-# valid check digit", and this segment is all four.
-SLACK_TOKEN = "SLACK_BOT_TOKEN=xoxb-2411756141-2412093090608-8dyRy9NUsIbEXCKV0LZ7XkGx"
-SLACK_SECRET_TAIL = "8dyRy9NUsIbEXCKV0LZ7XkGx"
+# The shape from the report, with a body that says so. Canonical Slack bot-token
+# shape: `xoxb-`, a 10-digit team id, a 13-digit bot-user id and a 24-character
+# secret. The middle segment is Luhn-valid and starts with a 2, so the PII
+# detector's bare-card branch matches it: a payment card is exactly "13 to 19
+# digits, leading 2 to 6, valid check digit", and this segment is all four. The
+# secret carries `EXAMPLEONLY` and `notarealtoken` in its own 24 characters, the
+# convention `corpora/NOTICE.md` states, so nothing here reads as a live
+# credential to a scanner or to a person. The reported token had a random body
+# and it is not needed: the leak turns on the middle segment, and the decision,
+# the spans and the merged placeholder are identical either way.
+SLACK_TOKEN = "SLACK_BOT_TOKEN=xoxb-0000000000-2000000000008-EXAMPLEONLYnotarealtoken"
+SLACK_SECRET_TAIL = "EXAMPLEONLYnotarealtoken"
 
 
 def test_a_redaction_cannot_split_a_credential_for_the_next_guardrail() -> None:
@@ -302,10 +307,10 @@ def test_a_redaction_cannot_split_a_credential_for_the_next_guardrail() -> None:
 
     Sequentially, `pii` redacted the 13-digit segment first, the placeholder cut
     the token in two, `secrets` then matched only the 16-character prefix
-    `xoxb-2411756141-`, and the 24-character secret tail survived into content
+    `xoxb-0000000000-`, and the 24-character secret tail survived into content
     the chain returned as `redact` carrying a SLACK_TOKEN finding:
 
-        SLACK_BOT_TOKEN=[REDACTED:SLACK_TOKEN][REDACTED:CREDIT_CARD]-8dyRy9NUsIbEXCKV0LZ7XkGx
+        SLACK_BOT_TOKEN=[REDACTED:SLACK_TOKEN][REDACTED:CREDIT_CARD]-EXAMPLEONLYnotarealtoken
 
     A caller branching on `decision` forwards that. Measured over 20,000
     canonical tokens with a random 13-digit second segment: 973 leaked, 4.87%.

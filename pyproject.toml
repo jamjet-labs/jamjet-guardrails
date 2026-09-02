@@ -66,7 +66,19 @@ Issues = "https://github.com/jamjet-labs/jamjet-guardrails/issues"
 Benchmarks = "https://github.com/jamjet-labs/jamjet-guardrails/blob/main/BENCHMARKS.md"
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.11"]
+# Test-only, every one of them. The zero-dependency promise this package makes
+# is `dependencies = []` above, and it is checked against the BUILT metadata by
+# tests/test_packaging.py::test_the_installed_distribution_declares_no_runtime_dependencies,
+# which filters out `extra ==` markers. So an entry here cannot reach a
+# consumer's environment, and adding one is not a step towards a runtime
+# dependency; it is the mechanism that keeps the two apart.
+#
+# pyyaml reads training/sources.yaml. tests/test_training_data.py is the licence
+# and contamination screen over that manifest, CI installs `.[dev]`, so the
+# screen runs on every leg. types-PyYAML is what lets `mypy --strict` see the
+# library at all: PyYAML ships no py.typed, and without the stubs the bare
+# `import yaml` in training/fetch.py fails the gate.
+dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.11", "pyyaml>=6", "types-PyYAML>=6"]
 
 [project.scripts]
 jamjet-guardrails = "jamjet_guardrails.eval.cli:main"
@@ -96,16 +108,65 @@ src = ["src", "tests"]
 # Documentation snippets are illustrative, not source; keep ruff to real Python.
 include = ["*.py", "*.pyi", "**/pyproject.toml"]
 
+[tool.ruff.lint.isort]
+# `training/` is this repository's, not a third-party package. Without this its
+# imports sort into the third-party block and `ruff format --check` disagrees
+# with `ruff check` about where they belong. `src` above cannot say it: the
+# training tree sits at the repository root, and adding "." there would make
+# every top-level directory a first-party module name.
+known-first-party = ["training"]
+
 [tool.mypy]
 strict = true
 # Tests too, not just src. The doubles annotate every protocol member because a
 # bare `kind = "constraint"` infers `str` and does not satisfy Guardrail -- an
 # annotation nothing checks is a comment. Note that a path argument on the mypy
 # command line OVERRIDES this list, so CI runs a bare `mypy`.
-files = ["src", "tests"]
+# `training` is here so the tree that tests/test_training_data.py imports is
+# checked too, and so mypy can resolve that import at all: without it, the
+# module search path is derived from src/ and tests/ alone and `training`
+# reports as a missing stub.
+files = ["src", "tests", "training"]
 # Typecheck against the declared floor, not whatever interpreter happens to run.
 # Typeshed's version gates then catch stdlib used above the supported minimum.
 python_version = "3.10"
 
+# The training tree's machine learning imports, and only those. `training/train.py`
+# needs torch, transformers, numpy and scikit-learn, and `training/export.py`
+# adds onnx and onnxruntime; none of them is installed in `.venv` or in CI,
+# because the separate `.venv-training` is the whole mechanism that keeps
+# `dependencies = []` true. Without this a bare `mypy` fails on an import it is
+# not supposed to be able to resolve, which would make the type gate depend on
+# somebody having installed a gigabyte of torch. Every other strict setting
+# stays on for these modules and for every other module in the tree.
+#
+# This list is a permission to be unable to RESOLVE an import, and it is not a
+# permission to depend on one. `training/measure.py` imports numpy and
+# onnxruntime inside the functions that use them rather than at the top, so the
+# windowing rules 2b-2 ports stay importable and testable where neither is
+# installed; that is a property of that module, not of this table.
+[[tool.mypy.overrides]]
+module = [
+  "numpy",
+  "numpy.*",
+  "onnx",
+  "onnx.*",
+  "onnxruntime",
+  "onnxruntime.*",
+  "sklearn",
+  "sklearn.*",
+  "torch",
+  "torch.*",
+  "transformers",
+  "transformers.*",
+]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The repository root on sys.path, so `tests/test_training_data.py` can import
+# `training`. NOT redundant with running `python -m pytest`, which inserts the
+# working directory itself: CI runs the bare `pytest` console script, which
+# does not, so without this the training screens would fail to collect on every
+# CI leg while passing locally.
+pythonpath = ["."]

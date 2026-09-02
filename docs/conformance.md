@@ -557,9 +557,17 @@ library matches under a dropped label counts as a false positive.
 `fax_number` is mapped because a fax number is a telephone number and
 `PHONE_NUMBER` is the only telephone type here, so redacting one is a redactor
 doing its job rather than a defect. The decision is worth stating because it
-moves a published figure: over the first 20,000 `us` rows the phone pattern hits
-4,612 `phone_number` spans and 1,173 `fax_number` spans, which is per-type phone
-precision of 0.969 with the mapping and 0.773 without it.
+moves a published figure: over the first 20,000 `us` rows the phone pattern makes
+5,937 `PHONE_NUMBER` predictions, of which 4,612 land exactly on a
+`phone_number` span and 1,173 on a `fax_number` span. That is per-type phone
+precision of 0.974 with the mapping and 0.777 without it.
+
+The counts are published beside the ratios because this one is the only figure
+in this document that CI cannot re-derive: the parquet it is measured on is 151
+MB and is not committed, so nothing in the suite recomputes it. Reproducing it
+takes the pinned revision named above, `scripts/sample_nemotron.py`'s label map,
+and the same `evaluate` the published tables use. Both ratios share the 5,937
+denominator, so either can be checked against the other.
 
 The identifier labels are **not** treated the same way. A `tax_id`, a
 `medical_record_number` and an `account_number` are not Social Security numbers

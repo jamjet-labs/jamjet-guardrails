@@ -199,3 +199,199 @@ def test_the_declared_licence_covers_every_licence_the_corpora_carry() -> None:
     assert missing == [], (
         f"the distribution declares {declared!r} but ships corpora licensed {missing}"
     )
+
+
+def test_the_ship_bar_was_recorded_before_any_model_existed() -> None:
+    """The bar is a commitment, and a commitment made after the result is none.
+
+    Enforced by ordering rather than by trust: `training/ship_bar.json` is
+    committed in the first task of the stage, before any training run, and
+    `training/artifacts/` is where a trained model would land. A bar sitting
+    beside a model artifact is a bar that could have been written after seeing
+    the score, which is the one thing it cannot be and still mean anything.
+
+    This is the shape check. `tests/test_ship_bar.py` holds the contents to the
+    harness the numbers came from.
+
+    `tomllib` is deliberately absent: the brief wrote this file's neighbours
+    over it, and it arrived in 3.11 while this package's floor is 3.10, which
+    CI runs. The two properties that draft asserted are already asserted here
+    and in tests/test_benchmarks.py against the BUILT metadata and the wheel
+    target, which is a stronger reading of the same claim.
+    """
+    bar = json.loads((ROOT / "training" / "ship_bar.json").read_text(encoding="utf-8"))
+    for key in (
+        "metric",
+        "reference_model",
+        "reference_revision",
+        "reference_score",
+        "reference_measured_by",
+        "held_out_corpus",
+        "harness",
+        "our_minimum",
+        "structural_floor",
+        "structural_floor_level",
+        "recorded_utc",
+        "rationale",
+    ):
+        assert key in bar, f"ship_bar.json is missing {key!r}"
+    assert isinstance(bar["our_minimum"], (int, float))
+    assert 0.0 < bar["our_minimum"] <= 1.0
+    # The reference score must be OURS, measured on the held-out corpus with the
+    # same harness. A figure quoted from a vendor's own evaluation compares two
+    # datasets and is the flaw this bar was rewritten to remove.
+    assert bar["reference_measured_by"] == "this-repo", (
+        "the reference score must be measured by us on the held-out corpus, "
+        "not quoted from a published leaderboard"
+    )
+    # The ordering, asserted rather than described. This used to be "no model
+    # exists yet", which witnessed it exactly once: the day a model was trained
+    # the assertion became a failure whose obvious fix was to delete the line.
+    # What survives a model existing is that the bar is not re-recorded beside
+    # one. `training/artifacts/` holds the run records, and nothing in it may
+    # be a second copy of the bar for a later reader to prefer.
+    artifacts = ROOT / "training" / "artifacts"
+    for path in sorted(artifacts.glob("*.json")) if artifacts.is_dir() else []:
+        beside = json.loads(path.read_text(encoding="utf-8"))
+        assert "our_minimum" not in beside, (
+            f"{path.name} carries our_minimum, so a ship bar has been written beside the "
+            "model it judges; the one in training/ship_bar.json is the only one"
+        )
+    # `tests/test_ship_bar.py` holds the bar's own bytes to the digest they had
+    # before any model existed, and holds every run record's trained_utc after
+    # the bar's recorded_utc. That is the ordering itself; this is the rule
+    # that stops a second bar appearing where nothing would compare it.
+
+
+# ==========================================================================
+# No credential-shaped literal anywhere reads as a live one.
+# ==========================================================================
+
+# The four families `corpora/NOTICE.md` names. AWS, JWT and PEM are excluded
+# because the notice makes a different promise about each of them and each is
+# checked where that promise lives: the AWS value is Amazon's own published
+# example, the JWTs are signed over random bytes, and the PEM bodies are base64
+# of random bytes rather than DER.
+_MARKED_FAMILIES = frozenset({"ANTHROPIC_KEY", "GITHUB_TOKEN", "OPENAI_KEY", "SLACK_TOKEN"})
+
+_MARKERS = ("EXAMPLEONLY", "EXAMPLE_ONLY", "notarealtoken", "notarealkey")
+
+# The bodies that predate the rule and carry no marker, each one inspected. They
+# are listed exactly rather than admitted by a shape test, because a shape test
+# here is a guess at "what looks synthetic" and the first body that slips past
+# such a guess is the one worth catching. Anything not on this list and not
+# marked fails, including a benign addition: the friction is the point, since
+# the alternative is a reviewer deciding case by case whether a random-looking
+# body is real.
+_INSPECTED_UNMARKED = frozenset(
+    {
+        # A sequential alphabet with a digit run behind it. The README quickstart
+        # and the two chain tests that mirror it.
+        "sk-abcdefghijklmnopqrstuvwxyz012345",
+        # The 16-character prefix a split token leaves behind, quoted in the
+        # docstring of the composition-leak test as the stump `secrets` matched.
+        "xoxb-0000000000-",
+        # `tests/test_secrets.py` fixtures: a counted digit run, Amazon's own
+        # published example key nested inside a Slack shape, and the standard
+        # HS256 header. Each is chosen to be recognisable to a reader, which is
+        # the property that also makes it unmistakable for a live token.
+        "xoxb-123456789012-abcdefghijkl",
+        "xoxb-AKIAIOSFODNN7EXAMPLE-abcdefghijkl",
+        "xoxb-eyJhbGciOiJIUzI1NiJ9",
+        "xoxp-123456789012-123456789012-1234567890123-",
+    }
+)
+
+
+def _tracked_text() -> list[tuple[str, str]]:
+    """Every tracked file that decodes as UTF-8, with its text.
+
+    Derived from git rather than from a list of directories, for the reason
+    `tests/test_published_docs.py` gives: the guard that reads a list covers the
+    files its author had open, and this repository has produced that defect more
+    than any other. A file added later is covered without anyone remembering.
+    """
+    import subprocess
+
+    names = subprocess.run(
+        ["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True
+    ).stdout.split()
+    out = []
+    for name in names:
+        try:
+            out.append((name, (ROOT / name).read_text(encoding="utf-8")))
+        except (UnicodeDecodeError, OSError):
+            continue
+    return out
+
+
+def test_the_credential_scan_has_something_to_scan() -> None:
+    """A derived list that came back empty makes the guard below vacuous."""
+    files = _tracked_text()
+    assert len(files) >= 50, f"expected the tracked tree, found {len(files)} files"
+    assert any(name == "README.md" for name, _ in files)
+
+
+def test_no_credential_shaped_literal_in_the_repository_reads_as_a_live_one() -> None:
+    """`corpora/NOTICE.md` promises this, and it used to be true of three files.
+
+    The notice said the GitHub, OpenAI, Anthropic and Slack tokens carry
+    `EXAMPLEONLY` or `notarealtoken` inside their own bodies. That sentence sat
+    under a heading about the three corpus files and was true there. Two bodies
+    outside it were not covered by anything: a canonical Slack bot token with a
+    random 24-character secret in the docstring of `GuardrailChain`, and a
+    36-character GitHub token body in the docstring of `_scan`. Both are in the
+    SHIPPED package, so both went out in every wheel, and a scanner or a reader
+    meeting either one has no way to tell it from a live credential.
+
+    The detector this package ships is what finds them, which is the cheapest
+    honest oracle available: the thing that decides what a credential looks like
+    for callers decides it here too. Where it fires, the body must say what it
+    is.
+    """
+    from jamjet_guardrails import Context
+    from jamjet_guardrails.detectors.secrets import SecretsGuardrail
+
+    guardrail = SecretsGuardrail()
+    context = Context(direction="output", origin="model")
+    unmarked: list[tuple[str, str, str]] = []
+    for name, text in _tracked_text():
+        for finding in guardrail.check(text, context).findings:
+            if finding.type not in _MARKED_FAMILIES:
+                continue
+            span = finding.span
+            # Optional in the type, never absent for a credential finding. Asserted
+            # rather than skipped: `continue` here would let a finding whose span
+            # went missing pass the guard silently, which is the fail-open shape
+            # this library exists to refuse.
+            assert span is not None, f"{finding.type} finding in {name} carries no span"
+            body = text[span[0] : span[1]]
+            if any(marker in body for marker in _MARKERS):
+                continue
+            if body in _INSPECTED_UNMARKED:
+                continue
+            unmarked.append((name, finding.type, body))
+    assert unmarked == [], (
+        "credential-shaped literals with no marker in their bodies and no entry in "
+        f"_INSPECTED_UNMARKED: {unmarked}"
+    )
+
+
+def test_every_inspected_unmarked_body_is_still_in_the_tree() -> None:
+    """An exemption nothing uses is an exemption nobody re-reads.
+
+    The list above is the part of this guard a future change routes around, so
+    it has to shrink when the tree does. A body deleted from the repository and
+    left on the list widens the hole for whatever is written next.
+
+    Its own file is excluded from the corpus, and that exclusion is the check
+    rather than a detail. The list above quotes every body it exempts, so a
+    staleness test that read the tracked tree including this file found each
+    body in the list itself and stayed green on a body deleted everywhere else.
+    That is this repository's own recorded failure, a guard reproducing what it
+    excludes, arriving a second time; mutating the tree and watching this test
+    pass anyway is what found it.
+    """
+    corpus = "\n".join(text for name, text in _tracked_text() if name != "tests/test_packaging.py")
+    stale = sorted(body for body in _INSPECTED_UNMARKED if body not in corpus)
+    assert stale == [], f"_INSPECTED_UNMARKED names bodies no longer in the tree: {stale}"

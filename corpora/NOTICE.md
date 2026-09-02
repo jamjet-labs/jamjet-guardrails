@@ -40,6 +40,22 @@ and a signature of random bytes, so they verify against nothing; and the PEM
 bodies are base64 of random bytes rather than DER, so no tool can load one as a
 key.
 
+That sentence used to stop at these three files, and two credential-shaped
+strings outside them were covered by nothing: a canonical Slack bot token with a
+random 24-character secret, and a 36-character GitHub token body, each written
+into a docstring in `src/` to show a defect that string had caused. Both shipped
+in every wheel. Neither carried a marker, so nothing about either one told a
+scanner or a reader that it was not live. Both now carry the same markers the
+corpus values do, and the rule is repository-wide rather than file-scoped: the
+detector this package ships is run over every tracked file, and where it reports
+a GitHub, OpenAI, Anthropic or Slack token the body has to say what it is.
+`test_no_credential_shaped_literal_in_the_repository_reads_as_a_live_one` in
+`tests/test_packaging.py` is that check. Six older bodies carry no marker and are
+listed there one by one instead: a sequential alphabet, a counted digit run,
+Amazon's published example key and the standard HS256 header. They are named
+rather than admitted by a rule about what looks synthetic, because the first
+body a rule like that lets through is the one worth catching.
+
 ### `corpora/injection-structural/in-repo.jsonl`
 
 Every value in this file is invented too, and none of it is a credential or a
@@ -344,6 +360,87 @@ The v1 card also carries a "License and Usage Notice" warning that some training
 datasets may carry non-commercial terms. That has no bearing on measuring the
 model, and it would have a bearing on anything downstream that bundled it, which
 this repository does not.
+
+## Training corpora
+
+Nothing in this section is a file in this repository and no published number is
+measured on any of it. These are the public corpora the stage 2b injection
+classifier may be fitted on, recorded here because attribution is a condition of
+one of their licences and a condition does not wait for a file to be committed.
+The manifest that governs them, with the digest each hashed to and the reason
+each was admitted or refused, is `training/sources.yaml`.
+
+Portions of the training data are derived from the **prompt_injections dataset**
+(`yanismiraoui/prompt_injections`) by Yanis Miraoui, licensed under the Apache
+License, Version 2.0. Its own NOTICE
+file is reproduced here, which is what section 4(d) of that licence asks for:
+
+> prompt_injections dataset
+> Copyright 2023 Yanis Miraoui
+>
+> Licensed under the Apache License, Version 2.0 (the "License"); you may not
+> use the contents of this repository except in compliance with the License.
+> You may obtain a copy of the License at
+> <http://www.apache.org/licenses/LICENSE-2.0>
+>
+> This NOTICE applies to the dataset contents (including prompt_injections.csv)
+> as well as the accompanying documentation in this repository.
+
+- Dataset: <https://huggingface.co/datasets/yanismiraoui/prompt_injections>
+- Revision: `bd55359f2f332afc35f277ac3dd08f7111b024c9`
+- File: `prompt_injections.csv`, sha256
+  `f4843f1841fa19b980f804796a68fc72f06841775eaba2723c768c7d772aabad`
+- SPDX identifier: `Apache-2.0`
+- Licence text: <https://www.apache.org/licenses/LICENSE-2.0>
+
+`fka/awesome-chatgpt-prompts`, CC0-1.0, was admitted for training until the
+evaluation set became external and the two were compared: it carries the DAN
+prompt and so does `jackhhao/jailbreak-classification`, 3 rows exactly and 6
+near. It is `role: excluded` for that reason. A public-domain dedication asks
+for nothing, so nothing was owed either way, and it is named here because it
+was named here before and a corpus that quietly disappears from an attribution
+file is a corpus nobody can check the history of.
+
+**No corpus in this section may be scored on.** The screen for that lives in
+`tests/test_training_data.py`, not in this document, and the reason it applies
+to corpora nobody has denylisted is that the denylist is known to be partial:
+ProtectAI's v2 card counts 22 source datasets and names 7.
+
+## Evaluation corpus
+
+The stage 2b injection classifier is scored on
+`jackhhao/jailbreak-classification` by Jack Hao, licensed under the Apache
+License, Version 2.0. That corpus is not a file in this repository; it is
+downloaded against a recorded digest by `training/fetch.py` and it is named here
+because a published figure is a use, which is the rule this document states
+about itself at the top.
+
+- Dataset: <https://huggingface.co/datasets/jackhhao/jailbreak-classification>
+- Revision: `2f2ceeb39658696fd3f462403562b6eea5306287`
+- File: `default/jailbreak_dataset_full.csv`, sha256
+  `79a7b90b0abe00e3586cc5048353c3236543cca228a1ee261fe3b57a7cb7e29f`
+- SPDX identifier: `Apache-2.0`
+- Licence text: <https://www.apache.org/licenses/LICENSE-2.0>
+
+The repository ships no NOTICE file of its own, so there is none to reproduce;
+the attribution above is what section 4 of that licence asks for in its absence.
+
+Its own card records where its rows came from, and reading it is part of reading
+any number measured on it. The jailbreak prompts are from the `jailbreak_llms`
+collection by Xinyue Shen and colleagues, and the benign prompts from
+`Open-Orca/OpenOrca` and the `GPTeacher` collection. So the label correlates
+with the upstream source, which is a limit on what the corpus can show and is
+recorded rather than left to be discovered.
+
+**This corpus is on the contamination denylist and is scored on anyway.**
+ProtectAI's v2 card names it as that model's own training data. The reasoning
+for using it regardless is in `training/evalset.py` and in its
+`training/sources.yaml` entry, and the short form is that contamination in an
+evaluation set biases towards whichever model memorised it: DeBERTa may have
+these rows, our encoder has seen none of them, so a win for us is meaningful and
+a loss is inconclusive. It is also jailbreak classification rather than prompt
+injection, which are adjacent and not the same task, and it is the only external
+evaluation corpus this stage has.
 
 ## What is deliberately absent, and why
 

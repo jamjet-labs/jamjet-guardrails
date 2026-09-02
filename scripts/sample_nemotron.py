@@ -49,10 +49,18 @@ LICENSE = "CC-BY-4.0"
 # pay for it.
 #
 # `fax_number` is the one mapping that is not in the research report's table, and
-# it is a deliberate deviation, measured before it was made. Over the first
-# 20,000 `us` rows the PHONE_NUMBER pattern hits 4,612 `phone_number` spans and
-# 1,173 `fax_number` spans, so this single decision moves per-type phone
-# precision from 0.773 to 0.969 and is worth stating rather than burying.
+# it is a deliberate deviation. Over the first 20,000 `us` rows the PHONE_NUMBER
+# pattern makes 5,937 predictions, 4,612 of them landing exactly on a
+# `phone_number` span and 1,173 on a `fax_number` span, so this single decision
+# moves per-type phone precision from 0.777 to 0.974 and is worth stating rather
+# than burying.
+#
+# Re-derived 2026-09-02 against the pinned parquet. The pair published here read
+# 0.773 and 0.969 and no longer did: the two span counts were exact, and the
+# prediction total behind the ratios was not, so the ratios were the half nobody
+# re-measured after the pattern moved. Nothing in CI can catch that, because the
+# parquet is 151 MB and is not committed, which is why the prediction total is
+# now published beside the counts and both ratios share it as a denominator.
 #
 # It is mapped because the corpus records what SHOULD happen. A fax number is a
 # telephone number, PHONE_NUMBER is the only telephone type this library has, and

@@ -1,0 +1,623 @@
+{
+  "at_the_chosen_configuration": {
+    "fp32": {
+      "buried": {
+        "accuracy": 0.6086350974930362,
+        "f1": 0.6500622665006227,
+        "fn": 98,
+        "fp": 183,
+        "precision": 0.5878378378378378,
+        "recall": 0.7270194986072424,
+        "tn": 176,
+        "tp": 261
+      },
+      "dev": {
+        "accuracy": 0.9373259052924791,
+        "f1": 0.9365303244005643,
+        "fn": 27,
+        "fp": 18,
+        "precision": 0.9485714285714286,
+        "recall": 0.924791086350975,
+        "tn": 341,
+        "tp": 332
+      }
+    },
+    "int8": {
+      "buried": {
+        "accuracy": 0.5807799442896936,
+        "f1": 0.6454652532391049,
+        "fn": 85,
+        "fp": 216,
+        "precision": 0.5591836734693878,
+        "recall": 0.7632311977715878,
+        "tn": 143,
+        "tp": 274
+      },
+      "dev": {
+        "accuracy": 0.9275766016713092,
+        "f1": 0.9273743016759777,
+        "fn": 27,
+        "fp": 25,
+        "precision": 0.9299719887955182,
+        "recall": 0.924791086350975,
+        "tn": 334,
+        "tp": 332
+      }
+    }
+  },
+  "clusters": {
+    "clustered_rows": 3584,
+    "clusters": 1749,
+    "largest_cluster": 12,
+    "model": "nomic-embed-text",
+    "model_digest": "970aa74c0a90ef7482477cf803618e776e173c007bf957f635f1015bfcfef0e6",
+    "rows": 3584,
+    "threshold": 0.92
+  },
+  "dev_rows": 718,
+  "execution_provider": "CPUExecutionProvider",
+  "export_control": {
+    "at": {
+      "content": 254,
+      "stride": 128,
+      "window": 256
+    },
+    "onnx_fp32_dev": {
+      "f1": 0.9365303244005643,
+      "fn": 27,
+      "fp": 18,
+      "precision": 0.9485714285714286,
+      "recall": 0.924791086350975,
+      "tn": 341,
+      "tp": 332
+    },
+    "torch_dev": {
+      "f1": 0.9365303244005643,
+      "fn": 27,
+      "fp": 18,
+      "precision": 0.9485714285714286,
+      "recall": 0.924791086350975,
+      "tn": 341,
+      "tp": 332
+    },
+    "why": "The float export read at the length the model was fitted at has to reach the confusion counts the training run recorded, row for row. It does. Without this the quantisation delta below would be measured against an fp32 number that had already moved, and a tracing or tokenisation fault would be invisible because both sides of the comparison carry it."
+  },
+  "hyperparameters": {
+    "batch_size": 32,
+    "epochs": 8,
+    "learning_rate": 2e-05,
+    "max_length": 256,
+    "optimiser": "AdamW",
+    "patience": 3,
+    "seed": 20260831
+  },
+  "measured_on": "2026-09-02",
+  "measured_on_set": "DEV, and long documents built from DEV rows. Never the evaluation set.",
+  "measured_utc": "2026-09-02T10:20:16.991304+00:00",
+  "models": {
+    "fp32": {
+      "bytes": 90972586,
+      "file": "injection-fp32.onnx",
+      "mib": 86.75821876525879,
+      "sha256": "f198d4a88cdd86dab9f76119832e3930bfa1ac30b4d72ae53083bad08bd8f06c"
+    },
+    "int8": {
+      "bytes": 23017879,
+      "file": "injection-int8.onnx",
+      "mib": 21.951560020446777,
+      "sha256": "80db99fae298b4d3ca9894768b784e03207fac2cfdb1b4668f711018dc105cea"
+    }
+  },
+  "probe": {
+    "built_from": "the DEV rows, buried in filler drawn from the DEV negatives",
+    "document_length_tokens": {
+      "asked_for": 768,
+      "max": 907,
+      "median": 815,
+      "min": 770
+    },
+    "documents": 718,
+    "payload_depth_tokens": {
+      "asked_for": [
+        258,
+        520
+      ],
+      "max": 570,
+      "median": 414,
+      "min": 263
+    },
+    "seed": 20260831,
+    "sha256": "81943204b6885f13ea0e77b83f2104869b7f40a125c8ae0a42013d539b56c66a"
+  },
+  "provenance": {
+    "backbone": "sentence-transformers/all-MiniLM-L6-v2",
+    "backbone_revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+    "dev_f1_in_torch": 0.9365303244005643,
+    "export_record": "training/artifacts/export.json",
+    "export_record_sha256": "0120fa4ac9c0b3e8b50dad4d98eb354e6f580b0daf0a20e7ed3e5052d8291336",
+    "exported_utc": "2026-09-02T09:39:17.288197+00:00",
+    "fitted_on": "training/generated/rows.jsonl",
+    "max_length": 256,
+    "parameters": 22713986,
+    "rows_sha256": "ce698f62dc86f510cb7ff5fafabb87cfb3ce808dff2ad810ec7d3118d0a49423",
+    "seed": 20260831,
+    "selected_epoch": 5,
+    "split": "training/generated/splits.json",
+    "split_seed": 20260831,
+    "split_sha256": "998ee0e18ac5168ebb4f482da6b90d1b42e5df4e58a4523942f9599ad241e72f",
+    "trained_utc": "2026-09-02T09:09:34.290754+00:00",
+    "training_run": "training/artifacts/training_run.json",
+    "training_run_sha256": "e5cfef4774f4de6b1b871749faf50a08780dda45a4ef5000e022e215f31a0dcb",
+    "weights": {
+      "files": {
+        "config.json": "71d3a1a27ceaeccd6e39d76bde1f61696343e40739acb4bb0c827706313da134",
+        "model.safetensors": "e61339b46bdda7861d33934ce99abd7cbe29d690c54ad48b1315f16ff306ed30",
+        "special_tokens_map.json": "5d5b662e421ea9fac075174bb0688ee0d9431699900b90662acd44b2a350503a",
+        "tokenizer.json": "0d3aef594edd5f9b53e7f814277a9171dc70ff93eb66bda6e01f7aa53997d963",
+        "tokenizer_config.json": "ccb4eb21a03e1442ee5c3f85431b9c307960a04579942537d74778dc8080a48c",
+        "vocab.txt": "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3"
+      },
+      "path": "data/model/selected"
+    }
+  },
+  "quantisation": {
+    "agreement": {
+      "buried": {
+        "decided_alike": 616,
+        "decided_differently": 102,
+        "inputs": 718,
+        "max_probability_gap": 0.7077167928218842,
+        "rate": 0.8579387186629527
+      },
+      "dev": {
+        "decided_alike": 703,
+        "decided_differently": 15,
+        "inputs": 718,
+        "max_probability_gap": 0.705763466656208,
+        "rate": 0.979108635097493
+      }
+    },
+    "budget": 0.01,
+    "dev_f1_delta": -0.009156022724586599,
+    "dev_f1_fp32": 0.9365303244005643,
+    "dev_f1_int8": 0.9273743016759777,
+    "rule": "if int8 moves DEV F1 by more than 0.01 absolute against fp32, ship fp32; we are not buying a size reduction nothing requires with accuracy we do need. Fixed before the export existed.",
+    "scheme": {
+      "calibration_set": null,
+      "scheme": "dynamic",
+      "weight_type": "QInt8",
+      "why_dynamic": "static quantisation needs a calibration set, and the only inputs with a claim to represent what this detector meets are in the corpus it is measured against once. Dynamic quantisation needs no such set."
+    },
+    "ship": "int8",
+    "within_budget": true
+  },
+  "seed": 20260831,
+  "sweep": {
+    "fp32": {
+      "buried": [
+        {
+          "accuracy": 0.5376044568245125,
+          "content": 126,
+          "f1": 0.6795366795366796,
+          "fn": 7,
+          "fp": 325,
+          "precision": 0.5199409158050221,
+          "recall": 0.9805013927576601,
+          "stride": 64,
+          "tn": 34,
+          "tp": 352,
+          "window": 128,
+          "windows_per_document": 12.28133704735376,
+          "windows_read": 8818
+        },
+        {
+          "accuracy": 0.5167130919220055,
+          "content": 126,
+          "f1": 0.6735653809971778,
+          "fn": 1,
+          "fp": 346,
+          "precision": 0.5085227272727273,
+          "recall": 0.9972144846796658,
+          "stride": 32,
+          "tn": 13,
+          "tp": 358,
+          "window": 128,
+          "windows_per_document": 23.075208913649025,
+          "windows_read": 16568
+        },
+        {
+          "accuracy": 0.6086350974930362,
+          "content": 254,
+          "f1": 0.6500622665006227,
+          "fn": 98,
+          "fp": 183,
+          "precision": 0.5878378378378378,
+          "recall": 0.7270194986072424,
+          "stride": 128,
+          "tn": 176,
+          "tp": 261,
+          "window": 256,
+          "windows_per_document": 6.006963788300836,
+          "windows_read": 4313
+        },
+        {
+          "accuracy": 0.5905292479108635,
+          "content": 254,
+          "f1": 0.6681715575620768,
+          "fn": 63,
+          "fp": 231,
+          "precision": 0.5616698292220114,
+          "recall": 0.8245125348189415,
+          "stride": 64,
+          "tn": 128,
+          "tp": 296,
+          "window": 256,
+          "windows_per_document": 10.28133704735376,
+          "windows_read": 7382
+        },
+        {
+          "accuracy": 0.5807799442896936,
+          "content": 510,
+          "f1": 0.4266666666666667,
+          "fn": 247,
+          "fp": 54,
+          "precision": 0.6746987951807228,
+          "recall": 0.31197771587743733,
+          "stride": 256,
+          "tn": 305,
+          "tp": 112,
+          "window": 512,
+          "windows_per_document": 3.0,
+          "windows_read": 2154
+        },
+        {
+          "accuracy": 0.5933147632311978,
+          "content": 510,
+          "f1": 0.4632352941176471,
+          "fn": 233,
+          "fp": 59,
+          "precision": 0.6810810810810811,
+          "recall": 0.35097493036211697,
+          "stride": 128,
+          "tn": 300,
+          "tp": 126,
+          "window": 512,
+          "windows_per_document": 4.006963788300836,
+          "windows_read": 2877
+        }
+      ],
+      "dev": [
+        {
+          "accuracy": 0.9373259052924791,
+          "content": 126,
+          "f1": 0.9365303244005643,
+          "fn": 27,
+          "fp": 18,
+          "precision": 0.9485714285714286,
+          "recall": 0.924791086350975,
+          "stride": 64,
+          "tn": 341,
+          "tp": 332,
+          "window": 128,
+          "windows_per_document": 1.0,
+          "windows_read": 718
+        },
+        {
+          "accuracy": 0.9373259052924791,
+          "content": 126,
+          "f1": 0.9365303244005643,
+          "fn": 27,
+          "fp": 18,
+          "precision": 0.9485714285714286,
+          "recall": 0.924791086350975,
+          "stride": 32,
+          "tn": 341,
+          "tp": 332,
+          "window": 128,
+          "windows_per_document": 1.0,
+          "windows_read": 718
+        },
+        {
+          "accuracy": 0.9373259052924791,
+          "content": 254,
+          "f1": 0.9365303244005643,
+          "fn": 27,
+          "fp": 18,
+          "precision": 0.9485714285714286,
+          "recall": 0.924791086350975,
+          "stride": 128,
+          "tn": 341,
+          "tp": 332,
+          "window": 256,
+          "windows_per_document": 1.0,
+          "windows_read": 718
+        },
+        {
+          "accuracy": 0.9373259052924791,
+          "content": 254,
+          "f1": 0.9365303244005643,
+          "fn": 27,
+          "fp": 18,
+          "precision": 0.9485714285714286,
+          "recall": 0.924791086350975,
+          "stride": 64,
+          "tn": 341,
+          "tp": 332,
+          "window": 256,
+          "windows_per_document": 1.0,
+          "windows_read": 718
+        },
+        {
+          "accuracy": 0.9373259052924791,
+          "content": 510,
+          "f1": 0.9365303244005643,
+          "fn": 27,
+          "fp": 18,
+          "precision": 0.9485714285714286,
+          "recall": 0.924791086350975,
+          "stride": 256,
+          "tn": 341,
+          "tp": 332,
+          "window": 512,
+          "windows_per_document": 1.0,
+          "windows_read": 718
+        },
+        {
+          "accuracy": 0.9373259052924791,
+          "content": 510,
+          "f1": 0.9365303244005643,
+          "fn": 27,
+          "fp": 18,
+          "precision": 0.9485714285714286,
+          "recall": 0.924791086350975,
+          "stride": 128,
+          "tn": 341,
+          "tp": 332,
+          "window": 512,
+          "windows_per_document": 1.0,
+          "windows_read": 718
+        }
+      ]
+    },
+    "int8": {
+      "buried": [
+        {
+          "accuracy": 0.5181058495821727,
+          "content": 126,
+          "f1": 0.6692160611854685,
+          "fn": 9,
+          "fp": 337,
+          "precision": 0.5094614264919942,
+          "recall": 0.9749303621169917,
+          "stride": 64,
+          "tn": 22,
+          "tp": 350,
+          "window": 128,
+          "windows_per_document": 12.28133704735376,
+          "windows_read": 8818
+        },
+        {
+          "accuracy": 0.5055710306406686,
+          "content": 126,
+          "f1": 0.6691519105312209,
+          "fn": 0,
+          "fp": 355,
+          "precision": 0.5028011204481793,
+          "recall": 1.0,
+          "stride": 32,
+          "tn": 4,
+          "tp": 359,
+          "window": 128,
+          "windows_per_document": 23.075208913649025,
+          "windows_read": 16568
+        },
+        {
+          "accuracy": 0.5807799442896936,
+          "content": 254,
+          "f1": 0.6454652532391049,
+          "fn": 85,
+          "fp": 216,
+          "precision": 0.5591836734693878,
+          "recall": 0.7632311977715878,
+          "stride": 128,
+          "tn": 143,
+          "tp": 274,
+          "window": 256,
+          "windows_per_document": 6.006963788300836,
+          "windows_read": 4313
+        },
+        {
+          "accuracy": 0.5557103064066853,
+          "content": 254,
+          "f1": 0.6573576799140709,
+          "fn": 53,
+          "fp": 266,
+          "precision": 0.534965034965035,
+          "recall": 0.8523676880222841,
+          "stride": 64,
+          "tn": 93,
+          "tp": 306,
+          "window": 256,
+          "windows_per_document": 10.28133704735376,
+          "windows_read": 7382
+        },
+        {
+          "accuracy": 0.5807799442896936,
+          "content": 510,
+          "f1": 0.5693848354792561,
+          "fn": 160,
+          "fp": 141,
+          "precision": 0.5852941176470589,
+          "recall": 0.5543175487465181,
+          "stride": 256,
+          "tn": 218,
+          "tp": 199,
+          "window": 512,
+          "windows_per_document": 3.0,
+          "windows_read": 2154
+        },
+        {
+          "accuracy": 0.5933147632311978,
+          "content": 510,
+          "f1": 0.6127320954907162,
+          "fn": 128,
+          "fp": 164,
+          "precision": 0.5848101265822785,
+          "recall": 0.6434540389972145,
+          "stride": 128,
+          "tn": 195,
+          "tp": 231,
+          "window": 512,
+          "windows_per_document": 4.006963788300836,
+          "windows_read": 2877
+        }
+      ],
+      "dev": [
+        {
+          "accuracy": 0.9289693593314763,
+          "content": 126,
+          "f1": 0.9286713286713286,
+          "fn": 27,
+          "fp": 24,
+          "precision": 0.9325842696629213,
+          "recall": 0.924791086350975,
+          "stride": 64,
+          "tn": 335,
+          "tp": 332,
+          "window": 128,
+          "windows_per_document": 1.0,
+          "windows_read": 718
+        },
+        {
+          "accuracy": 0.9289693593314763,
+          "content": 126,
+          "f1": 0.9286713286713286,
+          "fn": 27,
+          "fp": 24,
+          "precision": 0.9325842696629213,
+          "recall": 0.924791086350975,
+          "stride": 32,
+          "tn": 335,
+          "tp": 332,
+          "window": 128,
+          "windows_per_document": 1.0,
+          "windows_read": 718
+        },
+        {
+          "accuracy": 0.9275766016713092,
+          "content": 254,
+          "f1": 0.9273743016759777,
+          "fn": 27,
+          "fp": 25,
+          "precision": 0.9299719887955182,
+          "recall": 0.924791086350975,
+          "stride": 128,
+          "tn": 334,
+          "tp": 332,
+          "window": 256,
+          "windows_per_document": 1.0,
+          "windows_read": 718
+        },
+        {
+          "accuracy": 0.9275766016713092,
+          "content": 254,
+          "f1": 0.9273743016759777,
+          "fn": 27,
+          "fp": 25,
+          "precision": 0.9299719887955182,
+          "recall": 0.924791086350975,
+          "stride": 64,
+          "tn": 334,
+          "tp": 332,
+          "window": 256,
+          "windows_per_document": 1.0,
+          "windows_read": 718
+        },
+        {
+          "accuracy": 0.924791086350975,
+          "content": 510,
+          "f1": 0.9243697478991596,
+          "fn": 29,
+          "fp": 25,
+          "precision": 0.9295774647887324,
+          "recall": 0.9192200557103064,
+          "stride": 256,
+          "tn": 334,
+          "tp": 330,
+          "window": 512,
+          "windows_per_document": 1.0,
+          "windows_read": 718
+        },
+        {
+          "accuracy": 0.924791086350975,
+          "content": 510,
+          "f1": 0.9243697478991596,
+          "fn": 29,
+          "fp": 25,
+          "precision": 0.9295774647887324,
+          "recall": 0.9192200557103064,
+          "stride": 128,
+          "tn": 334,
+          "tp": 330,
+          "window": 512,
+          "windows_per_document": 1.0,
+          "windows_read": 718
+        }
+      ]
+    }
+  },
+  "threshold": 0.5,
+  "versions": {
+    "numpy": "2.5.2",
+    "onnx": "1.19.0",
+    "onnxruntime": "1.23.0",
+    "platform": "Darwin 25.6.0 arm64",
+    "python": "3.13.2",
+    "torch": "2.8.0",
+    "transformers": "4.57.1"
+  },
+  "windowing": {
+    "batched_and_per_window_paths_differ_by": 0.0,
+    "chose_by": "the smallest window whose ACCURACY on the buried-payload probe is within 0.005 of the best of any configuration, ties to the wider stride. Taken on the float model, before int8 was looked at.",
+    "chose_on": "accuracy",
+    "chosen": {
+      "content": 254,
+      "stride": 128,
+      "window": 256
+    },
+    "constant_classifier": {
+      "flag_everything": {
+        "accuracy": 0.5,
+        "f1": 0.6666666666666666,
+        "fn": 0,
+        "fp": 359,
+        "precision": 0.5,
+        "recall": 1.0,
+        "tn": 0,
+        "tp": 359
+      },
+      "note": "F1 ignores true negatives, so a detector that flags every input scores well above zero on a balanced set. A sweep row that beats this by less than the noise of the set has not chosen anything."
+    },
+    "content_per_window": "window - 2",
+    "holds_within": 0.005,
+    "pooling": "max over windows",
+    "round_trip": {
+      "changed": 24,
+      "grew_past_the_window": 24,
+      "note": "a window that grows is a window `max_length=window` truncation cuts, so the decode-and-re-encode form of this loop silently reads less of the document than it says it does",
+      "windows": 601
+    },
+    "rule_returned_on_f1": {
+      "content": 126,
+      "stride": 64,
+      "window": 128
+    },
+    "spec_start": {
+      "content": 254,
+      "stride": 128,
+      "window": 256
+    },
+    "why_not_f1": "The rule was written to maximise F1 and was applied to F1 first; that answer is recorded above as rule_returned_on_f1. It was then taken on accuracy instead, and that switch was made AFTER the sweep ran. The reason is a property of the metric and not a preference for the answer: F1 ignores true negatives, the probe's classes are balanced by construction, and the F1-maximising row beats a detector that flags every input by 0.013 over 718 rows, which is inside the noise of the set. Accuracy sits at exactly 0.5 for that constant classifier and separates the six clearly. The switch lands on the configuration the spec already starts at, which is also the length the model was fitted at, so it moves the answer back to the default rather than to a new one.",
+    "window_is": "the whole sequence the model reads, [CLS] and [SEP] included"
+  }
+}

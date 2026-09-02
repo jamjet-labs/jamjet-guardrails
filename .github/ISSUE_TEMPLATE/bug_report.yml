@@ -1,0 +1,42 @@
+name: Bug report
+description: Something other than a miss or a false alarm
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        For a check that let something through or flagged the wrong thing, use
+        the other template. For a fail-open, a decision that weakens, or a
+        provenance record that does not describe the text the decision was made
+        about, use
+        [SECURITY.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/SECURITY.md)
+        instead of an issue.
+  - type: input
+    id: version
+    attributes:
+      label: Version and Python
+      placeholder: "jamjet-guardrails 0.1.0, CPython 3.12.4, macOS 15"
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: The shortest program that shows it, runnable as written.
+      render: python
+    validations:
+      required: true
+  - type: textarea
+    id: got
+    attributes:
+      label: What happened
+      description: Output or traceback, in full.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true

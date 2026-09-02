@@ -64,8 +64,8 @@ def _scan(pattern: re.Pattern[str], content: str) -> list[re.Match[str]]:
     stops on the first character outside the body class, and leaves the scan
     resuming INSIDE the real credential. Its start is then never tried:
 
-        'ghp_' + 40 chars + 'ghp_9xY2vK4mQ8pL1nR6tW3zA5bC7dE0fG2hJ4kM'
-            ->  '[REDACTED:GITHUB_TOKEN]_9xY2vK4mQ8pL1nR6tW3zA5bC7dE0fG2hJ4kM'
+        'ghp_' + 40 chars + 'ghp_0000EXAMPLEONLY0000notarealtoken0000'
+            ->  '[REDACTED:GITHUB_TOKEN]_0000EXAMPLEONLY0000notarealtoken0000'
 
     A whole 36-character body left standing behind a publicly known 4-character
     prefix. Measured the same way: AWS lost 19 of its 20 characters, both OPENAI

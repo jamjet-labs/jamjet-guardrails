@@ -1,0 +1,151 @@
+{
+  "metric": "f1",
+  "metric_definition": "Decision-level F1 of the positive class, one boolean per input. A positive prediction is the model's INJECTION label; a positive row is this corpus's `jailbreak` label. precision = TP/(TP+FP), recall = TP/(TP+FN), F1 = 2*P*R/(P+R), and F1 is 0.0 when TP is 0 rather than undefined. Counted by benchmarks/run.py:score, the same function that will count our model.",
+  "reference_model": "protectai/deberta-v3-base-prompt-injection-v2",
+  "reference_revision": "90c9989b1a342275dd0d1a95aad283c04e075671",
+  "reference_score": 0.8995918367346939,
+  "reference_measured_by": "this-repo",
+  "reference_models": [
+    {
+      "id": "classifier-v2",
+      "model": "protectai/deberta-v3-base-prompt-injection-v2",
+      "revision": "90c9989b1a342275dd0d1a95aad283c04e075671",
+      "status": "current",
+      "truncation": 512,
+      "counts": {
+        "tp": 551,
+        "fp": 8,
+        "fn": 115,
+        "tn": 1324
+      },
+      "precision": 0.9856887298747764,
+      "recall": 0.8273273273273273,
+      "f1": 0.8995918367346939
+    },
+    {
+      "id": "classifier-v1",
+      "model": "protectai/deberta-v3-base-prompt-injection",
+      "revision": "373b6af0f8d16739cff5de28be326652246bfaa3",
+      "status": "superseded",
+      "truncation": 512,
+      "counts": {
+        "tp": 551,
+        "fp": 15,
+        "fn": 115,
+        "tn": 1317
+      },
+      "precision": 0.9734982332155477,
+      "recall": 0.8273273273273273,
+      "f1": 0.8944805194805195
+    }
+  ],
+  "reference_disagreement": {
+    "between": [
+      "classifier-v2",
+      "classifier-v1"
+    ],
+    "inputs_decided_differently": 109,
+    "on_positives": 92,
+    "on_negatives": 17,
+    "note": "How many inputs the two references decided differently. Recorded because equal TP and equal FN across two rows of a results table is also what one model scored twice looks like, and this count is what tells them apart. `distinct_models` refuses the mistake itself, before any inference."
+  },
+  "held_out_corpus": {
+    "name": "jackhhao/jailbreak-classification",
+    "sha256": "79a7b90b0abe00e3586cc5048353c3236543cca228a1ee261fe3b57a7cb7e29f",
+    "rows": 1998,
+    "labels": {
+      "benign": 1332,
+      "jailbreak": 666
+    },
+    "recorded_in": "training/generated/splits.json",
+    "external": true,
+    "note": "Not a held-out slice of the synthetic corpus. training/evalset.py carries why a held-out slice could not serve: the generated rows are separable by register, so a score taken from them would measure artifact exploitation rather than detection."
+  },
+  "harness": {
+    "entry_point": "benchmarks/run.py",
+    "load": "benchmarks/run.py:classifier",
+    "score": "benchmarks/run.py:score",
+    "driver": "training/ship_bar.py",
+    "execution_provider": "CPUExecutionProvider",
+    "identical_for_both_models": true,
+    "note": "Our model will be scored by the same two functions. The models are pinned per file by sha256 in benchmarks/pins.json and run.classifier verifies every one of them on load."
+  },
+  "our_minimum": 0.8995918367346939,
+  "our_minimum_comparison": ">",
+  "our_minimum_basis": "max(f1) over every pinned reference revision, measured here. The maximum rather than the current revision's score, so the bar cannot be lowered by which revision a vendor is advertising. Strictly greater, with no tolerance: the 0.03 absolute slack this task was drafted with was rejected because a tolerance band is exactly the width of the inconclusive region described under `contamination` below.",
+  "structural_floor": 0.885,
+  "structural_floor_level": "decision",
+  "structural_floor_detail": {
+    "corpus": "corpora/injection-structural/in-repo.jsonl",
+    "cases": 146,
+    "counts": {
+      "tp": 46,
+      "fp": 2,
+      "fn": 6,
+      "tn": 92
+    },
+    "recall": 0.8846153846153846,
+    "floor": 0.885
+  },
+  "why_the_structural_side_exists": {
+    "source": "benchmarks/results/measurements.json",
+    "measured": "2026-09-01",
+    "corpus": "corpora/injection-structural/in-repo.jsonl",
+    "reference_classifiers": [
+      {
+        "id": "classifier-v2",
+        "counts": {
+          "tp": 11,
+          "fp": 45,
+          "fn": 41,
+          "tn": 49
+        },
+        "precision": 0.19642857142857142,
+        "recall": 0.21153846153846154,
+        "f1": 0.2037037037037037
+      },
+      {
+        "id": "classifier-v1",
+        "counts": {
+          "tp": 10,
+          "fp": 16,
+          "fn": 42,
+          "tn": 78
+        },
+        "precision": 0.38461538461538464,
+        "recall": 0.19230769230769232,
+        "f1": 0.2564102564102564
+      }
+    ],
+    "finding": "Both pinned reference classifiers score far below the structural check on the structural corpus. The tokenizer study in benchmarks/RESULTS.md gives the mechanism: a contiguous run of invisible tag characters becomes a single [UNK] token at any length, so the payload never reaches the model. A semantic classifier can be blind to that class by construction. That is why clearing the semantic side alone does not clear this bar."
+  },
+  "structural_floor_note": "DECISION level, one boolean per input, which is the only level a classifier can be compared at because a classifier emits no spans. BENCHMARKS.md publishes 0.870 for the same corpus at FINDING level, where a case with four expected spans contributes four. The two are different quantities, not one quantity that moved; scoring a classifier against the finding-level number would compare things that are not the same kind of thing.",
+  "published_finding_level_recall": 0.87,
+  "clears_the_bar": {
+    "semantic": "our decision-level F1 on jackhhao/jailbreak-classification, measured through this harness, > our_minimum",
+    "structural": "the shipped chain's decision-level recall on corpora/injection-structural/in-repo.jsonl >= structural_floor",
+    "both_required": true,
+    "otherwise": "ship the structural layer alone. Failing either side is a real outcome this stage plans for, not a reason to move the bar."
+  },
+  "contamination": {
+    "eval_is_in_the_reference_training_data": true,
+    "deliberate": true,
+    "direction": "towards the reference",
+    "argument": "jackhhao/jailbreak-classification is named on ProtectAI's v2 model card as its own training data. Everywhere else in this tree that is a disqualification. Here it is not, because of which way the bias runs: DeBERTa may have memorised these rows and our encoder has never seen one of them, so this gate can fail us unfairly and cannot pass us unfairly. A WIN measured here is meaningful. A LOSS is INCONCLUSIVE and must be reported as inconclusive rather than explained away or treated as a verdict on our model.",
+    "task_adjacency": "This corpus is jailbreak classification. A jailbreak talks a model out of its own policy; an injection talks it out of its caller's instructions. The two overlap without coinciding, which is a second way the corpus favours the reference and a limit on what any number here supports.",
+    "single_source": "The external evaluation rests on ONE corpus. training/sources.yaml records every further candidate screened and what refused each."
+  },
+  "authorises": {
+    "ship": {
+      "allowed_when": "both sides of clears_the_bar are met",
+      "meaning": "the fine-tuned classifier may be shipped in the package as a detector."
+    },
+    "publish_headline_precision_and_recall": {
+      "allowed": false,
+      "reason": "There is no independent evaluation source for semantic injection of the same standing as the corpora behind pii, secrets and injection-structural. This bar rests on ONE external corpus, for an adjacent task, inside the reference model's own training distribution. That is enough to authorise SHIPPING and it is not enough to put a headline precision and recall row for this check beside the other three, where every number is gated in CI against a corpus chosen for that purpose. These are two decisions and this file keeps them apart deliberately."
+    }
+  },
+  "recorded_utc": "2026-09-02T06:22:35+00:00",
+  "recorded_before_any_model_existed": true,
+  "rationale": "Two-sided, and recorded before any training run so that neither side can be moved to fit a result. SEMANTIC: our decision-level F1 on an EXTERNAL corpus must beat every pinned reference revision, measured by us through the same harness that will score us, with no tolerance because a loss on this corpus is inconclusive and only a win is evidence. STRUCTURAL: adding a classifier must not cost the structural layer its decision-level recall on corpora/injection-structural/in-repo.jsonl, whose floor is re-derived here from the shipped corpus rather than copied. Failing either side means shipping the structural layer alone. Clearing both authorises shipping and does not authorise publishing a headline precision and recall row; see `authorises`. Not to be moved afterwards."
+}

@@ -56,6 +56,45 @@ def test_there_is_something_to_check() -> None:
     assert {"README.md", "BENCHMARKS.md", "NOTICE.md", "conformance.md"} <= names
 
 
+def _defines(text: str, node: str) -> bool:
+    """Whether `text` defines a function called exactly `node`.
+
+    Matched to the end of the name, not by substring. `f"def {node}" in text`
+    was the earlier spelling, and it says yes to any definition whose name
+    merely starts with the cited one: renaming
+    `test_no_corpus_carries_share_alike_values` to
+    `..._share_alike_values_anywhere` leaves the citation dangling and the
+    guard green. There are five such prefix pairs among the test names on this
+    branch, so it is not an exotic edit.
+
+    `async` and leading indentation are allowed because neither changes whether
+    the name exists, and a guard that missed a method would send someone
+    hunting for a test that is right there.
+    """
+    return (
+        re.search(rf"^[ \t]*(?:async[ \t]+)?def[ \t]+{re.escape(node)}[ \t]*\(", text, re.MULTILINE)
+        is not None
+    )
+
+
+def test_a_cited_name_is_matched_whole_and_not_as_a_prefix() -> None:
+    """The guard on the guard above, over text rather than over the tree.
+
+    Renaming a cited test to a strict superstring of its old name is the edit
+    that slipped past: the citation is dangling, the file still parses, and the
+    substring is still there. Checked here against a string so the check is a
+    property of `_defines` rather than of whichever names happen to exist today.
+    """
+    assert _defines("def test_share_alike_values():\n    pass\n", "test_share_alike_values")
+    assert _defines("    async def test_share_alike_values(self):\n", "test_share_alike_values")
+    assert not _defines(
+        "def test_share_alike_values_anywhere():\n    pass\n", "test_share_alike_values"
+    )
+    assert not _defines("def test_share_alike_value():\n", "test_share_alike_values")
+    assert not _defines("# def test_share_alike_values() in a comment\n", "test_share_alike_values")
+    assert not _defines("call(test_share_alike_values)\n", "test_share_alike_values")
+
+
 def test_every_repository_path_any_published_doc_cites_exists() -> None:
     """The union of the two per-file guards, plus the two files neither covered."""
     missing: list[str] = []
@@ -86,7 +125,37 @@ def test_every_repository_path_any_published_doc_cites_exists() -> None:
             )
             if resolved is None:
                 missing.append(f"{doc.name} -> {target}")
-            elif node and f"def {node}" not in resolved.read_text(encoding="utf-8"):
+            elif node and not _defines(resolved.read_text(encoding="utf-8"), node):
                 missing.append(f"{doc.name} -> {target} (file exists, test does not)")
     assert checked > 0, "no citations found; this guard would prove nothing"
     assert missing == [], f"published docs cite things that do not exist: {missing}"
+
+
+def test_no_published_document_uses_an_em_dash() -> None:
+    """The house rule, over every published document rather than over README.
+
+    `tests/test_readme.py::test_the_readme_has_no_em_dash` held this for one
+    file. Four community health documents were added later, and under a
+    file-scoped guard they would have got the same treatment the other published
+    documents got when the path and case-id guards were written for whichever
+    file their author had open: nothing. Derived from git for that reason, so a
+    Markdown file added after this one is covered without anyone remembering.
+
+    THE CHARACTER ONLY, and the narrowing is deliberate rather than an
+    oversight. `tests/test_readme.py` also refuses ` -- `, and that half is left
+    scoped to README because it is not met: `corpora/NOTICE.md`,
+    `docs/conformance.md`, `training/README.md` and one measurement note use the
+    construction 53 times between them. Widening the rule to reach them would
+    mean rewriting 53 sentences, several of which other tests template claims
+    out of word for word, to gain nothing the character check does not already
+    give. Widening it and exempting those four files would be worse: an
+    exemption list is the thing the next document gets added to. So this guard
+    states what is actually true everywhere and holds it there, and the stricter
+    rule stays where it is enforced.
+    """
+    offenders = [
+        f"{doc.relative_to(ROOT)} contains an em dash"
+        for doc in _published_markdown()
+        if "—" in doc.read_text(encoding="utf-8")
+    ]
+    assert offenders == [], offenders

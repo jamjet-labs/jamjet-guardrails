@@ -991,7 +991,7 @@ def test_padding_cannot_force_the_bounded_jwt_miss(label: str, prefix: str) -> N
 # a FAILING decoy leaves the scan where it was, a SUCCEEDING one moves it past
 # the credential behind it.
 _SUCCEEDING_DECOYS = [
-    ("GITHUB_TOKEN", "ghp_" + "a" * 40, "ghp_9xY2vK4mQ8pL1nR6tW3zA5bC7dE0fG2hJ4kM"),
+    ("GITHUB_TOKEN", "ghp_" + "a" * 40, "ghp_0000EXAMPLEONLY0000notarealtoken0000"),
     ("AWS_ACCESS_KEY", "AKIA" + "B" * 15, "AKIAIOSFODNN7EXAMPLE"),
     ("OPENAI_KEY legacy victim", "sk-" + "a" * 40, "sk-" + "b" * 32),
     ("OPENAI_KEY prefixed victim", "sk-" + "a" * 40, "sk-proj-" + "b" * 40),

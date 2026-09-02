@@ -14,3 +14,13 @@ progress-tracker.md
 REQUIREMENTS.md
 docs/specs/
 benchmarks/.cache/
+
+# The training tree's virtualenv, which is NOT the package's `.venv`. The rule
+# above matches a directory named exactly `.venv` and does not reach this one.
+/.venv-training/
+
+# Raw downloads and intermediate splits for the training tree. Anchored with a
+# leading slash on purpose: a bare `data/` also matches any nested directory of
+# that name, and `data` is common enough that an unanchored rule would silently
+# swallow a real source directory somewhere under src/ or corpora/.
+/data/

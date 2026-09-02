@@ -199,6 +199,23 @@ def test_a_requirements_comment_is_a_comment_wherever_it_sits() -> None:
     assert _requirement_names(text) == {"numpy", "onnxruntime", "pyyaml", "tokenizers"}
 
 
+#: Packages named by BOTH `benchmarks/requirements.txt` and the distribution's
+#: `dev` extra, each with the reason it is in both places. A shared TEST-only
+#: dependency is legitimate; a shared RUNTIME one is not, and is caught
+#: unconditionally below. This mapping is asserted to equal the overlap exactly,
+#: in both directions, so adding `onnxruntime` to the `dev` extra fails until
+#: someone writes down why, and dropping a genuine sharing fails too rather than
+#: silently loosening the guard.
+SHARED_TEST_ONLY_WITH_BENCHMARKS: dict[str, str] = {
+    "pyyaml": (
+        "benchmarks/run.py reads PINT's example-dataset.yaml, and "
+        "tests/test_training_data.py reads training/sources.yaml. Test-only on "
+        "both sides: it carries an `extra == 'dev'` marker in the distribution "
+        "and never reaches a consumer's environment."
+    ),
+}
+
+
 def test_no_benchmark_dependency_is_a_dependency_of_the_distribution() -> None:
     """The claim `benchmarks/requirements.txt` makes about itself, checked.
 
@@ -207,6 +224,14 @@ def test_no_benchmark_dependency_is_a_dependency_of_the_distribution() -> None:
     with the offending package in the message rather than with an empty-list
     assertion, which is what someone who has just added `onnxruntime` to the
     wrong file needs to read.
+
+    The property is about RUNTIME. A benchmark package that also appears under
+    an `extra ==` marker is a shared test-only dependency, which is how pyyaml
+    legitimately sits in both files, so those are checked against
+    `SHARED_TEST_ONLY_WITH_BENCHMARKS` rather than failed outright. Before that
+    distinction existed this test read every declared requirement, extras
+    included, and it went red the moment the training tree and the benchmark
+    tree met on one branch even though nothing had gained a runtime dependency.
     """
     from importlib.metadata import requires
 
@@ -215,13 +240,34 @@ def test_no_benchmark_dependency_is_a_dependency_of_the_distribution() -> None:
     )
     assert benchmark_deps, "requirements.txt names nothing; this guard would prove nothing"
     declared = requires("jamjet-guardrails") or []
-    offenders = [
+
+    def _name_of(requirement: str) -> str:
+        return re.split(r"[<>=!~\[; ]", requirement, maxsplit=1)[0].strip().lower()
+
+    runtime_offenders = sorted(
+        {
+            name
+            for name in benchmark_deps
+            for requirement in declared
+            if _name_of(requirement) == name and "extra ==" not in requirement
+        }
+    )
+    assert runtime_offenders == [], (
+        f"benchmark dependencies are RUNTIME dependencies of the distribution: {runtime_offenders}"
+    )
+
+    shared_test_only = {
         name
-        for name in sorted(benchmark_deps)
+        for name in benchmark_deps
         for requirement in declared
-        if re.split(r"[<>=!~\[; ]", requirement, maxsplit=1)[0].strip().lower() == name
-    ]
-    assert offenders == [], f"benchmark dependencies declared by the distribution: {offenders}"
+        if _name_of(requirement) == name and "extra ==" in requirement
+    }
+    assert shared_test_only == set(SHARED_TEST_ONLY_WITH_BENCHMARKS), (
+        "the set of packages shared between benchmarks/requirements.txt and the "
+        "distribution's extras must match SHARED_TEST_ONLY_WITH_BENCHMARKS exactly; "
+        f"found {sorted(shared_test_only)}, "
+        f"recorded {sorted(SHARED_TEST_ONLY_WITH_BENCHMARKS)}"
+    )
 
 
 def test_results_md_is_the_rendering_of_the_committed_json() -> None:
