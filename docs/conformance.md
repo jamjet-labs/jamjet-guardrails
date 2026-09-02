@@ -316,13 +316,11 @@ scoring that pairing would publish a number for a run that never happens.
 
 ## The injection-structural constraint
 
-`pii` and `secrets` are patterns over what a document says, and the sections
-above are enough to port them: their type names are the labels their corpora
-use, and their bar is the score on those corpora. This check constrains how a
-document is ENCODED rather than what it says, and reproducing its numbers is not
-the same as reproducing it. 29 of its 94 `allow` cases stop allowing when one of
-the exemptions or exclusions below is switched off, and neither an exemption nor
-an exclusion is visible in a precision figure.
+`pii` and `secrets` are patterns over what a document says, and the sections above are enough to port them:
+their type names are the labels their corpora use, and their bar is the score on those corpora. This check
+constrains how a document is ENCODED rather than what it says, and reproducing its numbers is not the same
+as reproducing it. 29 of its 94 `allow` cases stop allowing when one of the exemptions or exclusions below
+is switched off, and neither an exemption nor an exclusion is visible in a precision figure.
 
 Its `kind` is `constraint`, so the invariant above applies unchanged: no finding
 it produces carries a `confidence`. Its corpus is
