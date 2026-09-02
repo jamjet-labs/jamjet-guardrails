@@ -81,9 +81,10 @@ First release.
   reported as redacted.
 - A check that raises becomes `deny`, never `allow`, and the error message is
   withheld from the verdict because a detector's message may quote the content.
-- A check named in configuration that is not installed raises
-  `GuardrailUnavailableError` at construction rather than running unguarded. An
-  empty list of checks is refused for the same reason.
+- A check that would be configured and silent raises `GuardrailUnavailableError`
+  at construction (when not installed) or at call time (when ``PatternGuardrail.check``
+  is asked about a direction it does not declare), rather than running unguarded.
+  An empty list of checks is refused for the same reason.
 
 ### Notes
 

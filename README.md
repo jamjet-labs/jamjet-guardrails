@@ -205,11 +205,13 @@ Two failure modes, chosen deliberately.
 - **A check that raises becomes `deny`, never `allow`.** The chain records the
   error on that check's verdict and carries on. A crashing detector blocks
   content rather than passing it through unexamined.
-- **A check named in configuration that is not installed raises
-  `GuardrailUnavailableError` at construction.** Configuration that silently
-  means "this check is not running" is the failure this library exists to
-  prevent, so it is refused before any content is processed. An empty list of
-  checks is refused for the same reason.
+- **A check that would be configured and silent raises `GuardrailUnavailableError`.
+  This is raised at construction when a guardrail is not installed or cannot
+  be built, and also when ``PatternGuardrail.check`` is called with a direction
+  it does not declare.** Configuration that silently means "this check is not
+  running" is the failure this library exists to prevent, so it is refused
+  before any content is processed. An empty list of checks is refused for the
+  same reason.
 
 Treat any exception out of `run` as a deny. The cases that raise abandon the
 run, so there is no result and no audit record, which is acceptable only

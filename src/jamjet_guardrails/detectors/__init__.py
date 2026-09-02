@@ -59,9 +59,12 @@ _RUNNABLE_DIRECTIONS: frozenset[Direction] = frozenset({"input", "output"})
 def build(name: str, **options: object) -> Guardrail:
     """Construct one guardrail by name, or refuse to hand one back at all.
 
-    Raises ``GuardrailUnavailableError`` -- here, at construction, never from
-    inside a run -- in five cases. They are one mistake in five costumes: a
-    check that is configured and would not check.
+    Raises ``GuardrailUnavailableError`` in five cases, all at construction.
+    They are one mistake in five costumes: a check that is configured and
+    would not check. A caller holding a guardrail built by this function may
+    still raise this error from ``PatternGuardrail.check`` if they call it
+    with a direction the guardrail does not declare, but a chain does not:
+    it filters directions before calling check.
 
     - **The name is not registered.** The message names what IS installed, read
       from ``AVAILABLE`` rather than written out, so a detector living behind an
