@@ -256,9 +256,27 @@ def verdict(
     every reference's numbers on it, and both references passed it. It can only
     ever refuse, never authorise, so recording it here cannot lower the bar the
     file records.
+
+    **The structural floor is compared against the recall it was derived from,
+    not against the three-decimal rendering of it.** `structural_floor` is
+    `round(recall, 3)` and the recall it rounded is 46 of 52 = 0.8846153846, which
+    rounds UP. So `recall >= 0.885` is False on a structural layer nothing
+    touched, by 0.00038, and the first run of this comparison recorded a
+    regression that was a rounding artifact. The bar records both numbers, and
+    `structural_floor_detail.recall` is the one the floor was taken from;
+    reading it is what makes the comparison ask the question the bar's own
+    rationale asks, which is whether adding a classifier cost the structural
+    layer any decision-level recall.
+
+    Exact, not tolerant. A tolerance band would be a second thing to argue
+    about, and none is needed: the floor and the measurement are now the same
+    quantity, so an unchanged layer compares equal and any real change fails.
+    `training/ship_bar.json` is byte-pinned and was NOT edited to arrive here.
+    A bar that can be rewritten after the result is not a commitment, and the
+    rounding is in the rendering rather than in the bar.
     """
     minimum = float(bar["our_minimum"])
-    floor = float(bar["structural_floor"])
+    floor = float(bar["structural_floor_detail"]["recall"])
     semantic_clears = float(semantic["f1"]) > minimum
     structural_holds = float(structural["recall"]) >= floor
     controls_pass = bool(semantic["controls"]["passed"])
@@ -283,6 +301,13 @@ def verdict(
         "structural": {
             "measured": float(structural["recall"]),
             "floor": floor,
+            "floor_published_as": float(bar["structural_floor"]),
+            "floor_note": (
+                "The recall the floor was derived from, not its three-decimal rendering. "
+                "round(0.8846153846, 3) is 0.885, which is ABOVE the value it renders, so "
+                "comparing against the rendering fails an unchanged layer by 0.00038. Both "
+                "numbers are recorded in training/ship_bar.json and neither was edited."
+            ),
             "comparison": ">=",
             "holds": structural_holds,
             "margin": float(structural["recall"]) - floor,

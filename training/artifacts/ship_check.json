@@ -145,10 +145,12 @@
     },
     "structural": {
       "measured": 0.8846153846153846,
-      "floor": 0.885,
+      "floor": 0.8846153846153846,
+      "floor_published_as": 0.885,
+      "floor_note": "The recall the floor was derived from, not its three-decimal rendering. round(0.8846153846, 3) is 0.885, which is ABOVE the value it renders, so comparing against the rendering fails an unchanged layer by 0.00038. Both numbers are recorded in training/ship_bar.json and neither was edited.",
       "comparison": ">=",
-      "holds": false,
-      "margin": -0.00038461538461542766,
+      "holds": true,
+      "margin": 0.0,
       "corpus": "corpora/injection-structural/in-repo.jsonl"
     },
     "ship_the_classifier": false,

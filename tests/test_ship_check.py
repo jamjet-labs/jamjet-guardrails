@@ -31,7 +31,14 @@ from test_ship_bar import SHIP_BAR_SHA256
 from training.decide import EXPORT_RECORD, METRICS, SHIPPED, verdict
 from training.evalset import EVAL_SOURCE
 from training.fetch import load_sources, sha256_of
-from training.ship_bar import COMPARISON, SHIP_BAR, f1, harness, structural_floor
+from training.ship_bar import (
+    COMPARISON,
+    FLOOR_PLACES,
+    SHIP_BAR,
+    f1,
+    harness,
+    structural_floor,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 RECORD = ROOT / "training" / "artifacts" / "ship_check.json"
@@ -123,10 +130,66 @@ def test_the_structural_side_is_re_derived_from_the_shipped_corpus() -> None:
         "the structural side of the verdict is not what the shipped corpus scores today"
     )
     recorded = check()["verdict"]["structural"]
-    floor = float(bar()["structural_floor"])
+    # The floor compared against is the recall it was DERIVED from, not the
+    # three-decimal rendering the bar also carries. `round(0.8846153846, 3)` is
+    # 0.885, which is ABOVE the value it renders, so the rendering fails an
+    # untouched structural layer by 0.00038. Both numbers are in the bar and
+    # neither was edited; the verdict records which one it used.
+    floor = float(bar()["structural_floor_detail"]["recall"])
+    published = float(bar()["structural_floor"])
     assert recorded["floor"] == floor
+    assert recorded["floor_published_as"] == published
+    assert floor <= published, (
+        "the rendering is below the value it renders, so this comment describes "
+        "a rounding that no longer happens"
+    )
     assert recorded["measured"] == float(recomputed["recall"])
     assert recorded["holds"] is (float(recomputed["recall"]) >= floor)
+
+
+def test_the_floor_a_verdict_compares_against_is_never_above_its_own_measurement() -> None:
+    """The property, not the instance: a floor derived from a value must admit it.
+
+    This is the defect in one line. `structural_floor` is `round(recall, 3)`, and
+    round-to-nearest can land ABOVE its argument, so the artifact recorded a
+    regression on a detector nothing had touched. Asserted through `verdict`
+    rather than by re-reading the artifact, because the artifact is one row and
+    the rule is what has to hold for the next one.
+
+    Mutation: point `verdict` back at `bar["structural_floor"]` and this fails on
+    the recorded counts, which is the run that produced the artifact.
+    """
+    recorded_bar = bar()
+    exact = float(recorded_bar["structural_floor_detail"]["recall"])
+    decided = verdict(
+        recorded_bar,
+        {"f1": 0.0, "controls": {"passed": True, "refused_with": ""}},
+        {"recall": exact},
+    )
+    assert decided["structural"]["holds"] is True, (
+        "the structural layer that DEFINED the floor does not clear it, so the floor "
+        "is above the measurement it was derived from"
+    )
+    assert decided["structural"]["margin"] == 0.0
+
+
+def test_rounding_the_floor_to_three_places_could_never_have_hidden_a_real_change() -> None:
+    """Why the rendering is safe to publish even though it is unsafe to compare.
+
+    The corpus has one granularity: decision-level recall moves in steps of
+    1/(TP+FN). If that step were smaller than the rounding, the published 0.885
+    would be hiding real movement rather than merely mis-comparing. It is not,
+    by a factor of about 38, and the factor is asserted rather than stated so it
+    fails if the corpus is ever cut down.
+    """
+    counts = structural_floor(harness())["counts"]
+    positives = counts["tp"] + counts["fn"]
+    step = 1 / positives
+    rounding = 0.5 * 10**-FLOOR_PLACES
+    assert step > 2 * rounding, (
+        f"one decision is {step:.6f} of recall and rounding to {FLOOR_PLACES} places moves "
+        f"a rate by up to {rounding:.6f}; the published floor can now hide a real change"
+    )
 
 
 def test_the_structural_layer_scored_exactly_what_the_bar_recorded_for_it() -> None:
@@ -355,7 +418,8 @@ def test_the_results_note_states_the_numbers_the_verdict_holds() -> None:
             f"{structural['cases']} cases, decision-level recall {structural['recall']:.10f}"
         ),
         f"= {structural['floor']}, and the check is `recall >= floor`",
-        f"False by {abs(float(verdicts['structural']['margin'])):.5f}",
+        f"the recall the floor was taken from, {verdicts['structural']['floor']!r}",
+        f"holds with a margin of {abs(float(verdicts['structural']['margin'])):.5f}",
         f"scores F1 {dev:.4f} on DEV",
         f"is {dev - float(semantic['f1']):.4f} absolute",
         f"would score F1 {everything:.4f} on this corpus",

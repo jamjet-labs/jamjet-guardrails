@@ -57,15 +57,27 @@ four counts the bar recorded for it before any model existed: 46 TP, 2 FP, 6 FN,
 touched that detector and nothing was added to the chain, so the identity is the
 honest statement of it.
 
-There is a rounding artifact in the recorded floor and it is worth stating
-plainly rather than leaving for a later reader to trip over. The floor was
+There was a rounding artifact in the comparison and it is worth stating plainly
+rather than leaving for a later reader to trip over. `structural_floor` was
 recorded as `round(0.8846153846, 3)` = 0.885, and the check is `recall >= floor`,
-so the comparison against the unchanged structural layer is False by
-0.00038, which is the rounding and not a regression. Read as a regression test,
-which is what the bar's own rationale says it is for ("adding a classifier must
-not cost the structural layer its decision-level recall"), the structural layer
-is unchanged. The bar was not edited to fix this; it is recorded here and left
-for whoever writes the next one.
+so an untouched structural layer compared against that rendering failed by
+0.00038. The rendering is above the value it renders, which is what a
+round-to-nearest does and what a floor must not do.
+
+The comparison now reads the recall the floor was taken from,
+0.8846153846153846, which the bar records beside it in
+`structural_floor_detail.recall`. Against that value the structural side holds
+with a margin of 0.00000, which is the identity above stated as the comparison
+the bar asks for: adding a classifier must not cost the structural layer its
+decision-level recall, and it cost none.
+
+`training/ship_bar.json` was NOT edited to arrive there, and that matters more
+than the 0.00038. Its bytes are pinned by `tests/test_ship_bar.py` because a bar
+that can be rewritten after the result is not a commitment. Both numbers stay in
+it, unchanged; `training/artifacts/ship_check.json` records which of the two the
+comparison used, under `floor` and `floor_published_as`. Nothing about the
+semantic side moved: it failed by 0.5324 and no reading of a floor changes
+that.
 
 Note also that 0.885 is the DECISION-level number. `BENCHMARKS.md` publishes
 0.870 for the same corpus at FINDING level, where a case with four expected
