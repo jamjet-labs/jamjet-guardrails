@@ -8,7 +8,7 @@ A published precision or recall figure is part of the interface here. A release
 that moves one says so in its entry, with the old value and the new one, because
 a number that changes quietly is a number nobody can rely on.
 
-## [Unreleased]
+## [0.2.0]
 
 ### Added
 
@@ -32,7 +32,7 @@ a number that changes quietly is a number nobody can rely on.
 - Its published precision moved from 0.971 to 0.972 and its recall from 0.870
   to 0.873, because the corpus gained eight output cases and grew from 146 to
   154. The detector's behaviour on every case it already scored is unchanged.
-- `rules` is new and is published at 1.000 precision and 1.000 recall on 39
+- `rules` is new and is published at 1.000 precision and 1.000 recall on 40
   cases. That row measures the engine under one fixed configuration, printed
   in `docs/conformance.md`, and says nothing about a rule you write yourself.
 
@@ -95,5 +95,6 @@ First release.
   changes are in [corpora/NOTICE.md](corpora/NOTICE.md). The wheel contains code
   only.
 
-[Unreleased]: https://github.com/jamjet-labs/jamjet-guardrails/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/jamjet-labs/jamjet-guardrails/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/jamjet-labs/jamjet-guardrails/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/jamjet-labs/jamjet-guardrails/releases/tag/v0.1.0

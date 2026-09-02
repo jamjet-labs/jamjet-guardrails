@@ -228,6 +228,25 @@ def test_an_on_match_mapping_missing_a_declared_direction_is_refused() -> None:
         _guard(on_match={"input": "deny"})
 
 
+def test_an_on_match_mapping_naming_an_undeclared_direction_is_refused() -> None:
+    """The mirror of the missing-direction case above: a mapping that names a
+    direction `directions` never declared states a policy that would never be
+    consulted, since only the declared directions are ever checked. Silently
+    dropping it would let a configuration read as though an output policy
+    applied when it never could."""
+    with pytest.raises(GuardrailUnavailableError, match="output"):
+        _guard(directions=frozenset({"input"}), on_match={"input": "deny", "output": "redact"})
+
+
+def test_an_on_match_mapping_with_a_typo_d_key_is_refused() -> None:
+    """A key that is not a real direction at all, not merely one the guardrail
+    declines to declare. It has to be caught by the same check as the case
+    above: nothing about `set(on_match) - directions` distinguishes a typo from
+    a real direction that was simply not declared."""
+    with pytest.raises(GuardrailUnavailableError, match="outupt"):
+        _guard(directions=frozenset({"input"}), on_match={"input": "deny", "outupt": "redact"})
+
+
 @pytest.mark.parametrize("decision", ["allow", "warn", "REDACT", ""])
 def test_a_decision_outside_redact_and_deny_is_refused(decision: str) -> None:
     """`allow` included, and that is the interesting one: a check configured to
@@ -373,6 +392,26 @@ def test_the_decision_follows_the_direction_the_context_carries() -> None:
     guard = _guard(on_match={"input": "redact", "output": "deny"})
     assert guard.check("JIRA-1234", IN).decision == "redact"
     assert guard.check("JIRA-1234", OUT).decision == "deny"
+
+
+def test_clean_content_on_an_undeclared_direction_is_refused_not_allowed() -> None:
+    """The worse of the two failures this guard exists to close: without it,
+    clean content on a direction this guardrail never declared came back
+    `allow`, reporting that the content was checked when it was not. A caller
+    holding this guardrail directly, not through GuardrailChain, is who would
+    otherwise be misled."""
+    guard = _guard(directions=frozenset({"input"}))
+    with pytest.raises(GuardrailUnavailableError, match="output"):
+        guard.check("nothing to see", OUT)
+
+
+def test_matching_content_on_an_undeclared_direction_is_refused_not_a_bare_keyerror() -> None:
+    """Before this guard, matching content on an undeclared direction raised
+    `KeyError('output')` from inside `_on_match`, which fails closed but names
+    neither the guardrail nor why. This names both."""
+    guard = _guard(directions=frozenset({"input"}))
+    with pytest.raises(GuardrailUnavailableError, match="output"):
+        guard.check("see JIRA-1234 please", OUT)
 
 
 def test_it_composes_in_a_chain_with_a_bundled_detector() -> None:

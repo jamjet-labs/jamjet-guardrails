@@ -323,6 +323,24 @@ class PatternGuardrail:
                     f"names no decision for {missing}; the alternative is a KeyError "
                     "from inside check, which fails closed and names nothing"
                 )
+            # The mirror mistake: a key on_match names that directions does not
+            # declare. check now refuses that direction before it ever reads
+            # on_match (see the guard at the top of check), so a policy for it
+            # would never be consulted; resolving only the declared directions
+            # here, rather than copying the mapping as given, is what makes that
+            # true rather than merely likely. Refused rather than ignored,
+            # because a mapping key a caller wrote on purpose (a real direction
+            # they forgot to declare) or by typo (a direction that is not a
+            # direction at all) both silently vanish otherwise, and the second
+            # one is indistinguishable from the first without this check.
+            extra = sorted(set(on_match) - directions)
+            if extra:
+                raise GuardrailUnavailableError(
+                    f"{name!r} declares directions {sorted(directions)} but on_match "
+                    f"also names {extra}, which this guardrail would never be asked "
+                    "about; a policy for a direction it does not declare would be "
+                    "silently dropped"
+                )
             resolved = {direction: on_match[direction] for direction in directions}
         for direction, decision in sorted(resolved.items()):
             if decision not in ("redact", "deny"):
@@ -382,6 +400,31 @@ class PatternGuardrail:
         return found
 
     def check(self, content: str, context: Context) -> Verdict:
+        """Refuses a direction this guardrail does not declare, before matching.
+
+        ``GuardrailChain`` already filters on ``directions`` before it ever calls
+        ``check``, but this class's own docstring contemplates "a caller holding
+        one guardrail", so the chain is not the only caller and this method must
+        hold the same line the chain holds for it.
+
+        Without this guard, a context whose direction is not in ``directions``
+        fell through to ``self._on_match[context.direction]`` below, but only
+        past the early return on no match: clean content came back ``allow``,
+        and matching content raised a bare ``KeyError`` naming neither the
+        guardrail nor the direction. The ``allow`` is the worse of the two,
+        because it reports that this content was checked and found clean, when
+        this guardrail never declared itself able to check that direction at
+        all. A guardrail asked about a direction it does not declare must not
+        answer allow, deny or redact; it must refuse, the same way the
+        constructor already refuses an ``on_match`` mapping that omits a
+        declared direction, and for the same reason.
+        """
+        if context.direction not in self.directions:
+            raise GuardrailUnavailableError(
+                f"{self.name!r} was asked to check direction {context.direction!r} but "
+                f"declares only {sorted(self.directions)}; answering would report that "
+                "content was checked in a direction this guardrail never declared"
+            )
         provenance = Provenance(kind="constraint", detector=self.name, version=self.version)
         found = self._matches(content)
         if not found:

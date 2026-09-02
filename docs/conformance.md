@@ -478,6 +478,17 @@ reproduced the engine and nothing about rule content.
 
 Its `kind` is `constraint`, so no finding it produces carries a `confidence`.
 
+**A user's rule may name a finding type a built-in check also reports.**
+Finding types are the caller's; nothing here refuses `rules` a type that
+collides with one PII, secrets or injection-structural already reports, an
+`EMAIL` from `rules` beside the `EMAIL` from `pii`, for instance. The two
+verdicts stay separable by detector regardless, because each guardrail's own
+`Verdict` keeps its own findings and its own span; only where a redaction
+merges their spans does the collision show, in one placeholder that names the
+colliding type once rather than twice. This is not refused, because refusing
+it needs knowledge this primitive does not have: it cannot see what else is
+running beside it in a chain.
+
 ### The configuration the row was measured under
 
     patterns:
@@ -509,8 +520,13 @@ Fixed, because the corpus measures it:
 - **Matching is search, not anchoring.** A pattern matches anywhere in the
   content, so `packages/media/` matches inside `foo/packages/media/bar`. A port
   that anchors implicitly fails cases labelled for the unanchored behaviour.
-- **Every occurrence is a finding, including overlapping ones.** `aba` in
-  `ababa` is two findings at (0, 3) and (2, 5), not one.
+- **Every occurrence is a finding, except a match wholly contained within one
+  already reported, which is dropped.** `aba` in `ababa` is two findings at
+  (0, 3) and (2, 5), not one: overlapping matches that are not contained are
+  both kept. `X.{0,4}` over `XabcX` is ONE finding spanning (0, 5), not two,
+  because the second match, `X` alone at (4, 5), is wholly inside the first.
+  Dropping a contained match cannot uncover a character: the container already
+  covers every offset the contained match covered.
 - **Banned substrings match case-insensitively**, over a case-folded view, and
   the span reported is the SOURCE span. Where folding changes a character's
   width the two differ, and the corpus carries a case that separates them.

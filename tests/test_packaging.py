@@ -37,6 +37,25 @@ def test_dunder_version_matches_the_distribution_version() -> None:
     assert jamjet_guardrails.__version__ == version("jamjet-guardrails")
 
 
+def test_the_changelogs_newest_heading_matches_the_package_version() -> None:
+    """The guard CHANGELOG.md has never had.
+
+    `CHANGELOG.md`'s own preamble says a release that moves a published number
+    says so in its entry, which only means something if the entry is labelled
+    with the version that shipped it. Nothing before this test checked that an
+    `Unreleased` heading gets renamed when the version it describes is cut, so a
+    bumped `pyproject.toml` and an unrenamed heading could ship together and
+    nothing would notice. `[Unreleased]` is skipped by the pattern itself, not
+    by name: it never matches `\\d+\\.\\d+\\.\\d+`, so the first version-shaped
+    heading found is the newest RELEASED one regardless of whether an
+    `Unreleased` section still sits above it.
+    """
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    headings = re.findall(r"^## \[(\d+\.\d+\.\d+)\]", changelog, re.MULTILINE)
+    assert headings, "no version-shaped heading (## [X.Y.Z]) found in CHANGELOG.md"
+    assert headings[0] == jamjet_guardrails.__version__
+
+
 def test_the_installed_distribution_declares_no_runtime_dependencies() -> None:
     """The core must install into a Lambda. Guard the promise, do not just state it.
 

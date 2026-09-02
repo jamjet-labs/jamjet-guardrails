@@ -14,7 +14,7 @@
     "precision": 0.96,
     "recall": 0.997
   },
-  "rules/in-repo/fb63357f5268": {
+  "rules/in-repo/f1b809114b13": {
     "decision_mismatches": 0,
     "precision": 1.0,
     "recall": 1.0
