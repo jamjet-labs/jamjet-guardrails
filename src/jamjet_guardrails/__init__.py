@@ -5,7 +5,7 @@ recall, not a model. Which check decided, and over exactly what text, is on
 every verdict.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 from jamjet_guardrails.authoring import Limits, PatternGuardrail
 from jamjet_guardrails.chain import GuardrailChain

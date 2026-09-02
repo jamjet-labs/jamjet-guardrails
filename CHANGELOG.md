@@ -10,7 +10,36 @@ a number that changes quietly is a number nobody can rely on.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- `PatternGuardrail` and `Limits`, exported from the package root. A check is
+  now typed regular expressions, banned substrings and size limits, and the
+  spans, the merging and the refusals come with it. `docs/conformance.md`
+  specifies what a published row measured through it does and does not promise.
+- `rules`, a check that takes your own patterns, banned substrings and size
+  limits. Size limits are characters, bytes and lines; there is no token limit,
+  because counting tokens needs a tokenizer this library does not carry.
+- `TYPES`, beside `AVAILABLE`, naming the finding types each check can report.
+- `scripts/new_check.py`, which writes the files a new check needs and names
+  the four it leaves to you.
+
+### Changed
+
+- `injection-structural` runs on output as well as input, and its detector
+  version moves to 0.2.0. A chain that previously skipped this check on model
+  output now runs it there and can deny. A model emitting tag characters into
+  its own output is smuggling to whatever reads that output next.
+- Its published precision moved from 0.971 to 0.972 and its recall from 0.870
+  to 0.873, because the corpus gained eight output cases and grew from 146 to
+  154. The detector's behaviour on every case it already scored is unchanged.
+- `rules` is new and is published at 1.000 precision and 1.000 recall on 39
+  cases. That row measures the engine under one fixed configuration, printed
+  in `docs/conformance.md`, and says nothing about a rule you write yourself.
+
+### Notes
+
+- Still no runtime dependencies. The authoring primitive is standard library
+  only, and `dependencies = []` is still checked against the built metadata.
 
 ## [0.1.0]
 

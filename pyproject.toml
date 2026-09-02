@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "jamjet-guardrails"
-version = "0.1.0"
+version = "0.2.0"
 description = "Content guardrails for LLM applications, with published precision and recall and provenance on every decision."
 readme = "README.md"
 # `Apache-2.0 AND CC-BY-4.0`, not `Apache-2.0`, and the AND is about the SDIST.
