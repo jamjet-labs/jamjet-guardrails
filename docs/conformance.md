@@ -466,6 +466,78 @@ otherwise assume closed, pulled out because they are the ones that surprise.
   check is published**, and the absence is deliberate: a minimum is a claim
   about every possible encoding, and a measurement only ever exhibits one.
 
+## The rules constraint
+
+`rules` is the only check here whose finding types are chosen by the caller, and
+that changes what its published row means. The row is measured under one fixed
+configuration, recorded below, and it measures the ENGINE: whether a span is
+right, whether two rules claiming one stretch of text collapse into one
+placeholder, whether a limit fires one character past its bound and not at it.
+It is not a measurement of any rule a user writes, and a port reproducing it has
+reproduced the engine and nothing about rule content.
+
+Its `kind` is `constraint`, so no finding it produces carries a `confidence`.
+
+### The configuration the row was measured under
+
+    patterns:
+      TICKET_ID:      \bJIRA-\d{4,}\b
+      INTERNAL_HOST:  \b[a-z0-9][a-z0-9-]*\.corp\.example\b
+    banned:
+      PROJECT_CODENAME: ["project bluebird"]
+    limits:
+      max_chars: 2000
+    on_match: redact
+
+A conforming implementation scores `corpora/rules/in-repo.jsonl` with these
+options. `on_match` is `redact` rather than the registered default `deny`
+because a deny never reaches the rewrite, so the spans would be published
+without ever being applied and the corpus would grade nothing that matters
+here.
+
+**The published row exercises only one of the three limit kinds.** The
+fixture sets `max_chars` and neither `max_bytes` nor `max_lines`, so the
+byte-boundary and line-boundary branches of `_limit_spans` are never reached
+by anything this row measures. A limit the row cannot exercise is a limit the
+row does not cover, not a limit proven correct. `README.md` carries the same
+disclosure beside the published figures.
+
+### What is fixed and what is not
+
+Fixed, because the corpus measures it:
+
+- **Matching is search, not anchoring.** A pattern matches anywhere in the
+  content, so `packages/media/` matches inside `foo/packages/media/bar`. A port
+  that anchors implicitly fails cases labelled for the unanchored behaviour.
+- **Every occurrence is a finding, including overlapping ones.** `aba` in
+  `ababa` is two findings at (0, 3) and (2, 5), not one.
+- **Banned substrings match case-insensitively**, over a case-folded view, and
+  the span reported is the SOURCE span. Where folding changes a character's
+  width the two differ, and the corpus carries a case that separates them.
+- **Size limits count characters, bytes and lines**, and a limit fires one past
+  its bound and not at it. The finding is `LENGTH_LIMIT` and its span runs from
+  the first excess character to the end of the content. Several limits breached
+  produce ONE finding, from the earliest breach.
+
+Not fixed:
+
+- **The type names.** They are the caller's, and here they are the fixture's.
+- **Whether an implementation refuses a pattern that nests unbounded repeats.**
+  This implementation does, at construction, and says in its own documentation
+  that the guard catches the textbook shape and is not a proof. A port may
+  refuse differently, or not at all, and still reach every verdict in the
+  corpus.
+- **What a size limit does on a `redact`.** This implementation truncates at the
+  limit and writes the placeholder. Nothing in the corpus compares rewritten
+  content, so a port may spell the truncation differently.
+
+### There is no token limit
+
+Counting tokens needs a tokenizer, this library carries none, and a limit that
+approximately counts tokens is a limit nobody can reason about. A deployment
+that needs a token ceiling derives a character ceiling from a ratio it measured
+on its own traffic, which is a number it can check.
+
 ## Third-party corpora
 
 Precision and recall measured only on a corpus we wrote are self-graded: the

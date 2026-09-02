@@ -58,6 +58,7 @@ REQUIRED_SECTIONS = [
     "## The saw hash",
     "## Corpus schema",
     "## The injection-structural constraint",
+    "## The rules constraint",
     "## Third-party corpora",
     "## What is deliberately unspecified",
 ]
@@ -769,3 +770,27 @@ def test_the_count_of_allow_cases_riding_on_an_exemption_is_the_measured_union()
     assert f"{len(union)} of its {len(cases)} `allow` cases" in section, (
         f"the document does not state the measured figures, which are {len(union)} of {len(cases)}"
     )
+
+
+def test_the_conformance_document_prints_the_fixture_the_row_was_measured_under() -> None:
+    """A configuration quoted in prose is a claim, and this one is the whole
+    meaning of the rules row. A fixture that changed without this section
+    changing would publish a number under a configuration nobody used."""
+    from jamjet_guardrails.eval.fixtures import options_for
+
+    section = _section("## The rules constraint")
+    fixture = options_for("rules")
+    patterns = fixture["patterns"]
+    assert isinstance(patterns, dict)
+    for type_name, pattern in patterns.items():
+        assert type_name in section, f"the document does not print the {type_name} rule"
+        assert pattern in section, f"the document prints a different pattern for {type_name}"
+    banned = fixture["banned"]
+    assert isinstance(banned, dict)
+    for type_name, substrings in banned.items():
+        assert type_name in section
+        for substring in substrings:
+            assert substring in section
+    limits = fixture["limits"]
+    assert f"max_chars: {limits.max_chars}" in section  # type: ignore[attr-defined]
+    assert f"on_match: {fixture['on_match']}" in section
