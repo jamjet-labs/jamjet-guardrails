@@ -13,6 +13,9 @@ check from every other angle, including a green suite and a published number.
 
 from __future__ import annotations
 
+import re
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -28,6 +31,13 @@ NOTICE = CORPORA / "NOTICE.md"
 CONFORMANCE = ROOT / "docs" / "conformance.md"
 README = ROOT / "README.md"
 BENCHMARKS = ROOT / "BENCHMARKS.md"
+SCAFFOLD = ROOT / "scripts" / "new_check.py"
+CONTRIBUTING = ROOT / "CONTRIBUTING.md"
+
+# The claim CONTRIBUTING makes about how much code a check costs. Held to the
+# scaffold's own output rather than to a sentence, because "about twenty-five
+# lines" is a number in prose and a number in prose is a claim.
+_DETECTOR_LINE_BUDGET = 25
 
 CHECKS = sorted(AVAILABLE)
 
@@ -55,12 +65,39 @@ def test_every_check_has_a_recorded_baseline(check: str) -> None:
     assert keys, f"{check} has no entry in {BASELINES}, so nothing gates its score"
 
 
+def _headline_table(text: str, path: Path) -> str:
+    """The rows of the published headline table, and nothing else in the file.
+
+    README.md carries a second table naming every check ("The checks", with
+    backtick-quoted names), and BENCHMARKS.md is generated from the same
+    template the headline table in README uses. A file-wide substring match
+    cannot tell that second table from this one, so a mutation that deletes a
+    row from the headline table alone passed the test this replaces: the row
+    was still found, in the OTHER table. The headline table is the one CI
+    diffs against the generated benchmarks, so it is the row that carries the
+    published number, and this is scoped to it: the header row starting
+    "| Check | Corpus" through the next blank line.
+    """
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if line.startswith("| Check | Corpus"):
+            start = index
+            break
+    else:
+        raise AssertionError(f"{path.name} has no headline table (no '| Check | Corpus' row)")
+    end = start
+    while end < len(lines) and lines[end].strip():
+        end += 1
+    return "\n".join(lines[start:end])
+
+
 @pytest.mark.parametrize("check", CHECKS)
 def test_every_check_has_a_row_in_both_published_tables(check: str) -> None:
     for path in (BENCHMARKS, README):
-        text = path.read_text(encoding="utf-8")
-        assert f"| {check} |" in text or f"| `{check}` |" in text, (
-            f"{check} has no row in {path.name}"
+        table = _headline_table(path.read_text(encoding="utf-8"), path)
+        assert f"| {check} |" in table, (
+            f"{check} has no row in the headline table (starting '| Check | Corpus |') "
+            f"of {path.name}"
         )
 
 
@@ -75,26 +112,47 @@ def test_every_check_has_a_row_in_both_published_tables(check: str) -> None:
 _COVERED_BY_THE_GENERAL_SECTIONS = "enough to port them"
 
 
+def _sentences(text: str) -> list[str]:
+    """The document as sentences, whitespace collapsed first.
+
+    Collapsing every run of whitespace to one space means a paragraph rewrapped
+    across a different set of lines produces the same sentences it did before,
+    so a document's line breaks stay free to change without breaking a test
+    that has nothing to do with them: this used to require the waiver phrase
+    and a check's name to share one LINE, and rewrapping the paragraph that
+    covers `pii` and `secrets` broke it for a reason no message explained.
+    Splitting on `.`, `!` or `?` followed by whitespace treats the colon in
+    "enough to port them: their type names are..." as inside one sentence,
+    which it is.
+    """
+    collapsed = " ".join(text.split())
+    return re.split(r"(?<=[.!?])\s+", collapsed)
+
+
 @pytest.mark.parametrize("check", CHECKS)
 def test_every_check_is_covered_by_the_porting_contract(check: str) -> None:
     """A check nobody can port is a check whose corpus cannot grade a port.
 
-    Either the document gives it a section of its own, or the document states
-    that its general sections are enough for it. Nothing else counts, and in
-    particular the check's name appearing in passing does not.
+    Either the document gives it a section of its own, or the document states,
+    in the SAME SENTENCE as the waiver phrase, that its general sections are
+    enough for it. Nothing else counts, and in particular the check's name
+    appearing anywhere else in the document does not: matching the whole
+    document rather than the one sentence would pass for a name that sits in
+    an unrelated paragraph and never claims to cover this check at all.
     """
     text = CONFORMANCE.read_text(encoding="utf-8")
     headings = [line for line in text.splitlines() if line.startswith("## ")]
     if any(check in heading for heading in headings):
         return
     waivers = [
-        line
-        for line in text.splitlines()
-        if _COVERED_BY_THE_GENERAL_SECTIONS in line and f"`{check}`" in line
+        sentence
+        for sentence in _sentences(text)
+        if _COVERED_BY_THE_GENERAL_SECTIONS in sentence and f"`{check}`" in sentence
     ]
     assert waivers, (
-        f"docs/conformance.md neither gives {check} a section nor says its general "
-        f"sections are enough for it; headings are {headings}"
+        f"docs/conformance.md neither gives {check} a section nor says, in the same "
+        f"sentence as {_COVERED_BY_THE_GENERAL_SECTIONS!r}, that its general sections "
+        f"are enough for it; headings are {headings}"
     )
 
 
@@ -155,3 +213,66 @@ def test_a_fixture_selects_only_types_the_check_declares(check: str) -> None:
             named |= set(value)
     undeclared = sorted(named - TYPES[check])
     assert undeclared == [], f"the {check} fixture names {undeclared}, which it does not declare"
+
+
+def test_the_scaffold_writes_a_check_whose_detector_fits_the_budget(tmp_path: Path) -> None:
+    result = subprocess.run(
+        [sys.executable, str(SCAFFOLD), "example-check", "--into", str(tmp_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    detector = tmp_path / "src" / "jamjet_guardrails" / "detectors" / "example_check.py"
+    assert detector.is_file()
+    lines = [
+        line
+        for line in detector.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    assert len(lines) <= _DETECTOR_LINE_BUDGET, (
+        f"the scaffolded detector is {len(lines)} lines; CONTRIBUTING claims a check "
+        f"costs about {_DETECTOR_LINE_BUDGET}"
+    )
+
+
+def test_the_scaffold_writes_every_artifact_the_completeness_tests_demand(tmp_path: Path) -> None:
+    subprocess.run(
+        [sys.executable, str(SCAFFOLD), "example-check", "--into", str(tmp_path)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    for relative in (
+        "src/jamjet_guardrails/detectors/example_check.py",
+        "corpora/example-check/in-repo.jsonl",
+        "tests/test_example_check.py",
+    ):
+        assert (tmp_path / relative).is_file(), f"the scaffold did not write {relative}"
+
+
+def test_the_scaffold_refuses_a_name_that_is_already_registered(tmp_path: Path) -> None:
+    result = subprocess.run(
+        [sys.executable, str(SCAFFOLD), "pii", "--into", str(tmp_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "registered" in result.stderr
+
+
+def test_the_scaffold_refuses_a_name_outside_the_registry_naming_rule(tmp_path: Path) -> None:
+    result = subprocess.run(
+        [sys.executable, str(SCAFFOLD), "Bad_Name", "--into", str(tmp_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode != 0
+
+
+def test_contributing_documents_the_scaffold_it_tells_people_to_run() -> None:
+    text = CONTRIBUTING.read_text(encoding="utf-8")
+    assert "scripts/new_check.py" in text
+    assert str(_DETECTOR_LINE_BUDGET) in text
