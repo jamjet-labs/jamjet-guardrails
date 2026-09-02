@@ -308,9 +308,9 @@ class PatternGuardrail:
         unknown = sorted(directions - _RUNNABLE)
         if unknown:
             raise GuardrailUnavailableError(
-                f"{name!r} declares direction(s) {unknown} that a Context never "
-                f"carries (its direction is one of {sorted(_RUNNABLE)}), so it "
-                "would be skipped in every context and never run"
+                f"{name!r} declares direction(s) {unknown}, but a Context never "
+                f"carries these (its direction is one of {sorted(_RUNNABLE)}), so "
+                "the guardrail would never be checked for these directions"
             )
 
         if isinstance(on_match, str):

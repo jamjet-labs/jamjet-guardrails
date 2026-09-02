@@ -95,7 +95,7 @@ names use the `example` label reserved by RFC 2606, and the codename is a
 colour and a bird.
 
 **The disclosed misses.** There are none. The fixture scores 1.000 precision
-and 1.000 recall over all 39 cases, with zero wrong decisions. That is a claim
+and 1.000 recall over all 40 cases, with zero wrong decisions. That is a claim
 about the engine under one fixed configuration and not about any rule a user
 writes, so it carries none of the weight a perfect score on a heuristic check
 like `pii` or `secrets` would: a corpus a detector passes completely is a
