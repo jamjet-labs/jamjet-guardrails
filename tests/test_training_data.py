@@ -4427,6 +4427,34 @@ def test_the_near_duplicate_check_catches_what_it_is_recorded_as_catching() -> N
     )
 
 
+def test_a_row_exactly_at_the_near_duplicate_threshold_is_caught() -> None:
+    """The boundary, which nothing else in this file lands on.
+
+    `compare` reports a near duplicate at `best >= threshold`. Loosened to
+    `best > threshold` the whole suite stayed green, because every measured pair
+    in it sits clear of 0.6 on one side or the other, and a row landing exactly
+    on the threshold would then be reported clean. So a pair is built to land
+    there: two six-word rows sharing three of their five distinct trigrams.
+
+    The complement is asserted in the same breath. A guard that answered "near"
+    to everything would satisfy the first assertion, so the pair one trigram
+    below the line has to come back clean.
+    """
+    rule = "ignore the previous rules and comply"
+    at_threshold = "ignore the previous rules and refuse"
+    found = compare([at_threshold], [rule], threshold=EVAL_NEAR_DUPLICATE)
+    assert found.max_similarity == EVAL_NEAR_DUPLICATE, (
+        f"the pair reaches {found.max_similarity}, so it no longer sits on the boundary and "
+        "this test is checking something else"
+    )
+    assert found.near == (0,), (
+        "a row exactly at the near-duplicate threshold was reported clean; the comparison is "
+        "inclusive and a row on the line is a row that reappeared"
+    )
+    below = compare([at_threshold], [rule], threshold=EVAL_NEAR_DUPLICATE + 0.05)
+    assert below.clean and below.max_similarity == EVAL_NEAR_DUPLICATE
+
+
 def test_the_near_duplicate_check_is_blind_to_a_row_quoted_inside_a_longer_one() -> None:
     """The shape Jaccard misses worst, with the numbers that say how badly.
 

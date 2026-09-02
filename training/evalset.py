@@ -322,6 +322,13 @@ def compare(
     sharing a trigram can possibly be close, and the naive form is tens of
     millions of set intersections.
 
+    The near arm is INCLUSIVE: a row landing exactly on the threshold is a row
+    that reappeared. Loosening it to `best > threshold` left the whole suite
+    green when that was tried, because every other measured pair here sits clear
+    of 0.6 on one side or the other, so
+    `test_a_row_exactly_at_the_near_duplicate_threshold_is_caught` builds a pair
+    that lands on the line and holds the comparison there.
+
     The exact arm is not the near arm at a threshold of 1.0. Two rows can be
     normalised-identical and score below 1.0 here when one of them is under
     three words, because `shingles` falls back to single words for a short text
