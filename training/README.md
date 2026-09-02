@@ -47,12 +47,13 @@ and a venv holding a gigabyte of torch is not something to find out about from
 
 ### From fetch to export
 
-Two commands exist so far, and they are written down because they run. The
-scripts that fine-tune the encoder, export to ONNX and score the ship bar
-arrive with the tasks that write them, and each lands here when it exists: a
-sequence documented ahead of its scripts is a list of commands that do not run,
-which is the class of claim this repository spends most of its effort not
-making.
+Three commands exist so far, and they are written down because they run. The
+scripts that fine-tune the encoder and export to ONNX arrive with the tasks
+that write them, and each lands here when it exists: a sequence documented
+ahead of its scripts is a list of commands that do not run, which is the class
+of claim this repository spends most of its effort not making.
+`test_every_runnable_training_module_is_a_documented_command` holds this block
+to the modules that actually have a `__main__`, in both directions.
 
 ```bash
 # The synthetic corpus. Needs a local Ollama with qwen2.5:14b pulled.
@@ -62,12 +63,40 @@ making.
 # check between them. Needs Ollama with nomic-embed-text, and the network, for
 # the pinned corpora it verifies against their recorded digests.
 ./.venv-training/bin/python -m training.splits
+
+# The ship bar. Runs the pinned reference classifiers over the external
+# evaluation set through benchmarks/run.py and writes training/ship_bar.json.
+# From the BENCHMARK virtualenv, not this one -- see below.
+PYTHONPATH=src:. /tmp/guardrails-bench/bin/python -m training.ship_bar \
+  --model-dir /tmp/deberta-prompt-injection \
+  --model-dir-v2 /tmp/deberta-prompt-injection-v2
 ```
 
-Both write into `training/generated/`, which is committed, and both are
-re-checkable from what they wrote without either dependency: every test over
-those artifacts reads the committed files, and the two that talk to a model
-server are gated behind `JAMJET_GUARDRAILS_OLLAMA=1`.
+The first two write into `training/generated/`, which is committed, and both
+are re-checkable from what they wrote without either dependency: every test
+over those artifacts reads the committed files, and the two that talk to a
+model server are gated behind `JAMJET_GUARDRAILS_OLLAMA=1`.
+
+#### Why the ship bar runs in the benchmark virtualenv
+
+Because the harness is `benchmarks/run.py` and that is the environment
+`benchmarks/requirements.txt` pins. The bar exists to compare our model against
+the reference models through ONE scoring path, and a driver that loaded the
+same ONNX files under a different `onnxruntime` would be a second path wearing
+the first one's name. This tree pins `onnxruntime==1.23.0` for the export step
+and the benchmark tree pins `1.29.0`; the two are not interchangeable for a
+number that gets published.
+
+`benchmarks/README.md` has the venv and the two model downloads. `PYTHONPATH`
+carries `src` so the structural half of the bar can import the package, and `.`
+so `training` resolves as a package from the repository root.
+
+`training/ship_bar.json` is committed and is the one artifact in this tree
+written BEFORE the thing it judges exists. Nothing in it may be edited after a
+model is trained. `tests/test_ship_bar.py` re-derives every rate from the
+counts recorded beside it, holds the recorded revisions to the pins
+`benchmarks/run.py` loads, and recomputes the structural floor from the shipped
+corpus, so a number moved by hand fails rather than persuades.
 
 ### Why 3.13 and not 3.14
 
