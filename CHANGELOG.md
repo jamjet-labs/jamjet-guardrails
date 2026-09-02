@@ -36,6 +36,19 @@ a number that changes quietly is a number nobody can rely on.
   cases. That row measures the engine under one fixed configuration, printed
   in `docs/conformance.md`, and says nothing about a rule you write yourself.
 
+### Security
+
+- `GuardrailUnavailableError` is now also raised from `PatternGuardrail.check`,
+  not only at construction, when a caller passes a context whose direction the
+  guardrail does not declare. This is the same error as the constructor raises
+  when a check is misconfigured, because both mistakes mean a check was asked
+  to evaluate something it was not set up for, and answering would falsely
+  report that content had been examined. This replaces the previous silent allow
+  on content with no matches and a bare `KeyError` on content with matches. A
+  chain never triggers this, since it only calls a guardrail whose declared
+  directions contain the context's direction; the error is for a caller holding
+  a single guardrail directly.
+
 ### Notes
 
 - Still no runtime dependencies. The authoring primitive is standard library
@@ -81,10 +94,9 @@ First release.
   reported as redacted.
 - A check that raises becomes `deny`, never `allow`, and the error message is
   withheld from the verdict because a detector's message may quote the content.
-- A check that would be configured and silent raises `GuardrailUnavailableError`
-  at construction (when not installed) or at call time (when ``PatternGuardrail.check``
-  is asked about a direction it does not declare), rather than running unguarded.
-  An empty list of checks is refused for the same reason.
+- A check named in configuration that is not installed raises
+  `GuardrailUnavailableError` at construction rather than running unguarded. An
+  empty list of checks is refused for the same reason.
 
 ### Notes
 
