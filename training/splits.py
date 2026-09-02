@@ -227,7 +227,20 @@ def leaks(record: dict[str, Any], sources: Sequence[Source], rows: Sequence[Row]
             f"the record names {contamination['fitted_on']} as the pool that was fitted on, "
             f"and this module fits on {FITTED_ON}"
         )
-    compared = {pool_key(pool["pool"]): pool for pool in contamination["pools"]}
+    compared: dict[str, Any] = {}
+    for pool in contamination["pools"]:
+        key = pool_key(pool["pool"])
+        if key in compared:
+            # Two recorded pools under one identity: a dict would keep the last
+            # and silently drop the other, and the dropped one could be the one
+            # carrying the overlap. The gate fails closed instead.
+            found.append(
+                f"the contamination record names {pool['pool']} and "
+                f"{compared[key]['pool']} under one identity {key}, so one of "
+                "them would be read in place of the other"
+            )
+            continue
+        compared[key] = pool
     for key, name in sorted(admitted(sources).items()):
         pool = compared.get(key)
         if pool is None:

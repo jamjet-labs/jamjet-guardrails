@@ -167,6 +167,11 @@ def separated_twins(labels: Sequence[int], keys: Sequence[object], made: Split) 
     """
     on_left = set(made.train)
     on_right = set(made.held_out)
+    # A side naming one row twice is not a partition, and a set would swallow
+    # the second naming silently. `split` cannot produce this; the caller this
+    # function exists to check can, and did in review.
+    if len(on_left) != len(made.train) or len(on_right) != len(made.held_out):
+        raise SplitError("a side of the split names the same row more than once")
     broken: list[int] = []
     for left, right in twins(labels, keys):
         sides = [(index in on_left, index in on_right) for index in (left, right)]

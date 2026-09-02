@@ -934,7 +934,13 @@ def test_the_usage_line_reads_the_same_whatever_the_colour_setting(colour: str, 
     review passed under `NO_COLOR=1` and failed under a colour-capable
     terminal, which is a test of the terminal.
     """
-    env = {k: v for k, v in os.environ.items() if k not in ("FORCE_COLOR", "NO_COLOR")}
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        # PYTHON_COLORS outranks both of the settings this test injects, so an
+        # inherited value would decide the outcome instead of the parameter.
+        if k not in ("FORCE_COLOR", "NO_COLOR", "PYTHON_COLORS")
+    }
     env[colour] = value
     run = subprocess.run(
         [sys.executable, "-m", "jamjet_guardrails.eval.cli", "--help"],

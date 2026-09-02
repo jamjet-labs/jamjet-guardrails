@@ -16,6 +16,7 @@ checked rather than a source it cleared.
 from __future__ import annotations
 
 import ast
+import copy
 import functools
 import hashlib
 import inspect
@@ -4383,6 +4384,35 @@ def test_the_leak_check_fires_when_an_admitted_pool_was_never_compared() -> None
     found = leaks(_split_record(), sources, load_generated(GENERATED))
     assert len(found) == 1, f"expected one finding, got {found}"
     assert "was never compared against the evaluation set" in found[0], found[0]
+
+
+def test_the_leak_check_reports_two_pools_recorded_under_one_identity() -> None:
+    """A dict keyed on identity keeps the last spelling and loses the first.
+
+    Two pins of one dataset are one pool, and only one of them was measured.
+    Reading whichever entry survived the dict in place of the other could read
+    a clean measurement where the dropped one carried the overlap, so the gate
+    reports the collision instead of choosing."""
+    # A deep copy, because `_split_record` is cached and shared by a dozen
+    # tests; mutating it in place failed two of them, order-dependently.
+    record = copy.deepcopy(_split_record())
+    pools = list(record["eval"]["contamination"]["pools"])
+    twin = dict(pools[-1])
+    twin["pool"] = f"{twin['pool']}@deadbee"
+    record["eval"]["contamination"]["pools"] = [*pools, twin]
+    found = leaks(record, load_sources(SOURCES), load_generated(GENERATED))
+    assert any("under one identity" in f for f in found), found
+
+
+def test_separated_twins_refuses_a_side_that_names_a_row_twice() -> None:
+    """A side naming one row twice is not a partition, and a set would hide it.
+
+    `split` cannot produce this; the caller this function exists to check can,
+    which is the same reason the function scores any partition at all."""
+    labels = [0, 1, 0, 1]
+    keys = ["a", "a", "b", "b"]
+    with pytest.raises(SplitError, match="more than once"):
+        separated_twins(labels, keys, Split((0, 1, 1), (2, 3)))
 
 
 def test_screening_a_corpus_is_not_admitting_it() -> None:
