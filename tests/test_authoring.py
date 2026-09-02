@@ -191,8 +191,14 @@ def test_a_banned_type_is_held_to_the_same_naming_rule() -> None:
 
 
 def test_a_pattern_that_matches_the_empty_string_is_refused() -> None:
-    """A zero-width match produces a zero-width span, which the chain refuses
-    mid-run. Refusing at construction moves the failure to the mistake."""
+    """Catches a pattern that matches the empty string outright, such as `x*`.
+    It does NOT catch a pattern gated by a lookbehind: `(?<=a)b*` matches
+    nothing at position zero of "" and so passes this check, then matches
+    zero-width at (2, 2) against real content such as "xa". The real backstop
+    for that shape is downstream, at match time: the chain refuses to apply a
+    redact whose finding span does not satisfy
+    `0 <= start < end <= len(content)`, and raises rather than applying it,
+    which fails closed."""
     with pytest.raises(ValueError, match="empty string"):
         _guard(patterns={"ANYTHING": r"x*"})
 
@@ -234,6 +240,24 @@ def test_a_decision_outside_redact_and_deny_is_refused(decision: str) -> None:
 def test_a_guardrail_declaring_no_direction_is_refused() -> None:
     with pytest.raises(GuardrailUnavailableError, match="no direction"):
         _guard(directions=frozenset())
+
+
+def test_a_misspelled_direction_is_refused() -> None:
+    """A `Context` only ever carries "input" or "output", so a typo such as
+    "inptu" is not empty and clears the check above, then names a direction
+    that can never arrive: the guardrail would construct, run, and never
+    match anything, silently."""
+    with pytest.raises(GuardrailUnavailableError, match="inptu"):
+        _guard(directions=frozenset({"inptu"}))
+
+
+def test_a_mix_of_one_good_and_one_bad_direction_is_refused() -> None:
+    """The shape a real config is most likely to write: one direction that
+    works and one that does not. A check for "at least one runnable
+    direction" would wrongly let this through, since "input" is runnable;
+    every declared direction has to be one a Context can carry."""
+    with pytest.raises(GuardrailUnavailableError, match="inptu"):
+        _guard(directions=frozenset({"input", "inptu"}))
 
 
 def test_directions_default_to_both() -> None:
@@ -371,3 +395,22 @@ def test_a_pattern_is_searched_rather_than_anchored() -> None:
     pitfall the documentation names."""
     guard = _guard(patterns={"MEDIA": r"packages/media/"})
     assert guard.check("foo/packages/media/bar", IN).decision == "deny"
+
+
+def test_a_second_match_directly_behind_a_greedy_first_one_is_not_lost() -> None:
+    """A user's own pattern reaches `_matches` unmodified, so the leak `_scan`
+    exists to close is theirs to inherit if this primitive ever used
+    `finditer` instead. Here the first token's greedy body runs past the
+    second token's `tok_` prefix and stops at its own underscore, which is
+    where `finditer` resumes: it finds one match covering characters 0 to 15
+    and never tries starting inside the second token at all. `_scan` tries
+    every start position, finds the second token too, and the merge collapses
+    both into one region, so the redaction removes the second token's full
+    eight-character body along with the first rather than leaving it standing
+    behind a placeholder that claims the content was redacted."""
+    guard = _guard(patterns={"TOK": r"tok_[A-Za-z0-9]+"}, on_match="redact")
+    content = "tok_" + "A" * 8 + "tok_" + "B" * 8
+    verdict = guard.check(content, IN)
+    assert verdict.decision == "redact"
+    assert verdict.content is not None
+    assert "B" not in verdict.content

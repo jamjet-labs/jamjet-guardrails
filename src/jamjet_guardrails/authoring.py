@@ -241,6 +241,18 @@ class PatternGuardrail:
                     "so no unbounded repeat encloses another"
                 )
             built = re.compile(pattern) if isinstance(pattern, str) else pattern
+            # Catches a pattern that matches the empty string OUTRIGHT, such as
+            # `x*` or `(a|)`. It does NOT catch a pattern gated by a lookbehind:
+            # `built.search("")` probes only position zero of the empty string,
+            # and `(?<=a)b*` returns None there, so it constructs cleanly and
+            # then matches zero-width at (2, 2) against real content such as
+            # "xa". No static probe over the pattern alone catches that in
+            # general, so this check stays a narrower net than its message
+            # might suggest. The real backstop is at match time, downstream in
+            # the chain: it refuses to apply a redact whose finding span does
+            # not satisfy `0 <= start < end <= len(content)`, and raises rather
+            # than applying it, which fails closed per the caller-facing
+            # contract in `GuardrailChain.run`'s docstring.
             if built.search("") is not None:
                 raise ValueError(
                     f"the pattern for {type_name!r} matches the empty string, so it "
@@ -264,7 +276,7 @@ class PatternGuardrail:
                     "iterable of its own characters"
                 )
             for substring in substrings:
-                if not substring or not substring.casefold():
+                if not substring:
                     raise ValueError(
                         f"banned[{type_name!r}] carries an empty substring, which "
                         "matches everywhere"
@@ -285,6 +297,20 @@ class PatternGuardrail:
             raise GuardrailUnavailableError(
                 f"{name!r} declares no direction it can run in, so every context would "
                 f"skip it. Expected at least one of {sorted(_RUNNABLE)}"
+            )
+
+        # A member outside _RUNNABLE clears the check above (the set is not
+        # empty) and clears on_match's resolution below (nothing there reads
+        # against _RUNNABLE either), so a typo such as "inptu" built a
+        # guardrail that runs, never matches a real Context, and is silent
+        # about it. A Context only ever carries "input" or "output", so any
+        # other member names a direction that can never arrive.
+        unknown = sorted(directions - _RUNNABLE)
+        if unknown:
+            raise GuardrailUnavailableError(
+                f"{name!r} declares direction(s) {unknown} that a Context never "
+                f"carries (its direction is one of {sorted(_RUNNABLE)}), so it "
+                "would be skipped in every context and never run"
             )
 
         if isinstance(on_match, str):
