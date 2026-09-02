@@ -37,6 +37,7 @@ ROOT = Path(__file__).resolve().parent.parent
 RECORD = ROOT / "training" / "artifacts" / "ship_check.json"
 SPLITS = ROOT / "training" / "generated" / "splits.json"
 MANIFEST = ROOT / "training" / "sources.yaml"
+RESULTS = ROOT / "docs" / "measurements" / "2026-08-31-phase2b1-results.md"
 
 
 def check() -> dict[str, Any]:
@@ -296,3 +297,88 @@ def test_the_verdict_does_not_authorise_publishing_a_headline_row() -> None:
     """
     assert check()["verdict"]["publish_headline_precision_and_recall"] is False
     assert bar()["authorises"]["publish_headline_precision_and_recall"]["allowed"] is False
+
+
+def test_the_results_note_states_the_numbers_the_verdict_holds() -> None:
+    """Two tables, and they have to agree, across a document a reader will quote.
+
+    `docs/measurements/2026-08-31-phase2b1-results.md` is the stage's finding,
+    and every figure in it is a claim about data that lives in
+    `training/artifacts/`. Templated from those records here rather than read
+    back as prose, so a sentence that stopped being true fails instead of
+    persuading. The reference rows are rebuilt from their counts through the
+    same `f1`, which is what makes the published table a view of the record and
+    not a second copy of it.
+
+    The three headline rows the note says this measurement does NOT join are
+    read out of `BENCHMARKS.md`, for the same reason: quoting a published
+    precision that has since moved would misdescribe the very comparison the
+    note exists to refuse.
+    """
+    note = " ".join(RESULTS.read_text(encoding="utf-8").split())
+    recorded = check()
+    semantic = recorded["semantic"]
+    counts = semantic["counts"]
+    ours = (
+        f"| `{recorded['model']['file']}` | {counts['tp']} | {counts['fp']} | "
+        f"{counts['fn']} | {counts['tn']} | {semantic['precision']:.4f} | "
+        f"{semantic['recall']:.4f} | **{semantic['f1']:.4f}** |"
+    )
+    assert ours in note, f"the note does not state {ours!r}"
+    for entry in recorded["references"]:
+        rates = f1({key: int(entry["counts"][key]) for key in ("tp", "fp", "fn")})
+        row = (
+            f"| `{entry['model']}` | {entry['counts']['tp']} | {entry['counts']['fp']} | "
+            f"{entry['counts']['fn']} | {entry['counts']['tn']} | {rates['precision']:.4f} | "
+            f"{rates['recall']:.4f} | {rates['f1']:.4f} |"
+        )
+        assert row in note, f"the note does not state {row!r}"
+
+    verdicts = recorded["verdict"]
+    structural = recorded["structural"]
+    metrics = json.loads(METRICS.read_text(encoding="utf-8"))
+    dev = float(metrics["at_the_chosen_configuration"][SHIPPED]["dev"]["f1"])
+    buried = [
+        float(row["f1"]) for which in ("fp32", "int8") for row in metrics["sweep"][which]["buried"]
+    ]
+    total = int(recorded["corpus"]["rows"])
+    positives = int(recorded["corpus"]["labels"]["jailbreak"])
+    negatives = int(recorded["corpus"]["labels"]["benign"])
+    everything = 2 * (positives / total) / ((positives / total) + 1)
+    claims = [
+        f"The bar is `> {verdicts['semantic']['minimum']}`",
+        f"Measured {semantic['f1']:.4f}",
+        f"**{abs(float(verdicts['semantic']['margin'])):.4f} absolute** below",
+        (
+            f"{structural['counts']['tp']} TP, {structural['counts']['fp']} FP, "
+            f"{structural['counts']['fn']} FN, {structural['counts']['tn']} TN over "
+            f"{structural['cases']} cases, decision-level recall {structural['recall']:.10f}"
+        ),
+        f"= {structural['floor']}, and the check is `recall >= floor`",
+        f"False by {abs(float(verdicts['structural']['margin'])):.5f}",
+        f"scores F1 {dev:.4f} on DEV",
+        f"is {dev - float(semantic['f1']):.4f} absolute",
+        f"would score F1 {everything:.4f} on this corpus",
+        f"Accuracy was {(counts['tp'] + counts['tn']) / total:.4f} against {negatives / total:.4f}",
+        f"between {min(buried):.2f} and {max(buried):.2f} F1",
+        (
+            f"the {total} external rows of `{recorded['corpus']['name']}` "
+            f"({negatives} benign, {positives} jailbreak)"
+        ),
+    ]
+    for claim in claims:
+        assert claim in note, f"the note does not state {claim!r}"
+
+    published = {
+        row.split("|")[1].strip(): (row.split("|")[6].strip(), row.split("|")[7].strip())
+        for row in (ROOT / "BENCHMARKS.md").read_text(encoding="utf-8").splitlines()
+        if row.startswith("| ") and row.count("|") > 8 and "in-repo" in row
+    }
+    assert {"pii", "secrets", "injection-structural"} <= set(published), (
+        f"BENCHMARKS.md no longer publishes the three headline rows: {sorted(published)}"
+    )
+    for check_name in ("pii", "secrets", "injection-structural"):
+        precision, recall = published[check_name]
+        assert f"`{check_name}` ({precision} / {recall})" in note, (
+            f"the note quotes a published row for {check_name} that BENCHMARKS.md does not"
+        )
