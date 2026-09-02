@@ -39,6 +39,17 @@ def test_the_byte_span_starts_at_the_character_that_crossed_the_limit() -> None:
     assert _limit_spans("abécd", Limits(max_bytes=3)) == [("LENGTH_LIMIT", (2, 5))]
 
 
+def test_byte_limit_boundary_exactly_at_the_limit() -> None:
+    """A character whose cumulative byte total exactly equals the limit separates
+    the two boundary forms. The test 'abécd' with max_bytes=3 jumps from 2 bytes
+    to 4 bytes at the third character, so neither `>` nor `>=` sees the boundary.
+    This case lands exactly on 4 bytes, where `>` and `>=` disagree: `>` fires at
+    the next character (index 3), while `>=` fires at the character that reached
+    the limit (index 2). The incorrect form truncates a character the limit did
+    not object to."""
+    assert _limit_spans("aébc", Limits(max_bytes=4)) == [("LENGTH_LIMIT", (3, 4))]
+
+
 def test_lines_are_counted_and_the_span_starts_at_the_first_excess_line() -> None:
     assert _limit_spans("a\nb\nc", Limits(max_lines=2)) == [("LENGTH_LIMIT", (4, 5))]
 
