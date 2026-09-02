@@ -84,14 +84,17 @@ def fold(source: str, per_char: Callable[[str], str]) -> _Folded:
     class of code points, and mapping a confusable to its prototype are all
     one-character rules. A fold that needs context is a different mechanism and
     does not belong here.
+
+    A character that produces nothing appends an empty string and extends by
+    an empty list, so it contributes to neither the view nor the map without
+    needing to be special-cased.
     """
     out: list[str] = []
     origin: list[int] = []
     for index, char in enumerate(source):
         produced = per_char(char)
-        if produced:
-            out.append(produced)
-            origin.extend([index] * len(produced))
+        out.append(produced)
+        origin.extend([index] * len(produced))
     return _Folded(text="".join(out), origin=tuple(origin), source_length=len(source))
 
 

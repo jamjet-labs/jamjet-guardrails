@@ -39,6 +39,25 @@ def test_a_fold_that_expands_one_character_maps_every_product_to_its_source() ->
     assert source[slice(*view.span(start, start + len("strasse")))] == "Straße"
 
 
+def test_a_match_that_starts_inside_an_expanded_product_still_finds_its_source() -> None:
+    """The existing expansion test starts its match before the sharp s and
+    ends after it, so the product's two view characters are read only from
+    the interior of a longer match: ``start`` and ``end`` both land on plain
+    one-to-one characters either side of it. This one's match starts ON the
+    product itself. ``origin`` for "Straße" is (0, 1, 2, 3, 4, 4, 5): view
+    offset 4 is the first of the two view characters the sharp s produces,
+    and reading ``origin[start]`` from inside that run of duplicate values,
+    rather than from a plain one-to-one character before it, has never been
+    exercised before."""
+    source = "Straße"
+    view = casefold_view(source)
+    assert view.origin == (0, 1, 2, 3, 4, 4, 5)
+    start = view.text.index("sse")
+    span = view.span(start, start + len("sse"))
+    assert span == (4, 6)
+    assert source[slice(*span)] == "ße"
+
+
 def test_a_fold_that_deletes_a_character_spans_the_run_that_carried_it() -> None:
     """A marker laundered with a zero-width space matches in the view, and the
     span has to cover the zero-width space too: a redaction that left it
