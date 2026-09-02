@@ -8,9 +8,11 @@ it would arrive.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
-from jamjet_guardrails.authoring import Limits, _limit_spans
+from jamjet_guardrails.authoring import Limits, _limit_spans, _nests_unbounded_repeats
 
 
 def test_content_at_the_limit_is_not_over_it() -> None:
@@ -85,3 +87,45 @@ def test_a_limit_below_one_is_refused(field: str) -> None:
     check that is on rather than a check that is configured."""
     with pytest.raises(ValueError, match="at least 1"):
         Limits(**{field: 0})
+
+
+# Each row was run against the implementation on 3.10.20 and 3.14.5 and agreed.
+# The `False` rows matter more than the `True` ones: a guard that refuses an
+# ordinary pattern is a guard that gets worked around.
+_NESTING = [
+    (r"(a+)+b", True),
+    (r"(a*)*", True),
+    (r"([a-z]+)*", True),
+    (r"(?:\w+\s?)*", True),
+    (r"(?=(a+)+)", True),
+    (r"^(a+)+$", True),
+    (r"((a+))+", True),
+    (r"(x|y+)*", True),
+    (r"(a|aa)+$", False),
+    (r"\bJIRA-\d{4,}\b", False),
+    (r"[a-z0-9-]+\.corp\.example", False),
+    (r"a{2,3}b+", False),
+    (r"(a{1,3})+", False),
+    (r"(?:ab)+c", False),
+    (r"(a+){2}", False),
+    (r"\d+", False),
+    (r"(?:[a-f0-9]{2})+", False),
+    (r"(a?)*", False),
+]
+
+
+@pytest.mark.parametrize(("pattern", "nests"), _NESTING, ids=[p for p, _ in _NESTING])
+def test_the_nested_repeat_guard_agrees_with_the_recorded_table(pattern: str, nests: bool) -> None:
+    assert _nests_unbounded_repeats(pattern) is nests
+
+
+def test_an_alternation_of_bounded_repeats_is_not_nesting() -> None:
+    """`(a|aa)+` is the textbook catastrophic pattern that this guard does NOT
+    catch, and the docstring says so. Pinned here so the claim in the docstring
+    is a measurement rather than a hedge: if the guard is ever widened to catch
+    it, this test fails and the docstring is corrected in the same commit."""
+    assert _nests_unbounded_repeats(r"(a|aa)+$") is False
+
+
+def test_a_compiled_pattern_is_accepted_and_its_flags_are_used() -> None:
+    assert _nests_unbounded_repeats(re.compile(r"(a+)+", re.IGNORECASE)) is True
