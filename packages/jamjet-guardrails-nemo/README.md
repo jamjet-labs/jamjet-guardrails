@@ -157,3 +157,30 @@ Colang 2.0 flows. The shipped flows are Colang 1.0.
 ## Licence
 
 Apache-2.0.
+
+## The framework this adapter installs makes network calls
+
+`jamjet-guardrails` says on its own front page: no dependencies, no network
+calls, no model downloads. That is true of the core and it stops being true of
+your environment the moment you install this adapter, so it is said here rather
+than left for you to find.
+
+Measured on `nemoguardrails` 0.24.0: it posts usage statistics to
+`https://events.telemetry.data.nvidia.com/v1.1/events/json`, with a heartbeat,
+and reads the destination from `NEMO_GUARDRAILS_USAGE_STATS_SERVER`. It is on by
+default.
+
+It turns itself off under several conditions, and two of them are yours to set:
+
+```sh
+export NEMO_GUARDRAILS_NO_USAGE_STATS=1   # this framework only
+export DO_NOT_TRACK=1                     # the cross-vendor convention
+```
+
+It also suppresses itself when `CI` is truthy, when `PYTEST_CURRENT_TEST` is
+set, when `pytest` is in `sys.modules`, and when a do-not-track file exists. That
+is why this package's own test suite never reaches the network and why a green
+CI run is not evidence about your deployment.
+
+Nothing in this adapter sends anything anywhere. The audit record it writes goes
+into the rail context and stays in your process.
