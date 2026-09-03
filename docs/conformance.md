@@ -303,15 +303,29 @@ a usable identity is refused when the chain is built, before any content has
 been checked, with the same error a registry raises for a check that would not
 check.
 
-One shape abandons the run instead of producing a `ChainResult`: a `redact` the
-chain cannot locate, meaning no findings or a finding without a span. A chain
-that rewrites from spans and is given none would report `redact` over a string
-nothing rewrote. Nothing else does. An out-of-range or malformed span is caught
-by the checks above, on every decision, before a `redact` ever reaches this
-point; a `redact` carrying no content is a verdict the chain will not rebuild,
-which makes it a synthesised `deny` like any other lie. **A caller must treat
-any exception out of a chain run as a deny.** There is no audit record when a
-run is abandoned, which is acceptable only because nothing was allowed through.
+**No guardrail behaviour abandons a run.** A `redact` the chain cannot locate,
+meaning no findings or a finding without a span, is the last shape that did. A
+chain that rewrites from spans and is given none would report `redact` over a
+string nothing rewrote, so it must not be allowed; a conforming chain refuses it
+the way it refuses every other false account a guardrail gives of itself, with a
+synthesised `deny` that keeps the run's audit record. An out-of-range or
+malformed span is caught by the checks above, on every decision; a `redact`
+carrying no content is a verdict the chain will not rebuild. **A caller must
+still treat any exception out of a chain run as a deny.** There is no audit
+record when a run is abandoned, which is acceptable only because nothing was
+allowed through.
+
+**A guardrail that cannot run is refused when the chain is built.** A guardrail
+whose declared `directions` contain none the runtime can carry is inert: it is
+skipped in every context, so it is configured, silent, and indistinguishable
+from a working check in every artifact the chain produces. Alone it yields the
+empty chain's output, and beside a live check it makes the chain quieter than
+the configuration says. A conforming implementation refuses it at construction
+rather than skipping it at run time, and refuses a declared `name` or `version`
+long enough to be a payload rather than an identity, because both are copied
+into the provenance of every verdict that guardrail produces. This
+implementation's ceiling is 200 characters; the ceiling itself is not part of
+the contract, and having one is.
 
 ## The saw hash
 

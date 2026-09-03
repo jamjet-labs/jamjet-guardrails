@@ -49,6 +49,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
+from jamjet_guardrails.eval.corpus import load_corpus
 from training.evalset import EVAL_SOURCE, EvalRow, balance, load_eval
 from training.fetch import ROOT, fetch, load_sources
 
@@ -82,13 +83,28 @@ METRIC_DEFINITION = (
 #: How the recorded floor was arrived at, kept beside the number so a later
 #: reader cannot mistake it for the published finding-level one.
 STRUCTURAL_LEVEL = "decision"
-#: A PATH, not the corpus's own version digest -- which is the whole reason
-#: unrelated work landing on this path, as Task 11 of the phase 3 foundation
-#: session did by widening injection-structural to run on output, can move
-#: `structural_floor` at all; see `structural_floor_rederived` in the recorded
-#: bar for what that cost, and this is filed as a follow-up rather than fixed
-#: here.
+#: The corpus the structural floor is measured on, named by PATH because that is
+#: what the harness opens.
 STRUCTURAL_CORPUS = "corpora/injection-structural/in-repo.jsonl"
+
+#: And by VERSION, which is what makes the registration immutable. A path alone
+#: is a moving target: unrelated work landing on it, as Task 11 of the phase 3
+#: foundation session did by widening `injection-structural` to run on output,
+#: moves `structural_floor` by definition, because the floor IS decision-level
+#: recall measured on whatever is at that path. That is the correct definition
+#: and it was the whole problem: with only a path recorded, a legitimate
+#: re-derivation and a silent edit to fit a result are the same event, and
+#: neither is visible in the file.
+#:
+#: `Corpus.version` is a digest over every case's id, text, direction, expected
+#: decision and expected findings, so it moves when a case is added, re-texted
+#: or RELABELLED. Pinning it here means a corpus that moves turns
+#: `tests/test_ship_bar.py` red and stays red until the move is disclosed in
+#: `structural_floor_rederived`, which is the mechanism the earlier move had to
+#: be caught by hand. Pinned on 2026-09-03, against the corpus as it stood after
+#: that move; the 146-case corpus that preceded it was never digested, and no
+#: value is invented for it here.
+STRUCTURAL_CORPUS_VERSION = "b704703f431d"
 
 #: The published FINDING-level recall on the same corpus, recorded so the two
 #: numbers are visibly different things rather than one number that moved.
@@ -373,6 +389,29 @@ def why_the_structural_side_exists() -> dict[str, Any]:
     }
 
 
+def structural_corpus_version() -> str:
+    """The digest of the corpus the floor is measured on, read off disk.
+
+    `Corpus.version` covers each case's id, text, direction, expected decision
+    and expected findings, so it moves when a case is added, re-texted or
+    relabelled. Relabelling is the one worth naming: changing an expectation to
+    match whatever the check currently does is the cheapest way to turn a
+    failing gate green, and under a digest of ids and text alone it would be
+    invisible.
+    """
+    path = ROOT / STRUCTURAL_CORPUS
+    # The label is DERIVED from the path rather than written out, which is how
+    # `src/jamjet_guardrails/eval/cli.py` spells it and also what keeps
+    # `tests/test_training_data.py::test_every_external_identifier_in_this_tree_is_accounted_for`
+    # meaningful. A corpus label is the check name and the source name joined by
+    # a slash, which is character for character the shape that guard treats as a
+    # third party's model or dataset whose training data nothing screens. This
+    # one is first-party, so the right answer is not to exempt the literal, it
+    # is not to write one.
+    corpus = load_corpus(path, name=f"{path.parent.name}/{path.stem}")
+    return corpus.version
+
+
 def structural_floor(run: ModuleType) -> dict[str, Any]:
     """The structural layer's DECISION-level recall, re-derived from the corpus.
 
@@ -388,6 +427,10 @@ def structural_floor(run: ModuleType) -> dict[str, Any]:
     rates = f1(counts)
     return {
         "corpus": STRUCTURAL_CORPUS,
+        # Derived from the file, never copied from the constant. A record that
+        # quoted its own pin would agree with itself no matter what was on disk,
+        # which is the failure mode this field exists to remove.
+        "corpus_version": structural_corpus_version(),
         "cases": sum(counts.values()),
         "counts": counts,
         "recall": rates["recall"],

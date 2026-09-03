@@ -410,25 +410,34 @@ def test_a_guardrail_whose_only_direction_no_context_carries_is_refused(
         build("sideways")
 
 
-def test_the_chain_an_inert_guardrail_produces_is_the_one_build_chain_refuses() -> None:
-    """Why counting the built guardrails is not enough, kept executable.
+def test_the_chain_now_refuses_the_inert_guardrail_it_used_to_run_silently() -> None:
+    """CHANGED from `test_the_chain_an_inert_guardrail_produces_is_the_one_build_
+    chain_refuses`, which RAN an inert guardrail through `GuardrailChain` and
+    asserted the silence it produced.
 
-    One inert guardrail yields byte for byte the `GuardrailChain([])` output the
-    emptiness refusal exists to prevent -- allow, content untouched, no verdicts
-    -- through a door a count cannot see. Alongside a live detector it is worse
-    than useless: the chain is quieter than the caller asked for and raises
-    nothing to say so.
+    That test documented the hole rather than closing it. `build` and
+    `build_chain` refused an inert guardrail on the registry door; `GuardrailChain`
+    took it, and the output was byte for byte the `GuardrailChain([])` output the
+    emptiness refusal exists to prevent: allow, content untouched, no verdicts.
+    Direct construction is a supported door, not a back one, because the chain's
+    own docstring tells a caller who genuinely wants no checks to write
+    `GuardrailChain([])` themselves.
+
+    `_identity_of` now makes the same refusal the registry makes, so the shape
+    below cannot be built at all. The mixed case is the one that mattered: an
+    inert guardrail beside a live detector made the chain quieter than the
+    caller asked for and raised nothing to say so, and a count of the guardrails
+    built could not see it because two were built.
+
+    Mutation-checked: deleting the intersection test in `_identity_of` restores
+    both silences and fails both halves of this test.
     """
-    payload = "key AKIAIOSFODNN7EXAMPLE mail alice@example.com ssn 123-45-6789"
-
-    alone = GuardrailChain([Inert()]).run(payload, OUT)
-    assert alone.decision == "allow"
-    assert alone.content == payload
-    assert alone.verdicts == ()
+    with pytest.raises(GuardrailUnavailableError, match="no direction it can run in"):
+        GuardrailChain([Inert()])
 
     mixed: list[Guardrail] = [PiiGuardrail(), Inert()]
-    result = GuardrailChain(mixed).run(payload, OUT)
-    assert [v.provenance.detector for v in result.verdicts] == ["pii"]
+    with pytest.raises(GuardrailUnavailableError, match="position 1 in the chain"):
+        GuardrailChain(mixed)
 
 
 def test_the_chain_refuses_a_half_built_guardrail_before_it_checks_anything() -> None:

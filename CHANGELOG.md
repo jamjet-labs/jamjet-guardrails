@@ -29,8 +29,26 @@ a number that changes quietly is a number nobody can rely on.
   `ci.yml` already lints, typechecks, tests and gates the benchmarks on five
   interpreters and a scan that repeats that work is a scan nobody reads.
 
-### Security
+### Changed
+- A `redact` the chain cannot locate, meaning no findings or a finding carrying
+  no span, is now a synthesised `deny` instead of a `GuardrailChainError` out of
+  `run`. It was the last shape in which one misbehaving detector cost the whole
+  run its audit record, including the verdicts of every guardrail that had
+  already run. Both shapes are reachable from an ordinary `Guardrail`
+  implementation, because a `Verdict` may carry a finding with no span and
+  nothing required a `redact` to carry findings at all, which makes them
+  detector contract violations rather than assertions about this library. The
+  content is not forwarded either way. `GuardrailChain._spans_of` keeps the same
+  refusals for a direct caller, where they are now genuinely unreachable through
+  `run`.
+- `training/ship_bar.json` records the structural corpus's own version digest
+  beside its path. The recorded floor is defined as decision-level recall
+  measured on the corpus at that path, so unrelated work that legitimately grows
+  that corpus moves the floor; with only a path recorded, nothing could tell a
+  re-derivation from a silent edit. A test now re-derives the digest and fails
+  until a move is disclosed in `structural_floor_rederived`.
 
+### Security
 - Every GitHub Action in every workflow is pinned to a full commit SHA with a
   comment naming the release it resolves to, in place of the floating tags
   (`actions/checkout@v7` and the rest) the workflows used before. A tag is a
@@ -39,6 +57,27 @@ a number that changes quietly is a number nobody can rely on.
 - `tests/test_workflows.py` keeps them pinned. It reads every workflow file git
   tracks rather than a list of names, parses each with PyYAML, and fails on any
   `uses:` that is not a 40-hex commit SHA carrying a version comment.
+- `GuardrailChain` refuses, at construction, a guardrail whose declared
+  `directions` hold none the runtime can carry. `build` and `build_chain`
+  already refused this on the registry door; `GuardrailChain` did not, and it is
+  a supported door, because the chain's own documentation tells a caller who
+  wants no checks to construct `GuardrailChain([])` directly. Such a guardrail
+  is inert: it is skipped in every context, so alone it produced the empty
+  chain's output, which is `allow` with the content untouched and no verdicts,
+  and beside a live detector it made the chain quieter than the configuration
+  said while raising nothing to report it. The test is intersection with the
+  runnable set rather than emptiness, so `{"inptu"}` and `{"stream"}` are
+  refused with `frozenset()`.
+- `GuardrailChain` refuses a declared `name` or `version` longer than 200
+  characters, the ceiling every other caller-supplied string in an audit record
+  was already held to. Both are copied into the `Provenance` of every verdict
+  that guardrail produces, and they were bounded only where they reached an
+  error message, so a two-million-character name cost one truncated error string
+  and an unbounded `provenance.detector` in every verdict of every run.
+  Truncating the stored copy was rejected: a truncated name is a record that
+  does not say what the guardrail declared, and the chain grades a returned
+  `provenance.detector` against that copy, so the honest guardrail returning its
+  own full name would be the one recorded as lying.
 
 ## [0.3.0]
 

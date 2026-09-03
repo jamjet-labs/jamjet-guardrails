@@ -77,6 +77,7 @@
   "structural_floor_level": "decision",
   "structural_floor_detail": {
     "corpus": "corpora/injection-structural/in-repo.jsonl",
+    "corpus_version": "b704703f431d",
     "cases": 154,
     "counts": {
       "tp": 49,
@@ -132,7 +133,8 @@
         "fn": 6,
         "tn": 92
       },
-      "recall": 0.8846153846153846
+      "recall": 0.8846153846153846,
+      "corpus_version": null
     },
     "current": {
       "floor": 0.891,
@@ -143,11 +145,13 @@
         "fn": 6,
         "tn": 97
       },
-      "recall": 0.8909090909090909
+      "recall": 0.8909090909090909,
+      "corpus_version": "b704703f431d"
     },
     "reason": "corpora/injection-structural/in-repo.jsonl gained 8 output-direction cases (3 deny, 5 allow) when injection-structural widened at 0.2.0 to run on output as well as input. structural_floor_detail.recall is DEFINED as decision-level recall measured on the corpus AT THAT PATH, not as a value this file merely reports, so a corpus that legitimately grows re-derives the floor by the same rule that computed it the first time. Nothing about the classifier or the semantic side moved it, and nothing about this stage chose to move it either -- the corpus moved for a reason of its own, in a different task, and the floor followed by definition.",
     "verdict_unaffected": "training/artifacts/ship_check.json's recorded verdict was reached against the EARLIER floor, 0.885 over the 146-case corpus, and it stands: the classifier failed on the semantic side, F1 0.36722606120434353 against a required strictly-greater 0.8995918367346939, and separately failed the harness's own controls gate on its own, and this re-derivation touches neither. A floor that had instead been the side deciding the outcome would have needed the verdict re-run against the new number before this note could say the outcome held; it did not need to be, because it was not the side that decided.",
-    "disclosure": "This key exists because tamper-evidence is preserved by DOCUMENTING a change, never by making the change indistinguishable from the original registration. structural_floor above reads 0.891, not the 0.885 this bar carried at recorded_utc, and without this key nothing in the file said so: a reader would reasonably conclude 0.891 was what was registered. It was not. recorded_utc, recorded_before_any_model_existed, our_minimum and reference_score are untouched by this and remain exactly what they were before any model existed; only the structural side moved, which this file's own rationale already defines as re-derived from the shipped corpus rather than copied -- so a move was always possible, and what was missing was the record of one having happened."
+    "disclosure": "This key exists because tamper-evidence is preserved by DOCUMENTING a change, never by making the change indistinguishable from the original registration. structural_floor above reads 0.891, not the 0.885 this bar carried at recorded_utc, and without this key nothing in the file said so: a reader would reasonably conclude 0.891 was what was registered. It was not. recorded_utc, recorded_before_any_model_existed, our_minimum and reference_score are untouched by this and remain exactly what they were before any model existed; only the structural side moved, which this file's own rationale already defines as re-derived from the shipped corpus rather than copied -- so a move was always possible, and what was missing was the record of one having happened.",
+    "version_pin_added": "2026-09-03. structural_floor_detail.corpus_version and training/ship_bar.py:STRUCTURAL_CORPUS_VERSION did not exist when this bar was recorded, which is exactly why the move above had to be noticed by a person rather than by a test. The floor is DEFINED as decision-level recall on the corpus at structural_floor_detail.corpus, so a corpus that legitimately grows re-derives it; with only a path recorded, that re-derivation and a silent relabelling to fit a result are the same event and neither is visible in the file. The pin is the corpus's own version digest, which covers every case's id, text, direction, expected decision and expected findings, so it moves on a relabelling too. previous.corpus_version is null and not a value: the 146-case corpus was never digested and inventing one now would be a record of something nobody measured. From here a corpus that moves fails tests/test_ship_bar.py until the move is disclosed in this key."
   },
   "clears_the_bar": {
     "semantic": "our decision-level F1 on jackhhao/jailbreak-classification, measured through this harness, > our_minimum",
