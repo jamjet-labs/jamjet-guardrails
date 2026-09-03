@@ -27,7 +27,23 @@ license = "Apache-2.0 AND CC-BY-4.0"
 requires-python = ">=3.10"
 dependencies = []
 authors = [{ name = "Sunil Prakash" }]
-keywords = ["llm", "guardrails", "pii", "redaction", "secrets", "safety"]
+# What somebody types into a search box, not what we call things internally.
+# "prompt-injection" and "llm-security" are the two highest-intent terms this
+# package can honestly claim and neither was here; a reader searching PyPI for
+# either found nothing. Every term below is backed by a shipped check with a
+# published row, which is the same bar the README copy is held to.
+keywords = [
+  "llm",
+  "llm-security",
+  "llm-guardrails",
+  "guardrails",
+  "prompt-injection",
+  "pii",
+  "redaction",
+  "secrets",
+  "content-filter",
+  "safety",
+]
 # Every "Programming Language :: Python" entry here is a support claim, and
 # tests/test_packaging.py holds it to the CI matrix: a version claimed and not
 # tested is a claim we cannot back, shown to everyone who opens the PyPI page.
