@@ -1,8 +1,8 @@
 {
-  "confusables/in-repo/9ba6ea272420": {
-    "decision_mismatches": 10,
-    "precision": 0.936,
-    "recall": 0.862
+  "confusables/in-repo/e53f03d3527e": {
+    "decision_mismatches": 9,
+    "precision": 0.942,
+    "recall": 0.89
   },
   "encoded-content/in-repo/ffddd0cd3c29": {
     "decision_mismatches": 5,
@@ -29,10 +29,10 @@
     "precision": 1.0,
     "recall": 1.0
   },
-  "script-constraint/in-repo/92fddb0f04be": {
+  "script-constraint/in-repo/1e1374cfecc3": {
     "decision_mismatches": 0,
-    "precision": 1.0,
-    "recall": 1.0
+    "precision": 0.96,
+    "recall": 0.979
   },
   "secrets/in-repo/337e35f03cad": {
     "decision_mismatches": 8,

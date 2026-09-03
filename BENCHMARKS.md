@@ -5,13 +5,13 @@ every score. How to read them is under the table.
 
 | Check | Corpus | Source | Version | Cases | Precision | Recall | F1 | TP | FP | FN | Wrong decisions |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| confusables | confusables/in-repo | in-repo | `9ba6ea272420` | 109 | 0.936 | 0.863 | 0.898 | 44 | 3 | 7 | 10 |
+| confusables | confusables/in-repo | in-repo | `e53f03d3527e` | 115 | 0.942 | 0.891 | 0.916 | 49 | 3 | 6 | 9 |
 | encoded-content | encoded-content/in-repo | in-repo | `ffddd0cd3c29` | 81 | 1.000 | 0.875 | 0.933 | 35 | 0 | 5 | 5 |
 | injection-structural | injection-structural/in-repo | in-repo | `b704703f431d` | 154 | 0.972 | 0.873 | 0.920 | 103 | 3 | 15 | 8 |
 | pii | pii/in-repo | in-repo | `06fb3b601aba` | 81 | 0.631 | 0.872 | 0.732 | 41 | 24 | 6 | 24 |
 | pii | pii/third-party | nvidia/Nemotron-PII@b70ffaf | `c25ef538d677` | 300 | 0.960 | 0.997 | 0.978 | 340 | 14 | 1 | 6 |
 | rules | rules/in-repo | in-repo | `8fe119ddb734` | 42 | 1.000 | 1.000 | 1.000 | 29 | 0 | 0 | 0 |
-| script-constraint | script-constraint/in-repo | in-repo | `92fddb0f04be` | 85 | 1.000 | 1.000 | 1.000 | 50 | 0 | 0 | 0 |
+| script-constraint | script-constraint/in-repo | in-repo | `1e1374cfecc3` | 85 | 0.960 | 0.980 | 0.970 | 48 | 2 | 1 | 0 |
 | secrets | secrets/in-repo | in-repo | `337e35f03cad` | 160 | 0.881 | 0.873 | 0.877 | 96 | 13 | 14 | 8 |
 | template-integrity | template-integrity/in-repo | in-repo | `afb0a7245664` | 152 | 0.820 | 0.965 | 0.886 | 109 | 24 | 4 | 19 |
 | url-exfiltration | url-exfiltration/in-repo | in-repo | `c8015e4e93e2` | 88 | 0.914 | 0.914 | 0.914 | 32 | 3 | 3 | 6 |
@@ -77,12 +77,12 @@ of false alarms, capped at 5 per corpus. Every miss is in
 `benchmarks.json`, and every score to four decimals there unless the sentence
 above clamped it.
 
-## Per type: confusables on confusables/in-repo (in-repo, `9ba6ea272420`)
+## Per type: confusables on confusables/in-repo (in-repo, `e53f03d3527e`)
 
 | Type | Precision | Recall | TP | FP | FN |
 |---|---:|---:|---:|---:|---:|
-| MIXED_SCRIPT_CONFUSABLE | 0.914 | 0.865 | 32 | 3 | 5 |
-| WHOLE_SCRIPT_CONFUSABLE | 1.000 | 0.857 | 12 | 0 | 2 |
+| MIXED_SCRIPT_CONFUSABLE | 0.921 | 0.897 | 35 | 3 | 4 |
+| WHOLE_SCRIPT_CONFUSABLE | 1.000 | 0.875 | 14 | 0 | 2 |
 
 ## Per type: encoded-content on encoded-content/in-repo (in-repo, `ffddd0cd3c29`)
 
@@ -127,11 +127,11 @@ above clamped it.
 | PROJECT_CODENAME | 1.000 | 1.000 | 8 | 0 | 0 |
 | TICKET_ID | 1.000 | 1.000 | 8 | 0 | 0 |
 
-## Per type: script-constraint on script-constraint/in-repo (in-repo, `92fddb0f04be`)
+## Per type: script-constraint on script-constraint/in-repo (in-repo, `1e1374cfecc3`)
 
 | Type | Precision | Recall | TP | FP | FN |
 |---|---:|---:|---:|---:|---:|
-| DISALLOWED_SCRIPT | 1.000 | 1.000 | 50 | 0 | 0 |
+| DISALLOWED_SCRIPT | 0.960 | 0.980 | 48 | 2 | 1 |
 
 ## Per type: secrets on secrets/in-repo (in-repo, `337e35f03cad`)
 
@@ -163,7 +163,7 @@ above clamped it.
 | NESTED_REDIRECT | 1.000 | 1.000 | 5 | 0 | 0 |
 | SCRIPT_SCHEME | 1.000 | 1.000 | 6 | 0 | 0 |
 
-## Worst misses: confusables on confusables/in-repo (in-repo, `9ba6ea272420`)
+## Worst misses: confusables on confusables/in-repo (in-repo, `e53f03d3527e`)
 
 | Case | Kind | Expected | Predicted |
 |---|---|---|---|
@@ -173,7 +173,7 @@ above clamped it.
 | `cnf-0047` | decision_mismatch | deny | allow |
 | `cnf-0048` | decision_mismatch | deny | allow |
 
-...and 15 more, in `benchmarks.json`.
+...and 13 more, in `benchmarks.json`.
 
 ## Worst misses: encoded-content on encoded-content/in-repo (in-repo, `ffddd0cd3c29`)
 
@@ -227,9 +227,13 @@ above clamped it.
 
 No misses on this corpus.
 
-## Worst misses: script-constraint on script-constraint/in-repo (in-repo, `92fddb0f04be`)
+## Worst misses: script-constraint on script-constraint/in-repo (in-repo, `1e1374cfecc3`)
 
-No misses on this corpus.
+| Case | Kind | Expected | Predicted |
+|---|---|---|---|
+| `sc-0020` | false_negative | DISALLOWED_SCRIPT@(0, 7) | nothing |
+| `sc-0020` | false_positive | nothing | DISALLOWED_SCRIPT@(0, 5) |
+| `sc-0020` | false_positive | nothing | DISALLOWED_SCRIPT@(6, 7) |
 
 ## Worst misses: secrets on secrets/in-repo (in-repo, `337e35f03cad`)
 

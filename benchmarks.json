@@ -5,27 +5,27 @@
       "detector_version": "0.1.0",
       "corpus_name": "confusables/in-repo",
       "corpus_source": "in-repo",
-      "corpus_version": "9ba6ea272420",
-      "cases": 109,
-      "precision": 0.9362,
-      "recall": 0.8627,
-      "f1": 0.898,
-      "true_positives": 44,
+      "corpus_version": "e53f03d3527e",
+      "cases": 115,
+      "precision": 0.9423,
+      "recall": 0.8909,
+      "f1": 0.9159,
+      "true_positives": 49,
       "false_positives": 3,
-      "false_negatives": 7,
-      "decision_mismatches": 10,
+      "false_negatives": 6,
+      "decision_mismatches": 9,
       "per_type": {
         "MIXED_SCRIPT_CONFUSABLE": {
-          "precision": 0.9143,
-          "recall": 0.8649,
-          "true_positives": 32,
+          "precision": 0.9211,
+          "recall": 0.8974,
+          "true_positives": 35,
           "false_positives": 3,
-          "false_negatives": 5
+          "false_negatives": 4
         },
         "WHOLE_SCRIPT_CONFUSABLE": {
           "precision": 1.0,
-          "recall": 0.8571,
-          "true_positives": 12,
+          "recall": 0.875,
+          "true_positives": 14,
           "false_positives": 0,
           "false_negatives": 2
         }
@@ -63,12 +63,6 @@
         },
         {
           "case_id": "cnf-0049",
-          "kind": "decision_mismatch",
-          "expected": "deny",
-          "predicted": "allow"
-        },
-        {
-          "case_id": "cnf-0050",
           "kind": "decision_mismatch",
           "expected": "deny",
           "predicted": "allow"
@@ -125,12 +119,6 @@
           "case_id": "cnf-0049",
           "kind": "false_negative",
           "expected": "MIXED_SCRIPT_CONFUSABLE@(4, 8)",
-          "predicted": "nothing"
-        },
-        {
-          "case_id": "cnf-0050",
-          "kind": "false_negative",
-          "expected": "MIXED_SCRIPT_CONFUSABLE@(11, 17)",
           "predicted": "nothing"
         },
         {
@@ -1044,25 +1032,44 @@
       "detector_version": "0.1.0",
       "corpus_name": "script-constraint/in-repo",
       "corpus_source": "in-repo",
-      "corpus_version": "92fddb0f04be",
+      "corpus_version": "1e1374cfecc3",
       "cases": 85,
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1": 1.0,
-      "true_positives": 50,
-      "false_positives": 0,
-      "false_negatives": 0,
+      "precision": 0.96,
+      "recall": 0.9796,
+      "f1": 0.9697,
+      "true_positives": 48,
+      "false_positives": 2,
+      "false_negatives": 1,
       "decision_mismatches": 0,
       "per_type": {
         "DISALLOWED_SCRIPT": {
-          "precision": 1.0,
-          "recall": 1.0,
-          "true_positives": 50,
-          "false_positives": 0,
-          "false_negatives": 0
+          "precision": 0.96,
+          "recall": 0.9796,
+          "true_positives": 48,
+          "false_positives": 2,
+          "false_negatives": 1
         }
       },
-      "failures": []
+      "failures": [
+        {
+          "case_id": "sc-0020",
+          "kind": "false_negative",
+          "expected": "DISALLOWED_SCRIPT@(0, 7)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "sc-0020",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "DISALLOWED_SCRIPT@(0, 5)"
+        },
+        {
+          "case_id": "sc-0020",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "DISALLOWED_SCRIPT@(6, 7)"
+        }
+      ]
     },
     {
       "detector": "secrets",

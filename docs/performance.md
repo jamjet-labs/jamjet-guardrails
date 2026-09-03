@@ -113,12 +113,12 @@ Milliseconds per call. `MB/s` is derived from the p50.
 
 | Check | Chars | Findings | p50 ms | p95 ms | p99 ms | MB/s |
 |---|---:|---:|---:|---:|---:|---:|
-| confusables | 1 024 | 0 | 0.182 | 0.190 | 0.197 | 5.4 |
-| confusables | 4 096 | 0 | 0.720 | 0.781 | 0.807 | 5.4 |
-| confusables | 16 384 | 0 | 2.814 | 2.934 | 2.984 | 5.6 |
-| confusables | 65 536 | 0 | 11.296 | 11.739 | 12.291 | 5.5 |
-| confusables | 262 144 | 0 | 45.491 | 47.770 | 48.426 | 5.5 |
-| confusables | 1 048 576 | 0 | 185.595 | 216.458 | 256.182 | 5.4 |
+| confusables | 1 024 | 0 | 0.145 | 0.155 | 0.222 | 7.1 |
+| confusables | 4 096 | 0 | 0.569 | 0.601 | 0.630 | 7.2 |
+| confusables | 16 384 | 0 | 2.250 | 2.347 | 2.403 | 7.3 |
+| confusables | 65 536 | 0 | 9.081 | 9.439 | 9.537 | 7.2 |
+| confusables | 262 144 | 0 | 36.255 | 37.488 | 38.183 | 7.2 |
+| confusables | 1 048 576 | 0 | 146.850 | 149.710 | 150.693 | 7.1 |
 | encoded-content | 1 024 | 0 | 0.166 | 0.171 | 0.179 | 5.9 |
 | encoded-content | 4 096 | 0 | 0.648 | 0.691 | 0.776 | 6.1 |
 | encoded-content | 16 384 | 0 | 2.550 | 2.656 | 2.753 | 6.2 |
@@ -179,8 +179,8 @@ Milliseconds per call. `MB/s` is derived from the p50.
 The ratio quoted for each check is p50 at one size divided by p50 at a quarter
 of it, so 4.0 is exactly linear.
 
-- **`confusables`** is linear. Ratios across the range run 3.91 to 4.08 and the
-  rate holds at 5.4 to 5.6 megabytes per second. Its `findings` column is 0 at
+- **`confusables`** is linear. Ratios across the range run 3.92 to 4.05 and the
+  rate holds at 7.1 to 7.3 megabytes per second. Its `findings` column is 0 at
   every size, and that is a real limitation of this row rather than a rounding:
   the seeded input carries no confusable, so what is timed is the token scan and
   the label scan with no finding built and nothing rewritten. The input is
@@ -188,6 +188,29 @@ of it, so 4.0 is exactly linear.
   add one. Almost every token in it is ASCII, which the check skips before
   asking the vendored tables anything, so this row is the FLOOR for this check
   and text in a non-Latin script costs more.
+
+  **THE ROW SAID LINEAR AND THE CHECK WAS QUADRATIC IN TWO PLACES, AND THIS
+  INPUT COULD NOT SEE EITHER.** It carries no `://` and no `@`, so both sites
+  reported zero and the ratios above looked exactly as they do now. The two were
+  a regular expression whose greedy scheme class backtracked one character at a
+  time at every start position in a run of `[A-Za-z0-9+.-]`, and a linear scan
+  of every URL run once per `@`. Measured on the shipped file: one megabyte of
+  `"http://a.example/ @ "` took 65.1 seconds against this row's 186 ms, and a
+  single unbroken 64 KB word -- no URL anywhere -- took 3.58 seconds and
+  extrapolated to about sixteen minutes for a megabyte. Both are fixed rather
+  than noted: the scan looks for `://` with `str.find` and walks the scheme
+  backwards from it, and the containment test is a binary search over
+  non-overlapping spans. The same two inputs now cost 246 ms and 77 ms per
+  megabyte, and that rewrite is also why this row is 21% faster than the one it
+  replaced. `tests/test_confusables.py::test_a_long_run_of_scheme_characters_is_not_quadratic`
+  and `tests/test_confusables.py::test_an_at_sign_beside_many_urls_is_not_quadratic`
+  hold both.
+
+  **A ROW IS NOT A COMPLEXITY CLAIM, and this is the page saying so.** Every
+  "is linear" on this page is measured over ONE seeded input, and an input class
+  that input does not reach is unmeasured rather than covered. The claim for
+  this check now rests on the two adversarial measurements above as well as on
+  the table.
 - **`injection-structural`** is linear. Ratios across the range run 3.94 to 4.09
   and the rate never leaves 7.9 to 8.1 megabytes per second. It denies on this
   input rather than redacting, so the number is a scan and the construction of

@@ -57,8 +57,9 @@ and `docs/performance.md` states the machine, the input and the method.
 
 from __future__ import annotations
 
-import re
+import string
 import unicodedata
+from bisect import bisect_right
 from collections import Counter
 from collections.abc import Mapping
 from functools import lru_cache
@@ -122,25 +123,47 @@ _HIGHLY_RESTRICTIVE: tuple[frozenset[str], ...] = (
 # the conservative direction.
 _TOKEN_CATEGORIES = frozenset({"L", "M", "N"})
 
-# Default-ignorable code points END a token and belong to none, which is what
-# keeps this check's character set disjoint from every `injection-structural`
-# signal. The set is IMPORTED from that module rather than restated, so the two
-# cannot drift: a code point added there is excluded here on the same commit,
-# and `tests/test_confusables.py::test_this_check_claims_no_code_point_any_structural_signal_claims`
-# holds the disjointness pairwise the way that module holds its own three.
+# Default-ignorable code points are TRANSPARENT INSIDE A TOKEN. They carry no
+# script and belong to no script, they cannot start or end a token, and they
+# cannot split one. The set is IMPORTED from `injection_structural` rather than
+# restated, so the two cannot drift: a code point added there is transparent
+# here on the same commit.
 #
-# Ending a token rather than being skipped inside one is the only spelling that
-# gives real disjointness, because a span is contiguous: a token that ran ACROSS
-# a zero-width space would report a span containing it, and that span shares a
-# code point with `ZERO_WIDTH_SMUGGLING`. The design document says these
-# characters "belong to the token"; they cannot, and this is the half of that
-# sentence the disjointness requirement in the same section overrides.
+# THEY USED TO END A TOKEN, AND THAT WAS A FAIL-OPEN THAT SHIPPED. The argument
+# for ending one was disjointness: a span is contiguous, so a token running
+# ACROSS a zero-width space reports a span containing a code point
+# `ZERO_WIDTH_SMUGGLING` can also claim, and a merged placeholder then names two
+# checks for one character. The comment that stood here paid for that with a
+# compensating control -- "it is reported by `injection-structural`, which owns
+# that code point and denies by default, so a chain running both still denies"
+# -- and the control does not exist. Measured on this repository:
 #
-# What it costs is stated rather than hidden: `pаypal` with a zero-width space
-# between the two halves is two single-script tokens here and is not reported by
-# this check at all. It is reported by `injection-structural`, which owns that
-# code point and denies by default, so a chain running both still denies. A
-# chain running this check alone does not, and `corpora/NOTICE.md` says so.
+#   * 273 of the 4,174 default-ignorable code points are claimed by NO
+#     structural signal at all. `_ZERO_WIDTH` there is this table minus the
+#     directional format characters, minus all 260 variation selectors, minus
+#     U+00AD SOFT HYPHEN and minus the tag block: 3,773 against 4,174.
+#   * `injection-structural` reports a code point it DOES own only once five of
+#     them are present or two are adjacent (`_MIN_TOTAL`, `_MIN_RUN`), so one
+#     zero-width space is not reported either.
+#
+# So `https://p<U+00AD>а<U+00AD>ypal.com/login` was ALLOWED by a chain running both
+# checks and is pixel-for-pixel the string the same chain denies without the
+# soft hyphens. Ending a token on a character a reader cannot see is exactly the
+# laundering this check exists to defeat.
+#
+# What replaces the disjointness is the merge, which already does the right
+# thing: `_spans._merge` collapses overlapping spans from two checks into ONE
+# region whose placeholder names both types, and its own docstring says an
+# ambiguous span resolves toward more redaction rather than less. A placeholder
+# reading `[REDACTED:MIXED_SCRIPT_CONFUSABLE+ZERO_WIDTH_SMUGGLING]` is a
+# cosmetic cost. A spoofed hostname passing seven checks is not.
+#
+# `tests/test_confusables.py::test_no_default_ignorable_code_point_can_split_a_spoof`
+# sweeps the whole table rather than a sample, and
+# `test_the_two_checks_partition_the_default_ignorable_table` holds the
+# partition the old comment asserted and never tested: every code point in the
+# table is transparent here, and every code point any structural signal claims
+# is in the table.
 _IGNORABLE: frozenset[str] = frozenset(
     chr(point) for low, high in _DEFAULT_IGNORABLE for point in range(low, high + 1)
 )
@@ -151,7 +174,67 @@ _IGNORABLE: frozenset[str] = frozenset(
 # widening this to catch one would put every such sentence in front of the
 # whole-script rule. The cost is a spoofed host written without a scheme, which
 # `corpora/NOTICE.md` discloses with the case that carries it.
-_URL = re.compile(r"[A-Za-z][A-Za-z0-9+.\-]*://([^\s/?#]*)")
+#
+# THIS WAS A REGULAR EXPRESSION AND THE REGULAR EXPRESSION WAS QUADRATIC.
+# `re.compile(r"[A-Za-z][A-Za-z0-9+.\-]*://([^\s/?#]*)")` reads the same, and
+# on a run of `[A-Za-z0-9+.-]` with no `://` in it the greedy class consumes to
+# the end of the run and then backtracks one character at a time looking for the
+# separator, AT EVERY START POSITION IN THE RUN. No URL is needed to pay for it:
+# one long word, one hex blob, one dotted identifier. Measured on this file,
+# `ConfusablesGuardrail().check("a" * n, ...)` cost 0.057 s at 8 KB, 0.225 s at
+# 16 KB, 0.904 s at 32 KB and 3.583 s at 64 KB -- 4x per 2x, which is quadratic,
+# extrapolating to about sixteen minutes for one megabyte against a published
+# row of 186 ms and a published claim of "linear".
+#
+# The separator is what is scanned for instead, with `str.find`, and the scheme
+# is walked BACKWARDS from it. Each `://` is walked over once, so the whole pass
+# is linear and no start position is retried. A possessive quantifier would have
+# been the smaller change; `re` grew them in 3.11 and this package's floor is
+# 3.10.
+_SCHEME_CHARACTERS = frozenset(string.ascii_letters + string.digits + "+-.")
+_SCHEME_LETTERS = frozenset(string.ascii_letters)
+_SEPARATOR = "://"
+# What `[^\s/?#]` excluded. `str.isspace` and the `re` module's `\s` agree on
+# every one of the 1,114,112 code points, checked rather than assumed in
+# `tests/test_confusables.py::test_the_authority_stops_where_the_regex_stopped`.
+_AUTHORITY_END = frozenset("/?#")
+
+
+def _urls(content: str) -> list[tuple[tuple[int, int], tuple[int, int]]]:
+    """Every `scheme://authority`, as (whole span, authority span), left to right.
+
+    Non-overlapping and in increasing order, which is what lets `_spoofable_labels`
+    ask whether an offset is inside a URL with a binary search instead of a scan.
+
+    Equivalent to the regular expression this replaced, including where it
+    resumes: a match may not start before the previous match ended, so the walk
+    left is bounded by `cursor` and a `://` already inside a match is skipped.
+    `test_the_linear_url_scan_agrees_with_the_regular_expression_it_replaced`
+    holds the equivalence against the old pattern over the corpus and over
+    generated input.
+    """
+    found: list[tuple[tuple[int, int], tuple[int, int]]] = []
+    length = len(content)
+    cursor = 0
+    while (separator := content.find(_SEPARATOR, cursor)) != -1:
+        start = separator
+        while start > cursor and content[start - 1] in _SCHEME_CHARACTERS:
+            start -= 1
+        # The scheme's FIRST character has to be a letter, so a run that opens
+        # with digits or punctuation is entered at its first letter instead of
+        # rejected: `1ab://host` matched the old pattern at the `a`.
+        while start < separator and content[start] not in _SCHEME_LETTERS:
+            start += 1
+        if start == separator:
+            cursor = separator + 1
+            continue
+        end = separator + len(_SEPARATOR)
+        while end < length and not (content[end].isspace() or content[end] in _AUTHORITY_END):
+            end += 1
+        found.append(((start, end), (separator + len(_SEPARATOR), end)))
+        cursor = end
+    return found
+
 
 # What an email local part and domain are made of. Deliberately not a validating
 # address grammar: this is only ever asked to find the DOMAIN's labels, and an
@@ -162,12 +245,40 @@ _HANDLE_PUNCTUATION = frozenset("_-")
 
 
 def _is_token_character(character: str) -> bool:
-    """Letter, mark or number, and not default-ignorable."""
+    """Letter, mark or number, and not default-ignorable.
+
+    A default-ignorable code point is not a token character even though several
+    of them are `Lo` or `Mn`: U+3164 HANGUL FILLER carries Script=Hangul and
+    U+180B carries Script=Mongolian, and counting either as a letter would hand
+    `_resolved` a script off a character a reader cannot see. They are removed
+    from the token's TEXT and kept inside its SPAN, which is what `_visible`
+    below does.
+    """
     return unicodedata.category(character)[0] in _TOKEN_CATEGORIES and character not in _IGNORABLE
 
 
+def _visible(characters: str) -> str:
+    """The same run with every default-ignorable code point dropped.
+
+    Every script question is asked of this and never of the raw run, because a
+    character that renders as nothing must contribute nothing: not a script, not
+    a majority vote, and not a token boundary.
+    """
+    return "".join(character for character in characters if character not in _IGNORABLE)
+
+
 def _tokens(content: str) -> list[tuple[int, int]]:
-    """Maximal runs of token characters, as half-open spans."""
+    """Maximal runs of token characters, as half-open spans.
+
+    A default-ignorable code point INSIDE a run does not end it, so
+    `p<U+200B>аypal` is one token and not two. See the note on `_IGNORABLE`: the
+    version that ended a token there allowed a spoof that the same chain denies
+    without the invisible character in it.
+
+    The span still starts and ends on a token character. A trailing run of
+    ignorables belongs to no token, and reporting one inside a span would put a
+    character nobody can see into a placeholder for no reason.
+    """
     spans: list[tuple[int, int]] = []
     index = 0
     length = len(content)
@@ -176,9 +287,22 @@ def _tokens(content: str) -> list[tuple[int, int]]:
             index += 1
             continue
         start = index
-        while index < length and _is_token_character(content[index]):
-            index += 1
-        spans.append((start, index))
+        end = index
+        # ONE `_is_token_character` CALL PER CHARACTER, and that is a measurement
+        # rather than a preference. The obvious spelling asks it twice -- once in
+        # the loop condition and once to decide whether to move `end` -- and
+        # costs 221 ms per megabyte of the seeded input against this one's 134,
+        # where the boundary rule it replaced cost 130.
+        while index < length:
+            character = content[index]
+            if _is_token_character(character):
+                index += 1
+                end = index
+            elif character in _IGNORABLE:
+                index += 1
+            else:
+                break
+        spans.append((start, end))
     return spans
 
 
@@ -290,6 +414,17 @@ def _mixed_script_spans(content: str) -> list[tuple[int, int]]:
         # digit is Common, so the intersection is `{Latin}` or the token is all
         # wildcards. A fast path rather than a special case, and it is what keeps
         # ordinary English text from asking the vendored tables anything at all.
+        #
+        # ASKED TWICE, AND THE FIRST ASKING IS WHAT KEEPS THIS ROW LINEAR IN
+        # PRACTICE. `_visible` builds a string per token, and there are 158,607
+        # tokens in one megabyte of the input `docs/performance.md` measures:
+        # calling it before the fast path cost 24 ms per megabyte for an answer
+        # that cannot change, since an all-ASCII token holds no ignorable code
+        # point and no second script either. The second asking is the one the
+        # transparency needs, so that `co<U+00AD>operate` reaches it as `cooperate`.
+        if characters.isascii():
+            continue
+        characters = _visible(characters)
         if characters.isascii():
             continue
         resolved, union, substantive = _resolved(characters)
@@ -337,11 +472,35 @@ def _dot_labels(content: str, start: int, end: int) -> list[tuple[int, int]]:
 
 
 def _is_atom(character: str) -> bool:
-    return _is_token_character(character) or character in _ATOM_PUNCTUATION
+    # Default-ignorable code points continue an address rather than ending it,
+    # for the reason they continue a token: `user@ex<U+200B>ample.com` is one
+    # domain to everything that resolves it and to everyone who reads it.
+    return (
+        _is_token_character(character) or character in _ATOM_PUNCTUATION or character in _IGNORABLE
+    )
 
 
 def _is_handle_character(character: str) -> bool:
-    return _is_token_character(character) or character in _HANDLE_PUNCTUATION
+    return (
+        _is_token_character(character)
+        or character in _HANDLE_PUNCTUATION
+        or character in _IGNORABLE
+    )
+
+
+def _trimmed(content: str, start: int, end: int) -> tuple[int, int]:
+    """The span with leading and trailing default-ignorable code points removed.
+
+    A label may be entered through an atom run that a trailing invisible
+    character extended. The interior ones stay: they are what the label was
+    laundered with, and a redaction that left them standing between two
+    placeholders would leave the laundering in the output.
+    """
+    while start < end and content[start] in _IGNORABLE:
+        start += 1
+    while end > start and content[end - 1] in _IGNORABLE:
+        end -= 1
+    return start, end
 
 
 def _spoofable_labels(content: str) -> list[tuple[int, int]]:
@@ -359,14 +518,28 @@ def _spoofable_labels(content: str) -> list[tuple[int, int]]:
     and reading it as one would report the scheme as a local part.
     """
     labels: list[tuple[int, int]] = []
-    urls: list[tuple[int, int]] = []
-    for match in _URL.finditer(content):
-        urls.append(match.span())
-        host = _authority(content, match.start(1), match.end(1))
+    starts: list[int] = []
+    ends: list[int] = []
+    for (url_start, url_end), (host_start, host_end) in _urls(content):
+        starts.append(url_start)
+        ends.append(url_end)
+        host = _authority(content, host_start, host_end)
         labels.extend(_dot_labels(content, *host))
 
-    for index, character in enumerate(content):
-        if character != "@" or any(start <= index < end for start, end in urls):
+    # THIS WAS `any(start <= index < end for start, end in urls)` AND IT WAS THE
+    # SECOND QUADRATIC SITE. A linear scan of every URL, run once per `@` in the
+    # content, is O(at-signs x URLs): measured,
+    # `check("http://a.example/ @ " * n)` cost 0.25 s at 64 KB, 3.95 s at 256 KB
+    # and 65.06 s at 1 MB, against a published row of 186 ms. `_urls` returns
+    # non-overlapping spans in increasing order, so the same question is one
+    # binary search. `str.find` replaces `enumerate` for the same reason: a
+    # per-character Python loop over a megabyte is paid whether or not the
+    # content holds an `@`.
+    index = content.find("@")
+    while index != -1:
+        position = bisect_right(starts, index) - 1
+        if position >= 0 and index < ends[position]:
+            index = content.find("@", index + 1)
             continue
         local = index
         while local > 0 and _is_atom(content[local - 1]) and content[local - 1] != "@":
@@ -379,6 +552,7 @@ def _spoofable_labels(content: str) -> list[tuple[int, int]]:
             # word in front of it rather than a mailbox.
             if content.find(".", index + 1, domain) != -1:
                 labels.extend(_dot_labels(content, index + 1, domain))
+            index = content.find("@", index + 1)
             continue
         # A handle. Its own run rather than the atom run, because a handle
         # carries no dots and a trailing full stop is the sentence's.
@@ -387,7 +561,8 @@ def _spoofable_labels(content: str) -> list[tuple[int, int]]:
             handle += 1
         if handle > index + 1:
             labels.append((index + 1, handle))
-    return labels
+        index = content.find("@", index + 1)
+    return [span for span in (_trimmed(content, *label) for label in labels) if span[0] < span[1]]
 
 
 def _whole_script_spans(content: str) -> list[tuple[int, int]]:
@@ -395,7 +570,20 @@ def _whole_script_spans(content: str) -> list[tuple[int, int]]:
     spans: set[tuple[int, int]] = set()
     for start, end in _spoofable_labels(content):
         characters = content[start:end]
-        if characters.isascii() or any(character in _IGNORABLE for character in characters):
+        # A label carrying a default-ignorable code point used to be SKIPPED
+        # here, which is the same fail-open the token scan carried: one soft
+        # hyphen inside `аррӏе.com` disabled the whole-script rule for it. The
+        # invisible characters are dropped from the text the rule reads and kept
+        # inside the span the finding reports.
+        #
+        # The ASCII test comes first for the reason it comes first in
+        # `_mixed_script_spans`: an all-ASCII label is Latin and cannot be a
+        # whole-script confusable, and answering that without building a second
+        # string is what keeps an ordinary page of hostnames cheap.
+        if characters.isascii():
+            continue
+        characters = _visible(characters)
+        if characters.isascii():
             continue
         resolved, _, substantive = _resolved(
             "".join(character for character in characters if _is_token_character(character))

@@ -19,6 +19,7 @@ because a pattern matches or it does not.
 from __future__ import annotations
 
 import re
+import unicodedata
 import warnings
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -283,7 +284,10 @@ class PatternGuardrail:
             compiled.append((type_name, built))
         self._patterns = tuple(compiled)
 
-        folded: list[tuple[str, str]] = []
+        # Three fields: the type, the needle as `fold_confusables=False` would
+        # match it, and its skeleton or None. Both needles are kept so the
+        # option is a superset rather than a substitution; see `_banned_spans`.
+        folded: list[tuple[str, str, str | None]] = []
         for type_name, substrings in (banned or {}).items():
             _require_type_name(type_name)
             if isinstance(substrings, (str, bytes)):
@@ -304,9 +308,10 @@ class PatternGuardrail:
                         "matches everywhere"
                     )
                 needle = substring.casefold() if fold_case else substring
+                skeleton = None
                 if fold_confusables:
-                    needle = _skeleton(needle).text
-                    if not needle:
+                    skeleton = _skeleton(needle).text
+                    if not skeleton:
                         # Unreachable against the 16.0.0 table, whose generator
                         # refuses a row mapping anything to nothing, and checked
                         # anyway: an empty needle matches at every offset and
@@ -316,7 +321,10 @@ class PatternGuardrail:
                             f"banned[{type_name!r}] carries {substring!r}, whose "
                             "confusable skeleton is empty, so it would match everywhere"
                         )
-                folded.append((type_name, needle))
+                # BOTH NEEDLES ARE KEPT, and the unfolded one is why
+                # `fold_confusables` is a superset rather than a substitution.
+                # See `_banned_spans`.
+                folded.append((type_name, needle, skeleton))
         self._banned = tuple(folded)
         self._fold_case = fold_case
         self._fold_confusables = fold_confusables
@@ -439,25 +447,78 @@ class PatternGuardrail:
         does for patterns: the next search starts one past the previous match's
         start rather than at its end.
 
-        Under ``fold_confusables`` the view is the UTS #39 skeleton of the
-        case-folded content and the needles were skeletonised at construction,
-        so BOTH SIDES are folded the same way and one substituted Cyrillic
-        letter no longer dodges a banned word. The offset map composes through
-        both folds, so the span still points at the source run: that is what
-        lets a redaction remove the substituted letter along with the rest of
-        the word rather than leaving it standing.
+        **``fold_confusables`` SEARCHES TWO VIEWS AND UNIONS THEM, AND THAT IS
+        THE FIX FOR A DENY IT TURNED INTO AN ALLOW.** Skeletonising the needle
+        alone and the content whole is not distributive:
+        ``skeleton(x + y) != skeleton(x) + skeleton(y)`` at a combining-mark
+        boundary, because the skeleton ends in an NFD pass and NFD's canonical
+        ordering is defined over a combining sequence rather than over a
+        character. Measured on this file, with ``banned={"BAN": ["café"]}`` and
+        the content ``"café"`` followed by U+0334 COMBINING TILDE OVERLAY:
+
+            fold_confusables=False -> deny
+            fold_confusables=True  -> allow
+
+        because ``skeleton(needle)`` is ``cafe\u0301`` while the content folds
+        to ``cafe\u0334\u0301``: the class-1 mark sorts in FRONT of the class-230
+        one and lands inside the needle. 50 of the 112 marks in U+0300..U+036F
+        do it, and so does every one of them after ``résumé``. The option a
+        caller enables to stop a banned word being dodged by one substituted
+        letter was making the rule evadable by one added mark.
+
+        Two changes close it, and each answers a different half:
+
+        - the UNFOLDED needle is searched too, so this option can only ever ADD
+          matches to what ``fold_confusables=False`` finds. That is the property
+          the docstring and `docs/conformance.md` both claim for it, and it now
+          holds by construction rather than by argument.
+        - the folded search TOLERATES canonical reordering in the needle's
+          trailing combining marks, which is what `_find_folded` does. Without
+          it a needle laundered BOTH ways at once -- one substituted Cyrillic
+          letter and one added mark -- passes both views.
+
+        THE TWO ARE REDUNDANT FOR THE SHAPE THAT WAS REPORTED AND NEITHER IS
+        REDUNDANT IN GENERAL, which is a measurement rather than a hedge.
+        Removing either one alone leaves the 112-mark sweep in
+        ``tests/test_authoring.py`` passing; removing both fails it. Each has a
+        shape the other cannot reach, and each has its own test.
+
+        What is still open, and is disclosed rather than claimed away. A needle
+        whose skeleton BEGINS with combining marks has the mirror of the problem
+        the tolerance solves: a mark from the text BEFORE it can sort into the
+        middle of its leading run, and nothing about what FOLLOWS the match can
+        see that. The unfolded view catches it while the content carries the
+        needle verbatim, which is the case
+        ``test_a_needle_whose_own_marks_reorder_is_still_matched_verbatim``
+        holds; it does not catch it once the needle is confusable-substituted as
+        well, and then neither view does. Measured: needle U+0301 U+0334 e
+        against ``x U+0316 U+0301 U+0334`` followed by CYRILLIC SMALL LETTER IE
+        allows under both settings. No banned substring in this repository or
+        its corpora begins with a combining mark, and a substring match over a
+        normalised view cannot in general be made exact.
         """
         if not self._banned:
             return []
         view = casefold_view(content) if self._fold_case else fold(content, lambda ch: ch)
-        if self._fold_confusables:
-            view = compose(view, _skeleton(view.text))
+        folded = compose(view, _skeleton(view.text)) if self._fold_confusables else None
         found: list[tuple[str, tuple[int, int]]] = []
-        for type_name, substring in self._banned:
-            start = view.text.find(substring)
-            while start != -1:
-                found.append((type_name, view.span(start, start + len(substring))))
-                start = view.text.find(substring, start + 1)
+        seen: set[tuple[str, tuple[int, int]]] = set()
+        for type_name, needle, skeleton in self._banned:
+            for haystack, substring, tolerant in (
+                (view, needle, False),
+                (folded, skeleton, True),
+            ):
+                if haystack is None or substring is None:
+                    continue
+                start = 0
+                while (
+                    match := _find_folded(haystack.text, substring, start, tolerant)
+                ) is not None:
+                    claim = (type_name, haystack.span(*match))
+                    if claim not in seen:
+                        seen.add(claim)
+                        found.append(claim)
+                    start = match[0] + 1
         return found
 
     def check(self, content: str, context: Context) -> Verdict:
@@ -505,6 +566,57 @@ class PatternGuardrail:
         # guardrail. A chain merges these spans with every other guardrail's
         # and rewrites once, through this same `_rewrite`.
         return Verdict("redact", _rewrite(content, found), findings, provenance, saw(content))
+
+
+def _find_folded(haystack: str, needle: str, start: int, tolerant: bool) -> tuple[int, int] | None:
+    """The next occurrence of ``needle`` in ``haystack`` at or after ``start``.
+
+    With ``tolerant`` false this is ``str.find`` and nothing else.
+
+    With it true, the needle's TRAILING combining marks are matched as a
+    subsequence of the marks that follow the match rather than as a contiguous
+    run. That is exactly the freedom NFD's canonical ordering takes: it is a
+    stable sort by combining class over one combining sequence, so a mark from
+    the text AFTER the needle can sort in front of one of the needle's own
+    marks, and it can never cross a starter or reorder the needle's marks among
+    themselves. Matching the tail as a subsequence accepts the interleaving and
+    nothing else.
+
+    The span it returns COVERS the interleaved characters, which is what a
+    redaction needs: they sit inside the word the placeholder replaces.
+
+    The needle is split at its last starter. With no starter at all -- a needle
+    that is nothing but combining marks -- the tolerance would match almost
+    anything, so the plain search is used instead.
+    """
+    if not tolerant:
+        index = haystack.find(needle, start)
+        return None if index == -1 else (index, index + len(needle))
+
+    cut = 0
+    for position, character in enumerate(needle):
+        if unicodedata.combining(character) == 0:
+            cut = position + 1
+    if cut in (0, len(needle)):
+        index = haystack.find(needle, start)
+        return None if index == -1 else (index, index + len(needle))
+
+    head, tail = needle[:cut], needle[cut:]
+    index = haystack.find(head, start)
+    while index != -1:
+        cursor = index + len(head)
+        remaining = 0
+        while remaining < len(tail) and cursor < len(haystack):
+            character = haystack[cursor]
+            if unicodedata.combining(character) == 0:
+                break
+            cursor += 1
+            if character == tail[remaining]:
+                remaining += 1
+        if remaining == len(tail):
+            return (index, cursor)
+        index = haystack.find(head, index + 1)
+    return None
 
 
 def _skeleton(text: str) -> _Folded:

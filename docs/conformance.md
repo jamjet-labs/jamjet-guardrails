@@ -1086,7 +1086,14 @@ statement rather than this project's.
   `U+0301` has Latin among its extensions, so under a constraint naming Latin it
   passes and `Приве́т` is reported as two findings rather than one. That is the
   maximal-run rule applied consistently, and its consequence on a `redact` is
-  that the mark is left standing between two placeholders. `sc-0020` labels it.
+  that the mark is left standing between two placeholders. `sc-0020` records it,
+  and it is what the published row costs. The case is labelled with the ONE
+  finding the redaction needs rather than the two the check emits, so the
+  shortfall named here is scored rather than described: the row moved from
+  1.000 / 1.000 to 0.960 / 0.980 when the label was corrected, and it will move
+  back when the behaviour is. Labelling it with the two spans made every one of
+  the four shortfalls in this list free, which is what a 1.000 / 1.000 row
+  beside a list of known failures should always be read as.
 - **A run is not a word, and this check does not read.** A single Cyrillic
   letter substituted into a Latin word is a one-character finding, and so is a
   Cyrillic letter that a Russian speaker typed on purpose. Telling those apart
@@ -1100,7 +1107,7 @@ corpus is `corpora/confusables/in-repo.jsonl`.
 Every rule below has TWO conditions and both are contract, because either one
 on its own denies a language rather than an attack. A port that implements one
 half of either rule scores worse on this corpus than a port that implements
-neither: 59 of the 109 cases are labelled `allow` and most of them are ordinary
+neither: 61 of the 115 cases are labelled `allow` and most of them are ordinary
 Russian, Ukrainian, Serbian, Bulgarian, Greek, Japanese, Chinese and Korean
 sentences carrying Latin brand names.
 
@@ -1126,11 +1133,28 @@ without either being named as one: `iPhone-ом` and `iPhone'ом` are two
 single-script tokens and pass, and `iPhoneом` is one token and is tested as one.
 Splitting is the conservative direction.
 
-Default-ignorable code points also end a token and belong to none. That is a
-contract rather than an implementation choice: it is what makes this check's
-character set disjoint from every `injection-structural` signal, so no finding
-from the two checks ever covers one code point. Its cost is stated under the
-shortfalls below.
+Default-ignorable code points carry no script and belong to no token's TEXT,
+and they do not end a token either: they are transparent, so `p<U+200B>аypal` is
+one token and `p<U+00AD>а<U+00AD>ypal` is one token. A port that ends a token on
+them fails open. That is a measurement rather than an opinion: those code points
+are invisible by definition, so ending a token on one lets a spoofed token be
+split into halves that each read as a single script, and the check reports
+nothing at all.
+
+**THIS CLAUSE USED TO SAY THE OPPOSITE, AND IT CAME WITH A COMPENSATING CONTROL
+THAT DOES NOT EXIST.** The claim was that ending a token there keeps this
+check's character set disjoint from every `injection-structural` signal, and
+that a spoof laundered that way is denied anyway because the other check reports
+the code point. Neither half survives measurement: 401 of the 4,174
+default-ignorable code points are reported by no structural signal at all -- all
+260 variation selectors, U+00AD, the directional marks and the tag block -- and a
+code point that IS reported needs five of them present or two adjacent before
+that check's own bounds fire, so one zero-width space is reported by nothing
+either. A port that implements the old clause has the bypass this one closes.
+
+A span from this check may therefore cover a code point `injection-structural`
+also claims. That is what a chain's span merge is for: overlapping claims
+collapse into one region whose placeholder names both types.
 
 ### It runs on input and on output
 
@@ -1211,8 +1235,8 @@ other holds up.
 
 ### Where this implementation falls short of its own corpus
 
-The recall figure in `BENCHMARKS.md` is below 1.0 on purpose. Seven cases are
-labelled `deny` and allowed here, and they are five distinct shapes:
+The recall figure in `BENCHMARKS.md` is below 1.0 on purpose. Six cases are
+labelled `deny` and allowed here, and they are three distinct shapes:
 
 - **A spoof outside a host, an email domain or a handle.** `cnf-0045` is a
   spoofed hostname written with no scheme and `cnf-0046` is the same
@@ -1226,11 +1250,12 @@ labelled `deny` and allowed here, and they are five distinct shapes:
 - **A token with no majority.** `cnf-0049` is two Cyrillic and two Latin
   letters, so the tie-break picks the first code point's script and the Latin
   half is then the minority. `cnf-0044` is the same shape at two characters.
-- **A spoof laundered with a default-ignorable code point.** `cnf-0050` puts a
-  zero-width space after the substituted letter, which ends the token and
-  leaves two single-script tokens. `injection-structural` reports that code
-  point and denies by default, so a chain running both still denies; this check
-  alone does not.
+`cnf-0050` was a seventh, and a fourth shape, until the token rule above was
+corrected: a zero-width space after the substituted letter ended the token and
+left two single-script tokens, and the chain that was supposed to cover it did
+not. It is an ordinary positive now, and `cnf-0110` through `cnf-0113` carry the
+same laundering with a soft hyphen, a variation selector, a left-to-right mark
+and a zero-width space, in a token, a URL host label and an email domain.
 
 Three cases labelled `allow` are denied here and cost precision. `cnf-0058` and
 `cnf-0061` are a Latin brand with a Cyrillic case ending built entirely from
