@@ -41,6 +41,7 @@ EXPECTED = [
     ("pii", "in-repo"),
     ("pii", "third-party"),
     ("rules", "in-repo"),
+    ("script-constraint", "in-repo"),
     ("secrets", "in-repo"),
     ("url-exfiltration", "in-repo"),
 ]

@@ -46,6 +46,7 @@ pip install jamjet-guardrails
 | `secrets` | credentials, matched on their issuer prefix | `sk-`, `AKIA`, `ghp_`, `xoxb-` prefixes and PEM private key headers |
 | `url-exfiltration` | URLs that carry data out rather than fetch something in | a markdown image whose query string is your conversation, a `data:` URI that says it is a picture, a `javascript:` scheme |
 | `rules` | whatever you define | your ticket ids, internal hostnames, banned codenames, size limits |
+| `script-constraint` | text written in a script your deployment did not ask for | a Cyrillic paragraph in an English page, one Greek letter inside a Latin word |
 
 Every check runs on input and on output, returns `allow`, `redact` or `deny`,
 and reports the exact span it matched so a redaction can be applied and
@@ -125,6 +126,7 @@ Branch on the decision first.
 | `injection-structural` | constraint | input, output | `BIDI_OVERRIDE`, `INVISIBLE_TAG_CHARS`, `ZERO_WIDTH_SMUGGLING` |
 | `pii` | constraint | input, output | `CREDIT_CARD`, `EMAIL`, `PHONE_NUMBER`, `US_SSN` |
 | `rules` | constraint | input, output | `INTERNAL_HOST`, `LENGTH_LIMIT`, `PROJECT_CODENAME`, `TICKET_ID` |
+| `script-constraint` | constraint | input, output | `DISALLOWED_SCRIPT` |
 | `secrets` | constraint | input, output | `ANTHROPIC_KEY`, `AWS_ACCESS_KEY`, `GITHUB_TOKEN`, `JWT`, `OPENAI_KEY`, `PRIVATE_KEY`, `SLACK_TOKEN` |
 | `url-exfiltration` | constraint | input, output | `DATA_URI_PAYLOAD`, `LINK_QUERY_PAYLOAD`, `MARKDOWN_IMAGE_EXFIL`, `NESTED_REDIRECT`, `SCRIPT_SCHEME` |
 
@@ -167,6 +169,19 @@ through. What it does not catch is published beside what it does, in
 
 **`rules`** is the check whose types you choose. It takes your own regular
 expressions, banned substrings and size limits.
+
+**`script-constraint`** is the check with no default. You name the writing
+systems your deployment expects, in long Unicode script names, and it reports
+the runs of text outside them. Punctuation, digits, currency, mathematics,
+emoji, combining marks and variation selectors pass under every constraint,
+because they belong to no writing system and a check that denied a comma would
+be switched off. `build("script-constraint")` with no options is refused: the
+only defaults available are one that permits every script and reports nothing,
+and one that decides for you which languages are ordinary.
+
+```py
+guard = build("script-constraint", allowed_scripts={"Latin", "Hiragana", "Katakana", "Han"})
+```
 
 ## Your own rules
 
@@ -272,6 +287,8 @@ failures is a number you cannot check.
 | rules | rules/in-repo | in-repo | `f1b809114b13` | 40 | 1.000 | 1.000 | 1.000 | 28 | 0 | 0 | 0 |
 | secrets | secrets/in-repo | in-repo | `337e35f03cad` | 160 | 0.881 | 0.873 | 0.877 | 96 | 13 | 14 | 8 |
 | url-exfiltration | url-exfiltration/in-repo | in-repo | `c8015e4e93e2` | 88 | 0.914 | 0.914 | 0.914 | 32 | 3 | 3 | 6 |
+| script-constraint | script-constraint/in-repo | in-repo | `92fddb0f04be` | 85 | 1.000 | 1.000 | 1.000 | 50 | 0 | 0 | 0 |
+| secrets | secrets/in-repo | in-repo | `e9e0ed70dc37` | 39 | 0.957 | 0.880 | 0.917 | 22 | 1 | 3 | 4 |
 
 See [BENCHMARKS.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/BENCHMARKS.md) for the per-type scores and the worst misses
 behind these numbers, and [corpora/NOTICE.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/corpora/NOTICE.md) for what each
@@ -325,6 +342,9 @@ measured on a corpus we did not, and the two are never merged. There is no
 third-party corpus for `injection-structural`, `rules`, `secrets` or
 `url-exfiltration`. No compatibly licensed one was found for any of them, so
 all four are measured on our own corpora only and are self-graded.
+third-party corpus for `injection-structural`, `rules`, `script-constraint` or
+`secrets`. No compatibly licensed one was found for any of them, so all four are
+measured on our own corpora only and are self-graded.
 
 The third-party PII corpus is derived from
 [nvidia/Nemotron-PII](https://huggingface.co/datasets/nvidia/Nemotron-PII),

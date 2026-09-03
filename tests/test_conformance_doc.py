@@ -60,6 +60,7 @@ REQUIRED_SECTIONS = [
     "## The injection-structural constraint",
     "## The rules constraint",
     "## The url-exfiltration constraint",
+    "## The script-constraint constraint",
     "## Third-party corpora",
     "## What is deliberately unspecified",
 ]

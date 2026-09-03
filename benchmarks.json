@@ -787,6 +787,31 @@
       "failures": []
     },
     {
+      "detector": "script-constraint",
+      "detector_version": "0.1.0",
+      "corpus_name": "script-constraint/in-repo",
+      "corpus_source": "in-repo",
+      "corpus_version": "92fddb0f04be",
+      "cases": 85,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "true_positives": 50,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "decision_mismatches": 0,
+      "per_type": {
+        "DISALLOWED_SCRIPT": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "true_positives": 50,
+          "false_positives": 0,
+          "false_negatives": 0
+        }
+      },
+      "failures": []
+    },
+    {
       "detector": "secrets",
       "detector_version": "0.1.0",
       "corpus_name": "secrets/in-repo",

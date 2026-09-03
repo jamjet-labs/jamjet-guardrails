@@ -11,6 +11,10 @@ from jamjet_guardrails.detectors.injection_structural import (
 )
 from jamjet_guardrails.detectors.pii import PII_TYPES, PiiGuardrail
 from jamjet_guardrails.detectors.rules import RULES_TYPES, build_rules
+from jamjet_guardrails.detectors.script_constraint import (
+    SCRIPT_CONSTRAINT_TYPES,
+    ScriptConstraintGuardrail,
+)
 from jamjet_guardrails.detectors.secrets import SECRET_TYPES, SecretsGuardrail
 from jamjet_guardrails.detectors.url_exfiltration import (
     URL_EXFILTRATION_TYPES,
@@ -24,6 +28,7 @@ AVAILABLE: dict[str, Callable[..., Guardrail]] = {
     "injection-structural": InjectionStructuralGuardrail,
     "pii": PiiGuardrail,
     "rules": build_rules,
+    "script-constraint": ScriptConstraintGuardrail,
     "secrets": SecretsGuardrail,
     "url-exfiltration": UrlExfiltrationGuardrail,
 }
@@ -48,6 +53,7 @@ TYPES: dict[str, frozenset[str]] = {
     "injection-structural": INJECTION_TYPES,
     "pii": PII_TYPES,
     "rules": RULES_TYPES,
+    "script-constraint": SCRIPT_CONSTRAINT_TYPES,
     "secrets": SECRET_TYPES,
     "url-exfiltration": URL_EXFILTRATION_TYPES,
 }
@@ -282,6 +288,7 @@ __all__ = [
     "TYPES",
     "InjectionStructuralGuardrail",
     "PiiGuardrail",
+    "ScriptConstraintGuardrail",
     "SecretsGuardrail",
     "UrlExfiltrationGuardrail",
     "build",

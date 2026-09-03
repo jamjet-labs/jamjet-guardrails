@@ -11,6 +11,8 @@ every score. How to read them is under the table.
 | rules | rules/in-repo | in-repo | `f1b809114b13` | 40 | 1.000 | 1.000 | 1.000 | 28 | 0 | 0 | 0 |
 | secrets | secrets/in-repo | in-repo | `337e35f03cad` | 160 | 0.881 | 0.873 | 0.877 | 96 | 13 | 14 | 8 |
 | url-exfiltration | url-exfiltration/in-repo | in-repo | `c8015e4e93e2` | 88 | 0.914 | 0.914 | 0.914 | 32 | 3 | 3 | 6 |
+| script-constraint | script-constraint/in-repo | in-repo | `92fddb0f04be` | 85 | 1.000 | 1.000 | 1.000 | 50 | 0 | 0 | 0 |
+| secrets | secrets/in-repo | in-repo | `e9e0ed70dc37` | 39 | 0.957 | 0.880 | 0.917 | 22 | 1 | 3 | 4 |
 
 ## How to read this
 
@@ -109,6 +111,13 @@ above clamped it.
 | TICKET_ID | 1.000 | 1.000 | 8 | 0 | 0 |
 
 ## Per type: secrets on secrets/in-repo (in-repo, `337e35f03cad`)
+## Per type: script-constraint on script-constraint/in-repo (in-repo, `92fddb0f04be`)
+
+| Type | Precision | Recall | TP | FP | FN |
+|---|---:|---:|---:|---:|---:|
+| DISALLOWED_SCRIPT | 1.000 | 1.000 | 50 | 0 | 0 |
+
+## Per type: secrets on secrets/in-repo (in-repo, `e9e0ed70dc37`)
 
 | Type | Precision | Recall | TP | FP | FN |
 |---|---:|---:|---:|---:|---:|
@@ -171,6 +180,11 @@ above clamped it.
 No misses on this corpus.
 
 ## Worst misses: secrets on secrets/in-repo (in-repo, `337e35f03cad`)
+## Worst misses: script-constraint on script-constraint/in-repo (in-repo, `92fddb0f04be`)
+
+No misses on this corpus.
+
+## Worst misses: secrets on secrets/in-repo (in-repo, `e9e0ed70dc37`)
 
 | Case | Kind | Expected | Predicted |
 |---|---|---|---|

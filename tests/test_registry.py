@@ -40,6 +40,8 @@ def test_every_bundled_detector_is_registered() -> None:
         "rules",
         "secrets",
         "url-exfiltration",
+        "script-constraint",
+        "secrets",
     }
 
 
