@@ -68,6 +68,12 @@ from types import ModuleType
 
 import pytest
 
+# The package itself, and two of its members. CodeQL's py/import-and-import-from
+# flagged reaching for the package again inside a test body with `import
+# jamjet_guardrails._unicode as package`: two spellings of one module in one
+# file is how a reader ends up believing they are two things. One import, at
+# the top, used by name below.
+from jamjet_guardrails import _unicode
 from jamjet_guardrails._unicode import UNKNOWN, script_set, skeleton
 from jamjet_guardrails._unicode import confusables as confusables_table
 from jamjet_guardrails._unicode import scripts as scripts_table
@@ -136,16 +142,26 @@ def test_the_generated_modules_are_byte_identical_to_a_regeneration() -> None:
     Byte identity rather than an equivalence: the modules must be REGENERABLE,
     which means the generator is the only thing that ever writes them, which
     means the next pin bump is a mechanical act rather than an archaeology.
+
+    BYTES, and this is the second draft. The first compared the generator's
+    string to `read_text()`, which applies universal newline translation on the
+    way in, so a committed module written with CRLF endings decoded to the same
+    string as the generator's LF output and passed a test whose name is byte
+    identity. A Copilot review on the pull request found it. It is not
+    hypothetical: git can be configured to check files out with CRLF, and this
+    module's whole job is to be reproducible from data rather than similar to
+    it. Encoding the generator's output and comparing to `read_bytes()` compares
+    what is actually on disk.
     """
     generator = _generator()
     for name, rendered in (
         ("scripts.py", generator.render_scripts(DATA)),
         ("confusables.py", generator.render_confusables(DATA)),
     ):
-        committed = (GENERATED / name).read_text(encoding="utf-8")
-        assert rendered == committed, (
-            f"_unicode/{name} differs from what the generator produces from "
-            f"unicode-data/16.0.0/. Rerun scripts/generate_unicode_tables.py"
+        committed = (GENERATED / name).read_bytes()
+        assert rendered.encode("utf-8") == committed, (
+            f"_unicode/{name} differs BYTE FOR BYTE from what the generator produces "
+            f"from unicode-data/16.0.0/. Rerun scripts/generate_unicode_tables.py"
         )
 
 
@@ -301,9 +317,7 @@ def test_the_module_sizes_the_package_docstring_records_are_the_real_ones() -> N
     Rounded to KiB, which is how the docstring states them, so the assertion
     reads the same way the sentence does.
     """
-    import jamjet_guardrails._unicode as package
-
-    stated = dict(re.findall(r"`(\w+\.py)` is (\d+) KiB", package.__doc__ or ""))
+    stated = dict(re.findall(r"`(\w+\.py)` is (\d+) KiB", _unicode.__doc__ or ""))
     assert set(stated) == {"scripts.py", "confusables.py"}, (
         f"the cost paragraph names {sorted(stated)}, not both generated modules"
     )
