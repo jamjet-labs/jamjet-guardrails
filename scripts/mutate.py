@@ -75,12 +75,44 @@ def node_id(test: str) -> str:
     contributor adding a check writes `tests/test_<name>.py`, and this script
     could not address that file at all, so the mutation loop it exists to
     mechanise had to be run by hand for every test outside one module.
+
+    THE TEST IS THE FILESYSTEM, not the presence of `::`. The first version
+    asked only whether the string contained `::`, so a whole FILE selector,
+    which is a perfectly good node id, was treated as a bare test name and
+    rewritten into `tests/test_training_data.py::tests/test_my_check.py`. A
+    Copilot review on the pull request found it.
+
+    That is not a cosmetic mistake in a tool of this kind. pytest exits
+    non-zero on a selector it cannot collect, and this harness reads a non-zero
+    exit as the mutation having been CAUGHT, so every whole-file mutation entry
+    a contributor wrote would have reported a kill without running anything.
+    That is the exact failure mode `run` below now refuses outright, and it was
+    live in the tool that exists to prevent it.
     """
-    return test if "::" in test else f"tests/test_training_data.py::{test}"
+    path = test.split("::", 1)[0]
+    if "::" in test or (ROOT / path).is_file():
+        return test
+    return f"tests/test_training_data.py::{test}"
+
+
+#: pytest's own exit codes for "this run measured nothing". 4 is a usage error,
+#: which a malformed selector produces; 5 is a selector that collected no tests.
+#: Both are non-zero, and a mutation harness that reads non-zero as a kill counts
+#: them as evidence that a guard works.
+_COLLECTED_NOTHING = (4, 5)
 
 
 def run(test: str) -> tuple[bool, str]:
-    """Run one test by node id. Returns (passed, last line of output)."""
+    """Run one test by node id. Returns (passed, last line of output).
+
+    REFUSES a selector that collected nothing, rather than reporting it as a
+    failure. Every caller here reads `passed=False` as "the mutation was
+    caught", so a selector naming a test that does not exist, or a file that
+    does not exist, would be recorded as a guard doing its job while nothing
+    ran at all. That is the single most common way a mutation check lies, it
+    was hit three times by hand during phase 3, and it is worth an exception
+    rather than a boolean the caller has to remember to interpret.
+    """
     _clear_bytecode()
     result = subprocess.run(
         [
@@ -105,6 +137,13 @@ def run(test: str) -> tuple[bool, str]:
         check=False,
     )
     lines = result.stdout.strip().splitlines()
+    if result.returncode in _COLLECTED_NOTHING:
+        raise SystemExit(
+            f"the selector {node_id(test)!r} collected no test (pytest exit "
+            f"{result.returncode}). A mutation harness reads a non-zero exit as the "
+            f"mutation being caught, so this would have been recorded as a guard "
+            f"working while nothing ran. Fix the selector.\n{lines[-1] if lines else ''}"
+        )
     return result.returncode == 0, lines[-1] if lines else ""
 
 
