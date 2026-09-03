@@ -33,8 +33,9 @@ ROOT = Path(__file__).resolve().parent.parent
 # citations nothing checks, and every path in the new section would have been
 # unverified while the guard sat right here looking thorough.
 _CITED = re.compile(
-    r"`((?:benchmarks|corpora|tests|scripts|src/jamjet_guardrails|docs|unicode-data|\.github)/"
-    r"[^`]*|[A-Z]+\.md)`"
+    r"`((?:benchmarks|corpora|tests|scripts|src/jamjet_guardrails|docs"
+    r"|unicode-data|template-data|\.github)/[^`]*"
+    r"|[A-Z]+\.md)`"
 )
 
 

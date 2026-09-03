@@ -13,6 +13,7 @@ import pytest
 import jamjet_guardrails
 
 ROOT = Path(__file__).resolve().parent.parent
+TEMPLATE_DATA = ROOT / "template-data"
 
 
 def _installed_classifiers() -> set[str]:
@@ -462,6 +463,84 @@ def test_the_ship_bar_was_recorded_before_any_model_existed() -> None:
     # before any model existed, and holds every run record's trained_utc after
     # the bar's recorded_utc. That is the ordering itself; this is the rule
     # that stops a second bar appearing where nothing would compare it.
+
+
+# ==========================================================================
+# What the two BUILT artifacts carry, opened rather than inferred.
+# ==========================================================================
+#
+# Every other test in this file reads the installed metadata or the source
+# tree. Under the editable install CI and local development both use, those
+# resolve to the working directory, so nothing above can tell the difference
+# between a file being present and a file being SHIPPED. The release workflow
+# opens the wheel, and until now that was the only place anything did; a
+# release workflow is the wrong place for the first look, because it runs after
+# the pull request that broke the packaging was merged.
+#
+# `template-data/` is what made it worth building here. It is the evidence
+# behind a generated table: the raw tokenizer configuration the markers were
+# read out of, which somebody auditing the table has to be able to get hold of.
+# It belongs in the sdist for exactly that reason, and it must not be in the
+# wheel, where it would be dead weight in every consumer's environment and
+# would put third-party licensed files inside an installed package.
+#
+# The archives are built ONCE for the session by `built` above, and the member
+# names come from that same build rather than from a second one. Two fixtures
+# named `built` arrived here from two branches, one returning the paths and one
+# returning the member names, and ruff caught the redefinition; a second build
+# would also have been a second answer to one question, which is how two tests
+# end up disagreeing about what shipped.
+
+
+@pytest.fixture(scope="session")
+def built_names(built: tuple[Path, Path]) -> tuple[list[str], list[str]]:
+    """The member names inside the sdist and the wheel `built` produced."""
+    sdist, wheel = built
+    with tarfile.open(sdist) as archive:
+        # The sdist nests everything under `<name>-<version>/`. Strip it, so the
+        # names below read as repository paths and a version bump does not
+        # change what this file asserts.
+        sdist_names = [name.partition("/")[2] for name in archive.getnames()]
+    return sdist_names, zipfile.ZipFile(wheel).namelist()
+
+
+def test_the_built_sdist_carries_every_committed_template_data_file(
+    built_names: tuple[list[str], list[str]],
+) -> None:
+    """The sdist is the evidence, so the evidence has to be in it.
+
+    Derived from what is on disk rather than from a list, for the reason
+    `tests/test_published_docs.py` gives about guards written over whichever
+    files their author had open: a source added to
+    `scripts/generate_template_markers.py` is covered here without anyone
+    remembering.
+    """
+    sdist_names, _ = built_names
+    expected = sorted(
+        str(path.relative_to(ROOT)) for path in TEMPLATE_DATA.rglob("*") if path.is_file()
+    )
+    assert expected, "nothing under template-data/; this guard would prove nothing"
+    missing = [name for name in expected if name not in sdist_names]
+    assert missing == [], f"the built sdist ships no evidence for: {missing}"
+
+
+def test_the_built_wheel_carries_the_table_and_none_of_its_raw_sources(
+    built_names: tuple[list[str], list[str]],
+) -> None:
+    """Both halves, because either alone is satisfied by the wrong artifact.
+
+    A wheel with neither the table nor the raw files passes a test that only
+    forbids the raw files, and a wheel carrying both passes a test that only
+    requires the table. The table is generated code and belongs in the package;
+    the tokenizer configuration it was generated from is third-party material
+    that has no business inside a consumer's site-packages.
+    """
+    _, wheel_names = built_names
+    assert "jamjet_guardrails/detectors/_template_markers.py" in wheel_names, (
+        "the wheel ships no marker table"
+    )
+    stray = sorted(name for name in wheel_names if "template-data" in name)
+    assert stray == [], f"the wheel ships raw tokenizer configuration: {stray}"
 
 
 # ==========================================================================

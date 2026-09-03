@@ -122,6 +122,18 @@ a number that changes quietly is a number nobody can rely on.
   a field added later is a decision about which side it belongs to rather than a
   field nobody digests.
 
+
+- `corpora/NOTICE.md` gains a "Chat-template marker sources" section: every
+  source repository with its revision and licence, the three gated repositories
+  named with the mirror each was read from instead, the notices the Llama 2,
+  Meta Llama 3 and Gemma terms ask for, and what the table leaves out. Two
+  exclusions are recorded with their measured cost: 2 HTML element names, `<s>`
+  and `</s>`, removed by membership in the pinned element index rather than by
+  naming the two strings, and 1018 reserved slots removed by the rule that
+  their name ends in a number.
+- `tests/test_published_docs.py` resolves cited `template-data/` paths too, so a
+  published document that names a raw source file is held to it existing.
+
 ### Security
 
 - Every GitHub Action in every workflow is pinned to a full commit SHA with a
@@ -268,6 +280,28 @@ a number that changes quietly is a number nobody can rely on.
   the corpus carry 206 and 263 characters of ordinary prose and are denied.
 - **Rot13 ships**, on a two-sided test and a measured ablation: removing it costs
   two true positives and returns no precision.
+- A generated chat-template marker table,
+  `src/jamjet_guardrails/detectors/_template_markers.py`, holding 59 delimiter
+  strings read out of the tokenizer configuration of nine pinned repositories:
+  Llama 2 chat, Llama 3 instruct, Qwen 2.5 instruct, Mistral instruct, Gemma 2
+  instruct, Phi-3 instruct, DeepSeek V3, GPT-2 and, for one exclusion, the HTML
+  Standard's element index. Every marker records the repository, the commit and
+  the SHA-256 of the file it came from. `scripts/generate_template_markers.py`
+  builds it and the raw files it read are committed under `template-data/`, in
+  the sdist and out of the wheel, so the table can be regenerated and diffed
+  offline. Nothing imports it yet: the `template-integrity` check lands
+  separately with its corpus and its published row, and until then the table is
+  private and unregistered.
+- Three guards on that table in `tests/test_template_markers.py`: regeneration
+  from the committed raw files must reproduce the module byte for byte, the
+  recorded digests must be those files' digests in both directions, and a
+  network-gated run under `JAMJET_GUARDRAILS_NETWORK=1`, never set in CI,
+  re-fetches every pinned revision for the day a pin is bumped.
+- `tests/test_packaging.py` now builds the sdist and the wheel and opens both,
+  which nothing outside the release workflow did before. It asserts that every
+  file under `template-data/` is in the sdist and that none of it is in the
+  wheel, and that the generated table is. `build` and `hatchling` join the dev
+  extra to make that possible with no network.
 
 ## [0.3.0]
 
