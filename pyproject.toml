@@ -172,6 +172,25 @@ jamjet-guardrails = "jamjet_guardrails.eval.cli:main"
 # requirement so that the day someone adds an ignore rule or an `include` list,
 # there is something here to have contradicted.
 artifacts = ["unicode-data/"]
+#
+# MEASURED, not defensive. hatchling 1.32.0 includes `packages/` in the sdist by
+# default: without this line the core source distribution carried 25 files
+# belonging to `jamjet-guardrails-nemo` and `jamjet-guardrails-validators`,
+# including their own pyproject.toml files, each declaring runtime dependencies
+# on a framework.
+#
+# That matters beyond tidiness. The sdist is the evidence for the zero-dependency
+# claim: it is what a distribution reviewer, a licence scanner or a rebuild reads
+# to see what this package IS. An sdist that carries two adapters' metadata
+# invites exactly one wrong reading, and the adapters are separately released
+# distributions with their own tags, so nothing about them belongs in this one.
+#
+# `tests/test_packaging.py::test_the_sdist_carries_nothing_from_the_adapter_packages`
+# builds the sdist and holds this. The leading slash anchors the pattern at the
+# repository root, so a `packages/` directory nested anywhere else is unaffected;
+# an unanchored pattern is the mistake `.gitignore` in this repository already
+# documents.
+exclude = ["/packages"]
 
 [tool.hatch.build.targets.wheel]
 # `src/jamjet_guardrails` and nothing else, which is also what keeps
@@ -195,26 +214,6 @@ packages = ["src/jamjet_guardrails"]
 # actually checks the shipped artifact is the release workflow, which asserts
 # py.typed is inside the wheel before anything is published.
 artifacts = ["src/jamjet_guardrails/py.typed"]
-
-[tool.hatch.build.targets.sdist]
-# MEASURED, not defensive. hatchling 1.32.0 includes `packages/` in the sdist by
-# default: without this line the core source distribution carried 25 files
-# belonging to `jamjet-guardrails-nemo` and `jamjet-guardrails-validators`,
-# including their own pyproject.toml files, each declaring runtime dependencies
-# on a framework.
-#
-# That matters beyond tidiness. The sdist is the evidence for the zero-dependency
-# claim: it is what a distribution reviewer, a licence scanner or a rebuild reads
-# to see what this package IS. An sdist that carries two adapters' metadata
-# invites exactly one wrong reading, and the adapters are separately released
-# distributions with their own tags, so nothing about them belongs in this one.
-#
-# `tests/test_packaging.py::test_the_sdist_carries_nothing_from_the_adapter_packages`
-# builds the sdist and holds this. The leading slash anchors the pattern at the
-# repository root, so a `packages/` directory nested anywhere else is unaffected;
-# an unanchored pattern is the mistake `.gitignore` in this repository already
-# documents.
-exclude = ["/packages"]
 
 [tool.ruff]
 line-length = 100
