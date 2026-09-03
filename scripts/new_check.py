@@ -15,7 +15,7 @@ only CONTRIBUTING.md as a guide, found three things wrong with that:
 - Registering the check without importing the two names raises NameError while
   importing the package, so pytest dies at COLLECTION with 24 errors and zero
   test results. The one failure the list could not describe was the one it
-  produced, so the import is now step 2 and is spelled out.
+  produced, so the import is now step 1, spelled out and named as its own step.
 - test_completeness.py is parametrised over AVAILABLE, so before registration it
   sees nothing at all. What goes red first is test_corpora.py and the scaffolded
   tests themselves.

@@ -35,6 +35,10 @@ GUIDE = ROOT / "docs" / "migrating-from-llm-guard.md"
 DIST = "jamjet-guardrails"
 
 STATUSES = ("mapped", "partial", "gap")
+#: The two directions llm-guard splits its scanners across, and the count table
+#: reports per direction. Read by `test_every_row_carries_a_direction_the_table_counts`
+#: rather than left declared and unused: a constant nothing reads is a claim
+#: nothing checks, and this one is the domain the row pattern below spells inline.
 DIRECTIONS = ("input", "output")
 
 # One row of the mapping table: a backticked scanner class, a direction, a
@@ -288,3 +292,24 @@ def test_the_zero_dependency_claim_is_what_the_installed_metadata_says() -> None
     runtime = [item for item in declared if "extra ==" not in item]
     assert runtime == [], f"{DIST} declares runtime dependencies: {runtime}"
     assert "declares zero runtime dependencies" in _flat(_text())
+
+
+def test_every_row_carries_a_direction_the_table_counts() -> None:
+    """The row pattern and the count table must agree about the domain.
+
+    `_ROW` spells `(input|output)` inline and the count table has a column per
+    direction, so the two state the same fact in two places. `DIRECTIONS` was
+    declared for it and never read, which is how the third statement of a fact
+    drifts from the other two without anything noticing.
+
+    Mutation-checked: adding a third direction to `DIRECTIONS` fails, and so
+    does a row whose direction cell is outside it, because the pattern then
+    stops matching that row and the totals no longer add up.
+    """
+    rows = _rows()
+    assert rows, "no rows parsed; this guard would prove nothing"
+    found = {direction for _scanner, direction, _status, _replacement, _note in rows}
+    assert found == set(DIRECTIONS), (
+        f"the guide's rows carry directions {sorted(found)} and this module declares "
+        f"{sorted(DIRECTIONS)}; the row pattern spells the same domain a third time"
+    )

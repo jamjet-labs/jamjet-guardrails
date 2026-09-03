@@ -10,6 +10,7 @@ a number that changes quietly is a number nobody can rely on.
 
 ## [Unreleased]
 
+
 ### Added
 
 - Both adapter READMEs now say that the framework they install reaches the
@@ -270,6 +271,19 @@ a number that changes quietly is a number nobody can rely on.
   found in.
 
 ### Fixed
+
+- `scripts/mutate.py` no longer mangles a whole-file selector.
+  `node_id` asked only whether the string contained `::`, so
+  `tests/test_my_check.py`, which is a perfectly good node id, became
+  `tests/test_training_data.py::tests/test_my_check.py`. pytest exits non-zero
+  on a selector it cannot collect and this harness reads non-zero as the
+  mutation having been CAUGHT, so every whole-file entry a contributor wrote
+  would have reported a kill with nothing run. The test is now the filesystem.
+- `scripts/mutate.py` refuses a selector that collected no test, rather than
+  reporting it as a failure. That is the single most common way a mutation
+  check lies, it was hit three times by hand during phase 3, and it was live in
+  the tool that exists to prevent it.
+
 
 - A `validators-v*` tag no longer fires the core PyPI publish job.
   `startsWith(github.ref_name, 'v')` is true for `validators-v0.1.0`, because
