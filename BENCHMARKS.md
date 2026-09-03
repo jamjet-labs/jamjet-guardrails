@@ -6,6 +6,7 @@ every score. How to read them is under the table.
 | Check | Corpus | Source | Version | Cases | Precision | Recall | F1 | TP | FP | FN | Wrong decisions |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
 | confusables | confusables/in-repo | in-repo | `9ba6ea272420` | 109 | 0.936 | 0.863 | 0.898 | 44 | 3 | 7 | 10 |
+| encoded-content | encoded-content/in-repo | in-repo | `ffddd0cd3c29` | 81 | 1.000 | 0.875 | 0.933 | 35 | 0 | 5 | 5 |
 | injection-structural | injection-structural/in-repo | in-repo | `b704703f431d` | 154 | 0.972 | 0.873 | 0.920 | 103 | 3 | 15 | 8 |
 | pii | pii/in-repo | in-repo | `06fb3b601aba` | 81 | 0.631 | 0.872 | 0.732 | 41 | 24 | 6 | 24 |
 | pii | pii/third-party | nvidia/Nemotron-PII@b70ffaf | `c25ef538d677` | 300 | 0.960 | 0.997 | 0.978 | 340 | 14 | 1 | 6 |
@@ -82,6 +83,14 @@ above clamped it.
 | MIXED_SCRIPT_CONFUSABLE | 0.914 | 0.865 | 32 | 3 | 5 |
 | WHOLE_SCRIPT_CONFUSABLE | 1.000 | 0.857 | 12 | 0 | 2 |
 
+## Per type: encoded-content on encoded-content/in-repo (in-repo, `ffddd0cd3c29`)
+
+| Type | Precision | Recall | TP | FP | FN |
+|---|---:|---:|---:|---:|---:|
+| ENCODED_CREDENTIAL | 1.000 | 1.000 | 10 | 0 | 0 |
+| ENCODED_INSTRUCTION | 1.000 | 0.818 | 18 | 0 | 4 |
+| ENCODED_MARKUP | 1.000 | 0.875 | 7 | 0 | 1 |
+
 ## Per type: injection-structural on injection-structural/in-repo (in-repo, `b704703f431d`)
 
 | Type | Precision | Recall | TP | FP | FN |
@@ -156,6 +165,18 @@ above clamped it.
 | `cnf-0048` | decision_mismatch | deny | allow |
 
 ...and 15 more, in `benchmarks.json`.
+
+## Worst misses: encoded-content on encoded-content/in-repo (in-repo, `ffddd0cd3c29`)
+
+| Case | Kind | Expected | Predicted |
+|---|---|---|---|
+| `enc-0035` | decision_mismatch | deny | allow |
+| `enc-0036` | decision_mismatch | deny | allow |
+| `enc-0037` | decision_mismatch | deny | allow |
+| `enc-0038` | decision_mismatch | deny | allow |
+| `enc-0039` | decision_mismatch | deny | allow |
+
+...and 5 more, in `benchmarks.json`.
 
 ## Worst misses: injection-structural on injection-structural/in-repo (in-repo, `b704703f431d`)
 

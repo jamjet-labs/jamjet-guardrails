@@ -10,7 +10,6 @@ a number that changes quietly is a number nobody can rely on.
 
 ## [Unreleased]
 
-
 ### Added
 
 - Both adapter READMEs now say that the framework they install reaches the
@@ -177,6 +176,45 @@ a number that changes quietly is a number nobody can rely on.
   catches" never mentioning it.
 - A guard on the scaffold's own output:
   `tests/test_completeness.py::test_the_scaffold_writes_a_detector_a_caller_can_still_configure`.
+
+- The `encoded-content` check, registered, both directions, denying by default,
+  with a corpus of 81 cases and a published row of 1.000 precision and 0.875
+  recall, F1 0.933, 5 wrong decisions, gated against `corpora/baselines.json`
+  like every other row. Three types. `ENCODED_INSTRUCTION` is decoded text that
+  reads as prose AND opens a sentence with a verb from a derived imperative
+  lexicon; hidden prose that tells its reader to do something has one purpose,
+  and hidden prose that merely says something is allowed. `ENCODED_CREDENTIAL`
+  is decoded text the `secrets` patterns match, through a one-way import of that
+  module rather than a second copy of the patterns. `ENCODED_MARKUP` is decoded
+  text carrying a tag character, an unbalanced bidi control or a zero-width run,
+  through the same kind of import from `injection-structural`.
+- The span is the encoded run in the ORIGINAL content and `saw` is the original,
+  so nothing about `Verdict`, `ChainResult` or the porting contract changes and
+  `redact` means here what it means everywhere else. The rejected design was a
+  chain-level rescan of decoded text, which would have moved what `saw` and every
+  span mean for every port and enrolled every future check in a path its corpus
+  never graded.
+- Decodability rather than entropy, and the corpus is what says so. An entropy
+  score flags every hash, UUID, git SHA, signature and random API token, and none
+  of those decodes to text; all of them are in the corpus as labelled negatives,
+  along with a JWT, a base64 PNG, a PEM certificate and a base64 email body, so
+  the published precision is measured against the population an entropy rule
+  would have denied. There is no exemption for any of those shapes. A JWT does
+  not fire because its payload decodes to JSON and its signature does not decode
+  at all.
+- The imperative lexicon is derived and the derivation is recorded: the
+  sentence-initial words of the 1,792 attack rows of
+  `training/generated/rows.jsonl` that occur at least 5 times, of which 92 do,
+  kept only where the same corpus contains a present participle of them, which
+  leaves 29. Position alone would select `please`, `the`, `can` and eleven other
+  non-verbs ahead of every verb on that list, which is what makes the second step
+  the difference between a check on hidden instructions and a check on hidden
+  prose. The floor of 5 is the smallest value reaching the best F1 on the corpus
+  and both sides of it cost a case. Both are re-derived on every test run.
+- `docs/performance.md` gains `encoded-content`, and the figure sits in the
+  module docstring as it does for every other check. Its rows come from their own
+  run of `scripts/measure_throughput.py` on the machine that page names rather
+  than from a regeneration of the whole table.
 
 ### Changed
 
@@ -468,6 +506,33 @@ a number that changes quietly is a number nobody can rely on.
   the corpus carry 206 and 263 characters of ordinary prose and are denied.
 - **Rot13 ships**, on a two-sided test and a measured ablation: removing it costs
   two true positives and returns no precision.
+- **Rot13 earns its place in `encoded-content` on a stronger ablation.**
+  Removing it there loses three true positives, `enc-0015`, `enc-0016` and
+  `enc-0017`, and returns no precision either: the false-positive count is 0
+  with it and 0 without, over 42 negatives of which six are paragraphs of
+  ordinary English and therefore rot13 candidates every one.
+- **Two imperative verbs are outside the derived lexicon**, `forget` and
+  `scratch`. Both clear the position floor and both are removed by the morphology
+  step, because no present participle of either occurs in the rows the lexicon is
+  derived from. Adding them by hand would make the list "the derived one, plus
+  the ones I wanted", so `enc-0035` and `enc-0039` are labelled `deny`, are
+  allowed, and cost recall where a reader can see it.
+- **A doubly encoded payload passes `encoded-content` too.** One level is the
+  rule in both checks that decode. `enc-0036` is the measured example.
+- **An encoding outside the four alphabets is not read.** `enc-0037` is base32,
+  labelled `deny` and allowed.
+- **A run that decodes to nothing but structural characters does not decode at
+  all.** Decoded text under 90% printable is refused as bytes that survived a
+  decoder, and every character `ENCODED_MARKUP` reports is non-printable, so the
+  signal reaches a payload whose controls are at most a tenth of the text they
+  hide in. `enc-0038` is labelled `deny` and allowed.
+- **Decoded prose that is not imperative does not fire**, which is by design: a
+  base64 MIME part carrying an ordinary email body is `enc-0055`, labelled
+  `allow`, and closing that would deny every base64 MIME part there is.
+- **`ENCODED_MARKUP` reads the three structural signals only.** A chat-template
+  marker one encoding layer down is not among them and no corpus case labels one,
+  so the published per-type recall for that type measures the structural half.
+
 - A generated chat-template marker table,
   `src/jamjet_guardrails/detectors/_template_markers.py`, holding 59 delimiter
   strings read out of the tokenizer configuration of nine pinned repositories:

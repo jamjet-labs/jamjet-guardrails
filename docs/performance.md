@@ -26,12 +26,12 @@ differ from these can be told apart from one that does not.
 
 **A check added after this page was first written brings its own rows from its
 own run**, on the machine and interpreter named below and with the same
-defaults. `url-exfiltration` is one. Rows from two runs of the same script on
-one machine are a few percent apart in the p50 and further apart in the p99,
-which is the variance this page publishes a p99 to show rather than to hide; the
-alternative was rewriting every other check's numbers from whichever run
-happened to be last, and a busier laptop would then read as a regression in a
-check nobody had touched.
+defaults. `url-exfiltration` and `encoded-content` are two. Rows from two runs
+of the same script on one machine are a few percent apart in the p50 and further
+apart in the p99, which is the variance this page publishes a p99 to show rather
+than to hide; the alternative was rewriting every other check's numbers from
+whichever run happened to be last, and a busier laptop would then read as a
+regression in a check nobody had touched.
 
 ## The machine and the interpreter
 
@@ -112,6 +112,12 @@ Milliseconds per call. `MB/s` is derived from the p50.
 | confusables | 65 536 | 0 | 11.296 | 11.739 | 12.291 | 5.5 |
 | confusables | 262 144 | 0 | 45.491 | 47.770 | 48.426 | 5.5 |
 | confusables | 1 048 576 | 0 | 185.595 | 216.458 | 256.182 | 5.4 |
+| encoded-content | 1 024 | 0 | 0.166 | 0.171 | 0.179 | 5.9 |
+| encoded-content | 4 096 | 0 | 0.648 | 0.691 | 0.776 | 6.1 |
+| encoded-content | 16 384 | 0 | 2.550 | 2.656 | 2.753 | 6.2 |
+| encoded-content | 65 536 | 0 | 10.208 | 10.533 | 10.983 | 6.2 |
+| encoded-content | 262 144 | 0 | 42.053 | 43.697 | 44.273 | 6.0 |
+| encoded-content | 1 048 576 | 0 | 168.925 | 174.867 | 177.190 | 6.0 |
 | injection-structural | 1 024 | 1 | 0.123 | 0.139 | 0.149 | 8.0 |
 | injection-structural | 4 096 | 3 | 0.486 | 0.535 | 0.558 | 8.1 |
 | injection-structural | 16 384 | 15 | 1.987 | 2.089 | 2.127 | 7.9 |
@@ -185,9 +191,18 @@ of it, so 4.0 is exactly linear.
   call reports a `LENGTH_LIMIT` finding and the redacted output is truncated. The
   patterns are still scanned over the whole content, which is what these rows
   measure.
+- **`encoded-content`** is linear. Ratios run 3.90 to 4.12 and the rate holds at
+  5.9 to 6.2 megabytes per second across the range. **The findings column is zero
+  at every size, and that is what these rows measure**: nothing in the seeded
+  input decodes, so the number is the candidate scan plus one decode attempt per
+  candidate, and none of the three signals. What makes it the second slowest
+  check here is the alphabet with no alphabet: every run of letters and spaces is
+  a rot13 candidate, so ordinary prose is nothing but candidates, and each one is
+  rotated and scored for prose twice, once in each direction. Content full of
+  base64 costs less per byte than the English around it.
 - **`url-exfiltration`** is linear. Ratios run 3.90 to 4.04 and the rate holds
   at 9.2 to 9.5 megabytes per second across the range, which makes it the
-  fastest of the four scanning checks. **The findings column is zero at every
+  fastest of the five scanning checks. **The findings column is zero at every
   size, and that is what these rows measure**: the seeded input carries no URL,
   so the number is the discovery pass over the whole content and none of the
   decoding. Content full of URLs costs more, because each one is taken apart and

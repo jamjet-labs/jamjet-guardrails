@@ -37,6 +37,7 @@ ROOT = Path(__file__).resolve().parent.parent
 CORPORA = ROOT / "corpora"
 
 EXPECTED = [
+    ("encoded-content", "in-repo"),
     ("injection-structural", "in-repo"),
     ("pii", "in-repo"),
     ("pii", "third-party"),
@@ -849,6 +850,67 @@ def test_a_url_id_cited_as_a_labelled_case_carries_that_label() -> None:
                         f"which is labelled {case.expect_decision!r}"  # type: ignore[attr-defined]
                     )
     assert checked > 0, "no url id is cited beside a label; this guard would prove nothing"
+
+
+# The same two guards again, for the corpus this branch adds. Two corpora now
+# carry disclosure prose built on the allow/deny distinction, and the id classes
+# do not overlap, so the alternative to a third pair was one regex matching
+# `(?:inj|url|enc)-` and three tables of citing files feeding it -- which reads
+# as generality and is the same three tables.
+_ENCODED_CASE_ID = re.compile(r"enc-\d{4}")
+_ENCODED_CITING = (
+    ROOT / "src" / "jamjet_guardrails" / "detectors" / "encoded_content.py",
+    ROOT / "tests" / "test_encoded_content.py",
+    NOTICE,
+    ROOT / "docs" / "conformance.md",
+    ROOT / "CHANGELOG.md",
+)
+
+
+def _encoded_cases() -> dict[str, object]:
+    return {case.id: case for case in _load("encoded-content", "in-repo").cases}
+
+
+def test_every_encoded_case_id_cited_in_prose_exists() -> None:
+    """A cited id that reads plausibly and names nothing is the cheap failure;
+    one that names the wrong case is the expensive one, which the test below
+    catches."""
+    known = set(_encoded_cases())
+    for path in _ENCODED_CITING:
+        cited = set(_ENCODED_CASE_ID.findall(path.read_text(encoding="utf-8")))
+        missing = sorted(cited - known)
+        assert missing == [], f"{path.name} cites {missing}, which are not in the corpus"
+
+
+def test_an_encoded_id_cited_as_a_labelled_case_carries_that_label() -> None:
+    """Prose that says "labelled `allow`" beside an id has to be right about it.
+
+    This corpus needs it more than the url one did, because its disclosure is
+    ENTIRELY on the deny side: it has no false positives, so every id in the
+    misses list is labelled `deny` and every id in the allowed-by-design
+    paragraph is labelled `allow`. Swapping one for another would turn "this is
+    a miss we pay for" into "this is a case we allow on purpose" while every id
+    in the sentence still named a real case.
+
+    The window is the SENTENCE, for the reason the injection version gives.
+    """
+    cases = _encoded_cases()
+    boundary = re.compile(r"(?<=\.)\s+|\n\s*\n|\n\s*[-|]\s*")
+    checked = 0
+    for path in _ENCODED_CITING:
+        text = path.read_text(encoding="utf-8")
+        for sentence in boundary.split(text):
+            for phrase, decision in (("labelled `allow`", "allow"), ("labelled `deny`", "deny")):
+                if phrase not in sentence:
+                    continue
+                for case_id in _ENCODED_CASE_ID.findall(sentence):
+                    case = cases[case_id]
+                    checked += 1
+                    assert case.expect_decision == decision, (  # type: ignore[attr-defined]
+                        f"{path.name} says {phrase!r} in the same sentence as {case_id}, "
+                        f"which is labelled {case.expect_decision!r}"  # type: ignore[attr-defined]
+                    )
+    assert checked > 0, "no encoded id is cited beside a label; this guard would prove nothing"
 
 
 _TEST_NAME = re.compile(r"`(test_[a-z0-9_]+)`")

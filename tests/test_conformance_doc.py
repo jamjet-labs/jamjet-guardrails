@@ -62,6 +62,7 @@ REQUIRED_SECTIONS = [
     "## The url-exfiltration constraint",
     "## The script-constraint constraint",
     "## The confusables constraint",
+    "## The encoded-content constraint",
     "## Third-party corpora",
     "## What is deliberately unspecified",
 ]
