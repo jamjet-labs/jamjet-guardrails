@@ -1,0 +1,57 @@
+# Every `uses:` in this repository is pinned to a full commit SHA, never to a
+# tag. A tag is a movable pointer, so pinning one hands whoever can move it the
+# ability to run new code inside a job that builds and publishes this package.
+# The trailing comment names the release the SHA belongs to, because a bare
+# forty-character hash is unreadable at bump time and an unreadable pin is one
+# nobody bumps.
+#
+# TO BUMP ONE. `gh api repos/<owner>/<repo>/git/ref/tags/<tag>` gives
+# `.object.sha`. If it also reports `"type": "tag"` the ref is ANNOTATED and
+# that SHA is the tag OBJECT, which `uses:` cannot resolve; dereference it with
+# `gh api repos/<owner>/<repo>/git/tags/<sha>` and pin the commit it names.
+# `github/codeql-action` tags this way, so the two pins below are the commits
+# `v4` dereferences to and NOT the SHA `git/ref/tags/v4` hands back. Change the
+# trailing comment in the same edit. `tests/test_workflows.py` fails if a
+# `uses:` is not a forty-hex SHA, and fails again if it carries no version
+# comment.
+name: CodeQL
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # A weekly run, because most of what CodeQL finds arrives as a new query
+  # rather than as a new commit. A repository that only scans on push stops
+  # scanning the moment it stops changing, which is exactly when nobody is
+  # looking at it.
+  schedule:
+    - cron: "37 6 * * 1"
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    permissions:
+      # Naming ANY scope sets every unnamed one to none, so all three are
+      # listed. `security-events: write` is what lets the analysis upload its
+      # SARIF; without it the job runs the whole scan and fails at the last
+      # step. `contents: read` is for the checkout. `actions: read` is what the
+      # analysis uses to read the workflow run it belongs to.
+      security-events: write
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          languages: python
+          # `security-and-quality` over the default suite. The default is tuned
+          # to keep noise down on large codebases; this one is small, has no
+          # runtime dependencies to generate findings in, and publishes a
+          # security claim, so the wider suite costs little and is the point.
+          queries: security-and-quality
+      # No `autobuild` step and no build step of any kind. Python is not a
+      # compiled language for CodeQL's purposes, so `autobuild` is a no-op here,
+      # and installing the package would only give the analysis a site-packages
+      # tree to walk. `ci.yml` already installs, lints, typechecks, tests and
+      # gates the benchmarks on five interpreters; nothing in this file repeats
+      # any of it.
+      - uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
