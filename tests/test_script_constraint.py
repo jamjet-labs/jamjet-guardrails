@@ -14,6 +14,7 @@ one, and each refusal is a different mistake a configuration file can make.
 from __future__ import annotations
 
 from bisect import bisect_right
+from functools import lru_cache
 from pathlib import Path
 
 import pytest
@@ -399,6 +400,20 @@ def test_no_finding_carries_a_confidence() -> None:
 # ==========================================================================
 
 
+@lru_cache(maxsize=1)
+def _range_starts() -> tuple[int, ...]:
+    """The start of every script range, built once.
+
+    `_script_only` is called for every code point `_extension_effects` walks, and
+    it rebuilt this tuple from 979 ranges on each of them. Copilot found it on
+    the pull request. The tables are pinned and byte-identity gated, so there is
+    one answer.
+    """
+    from jamjet_guardrails._unicode.scripts import SCRIPT_RANGES
+
+    return tuple(start for start, _, _ in SCRIPT_RANGES)
+
+
 def _script_only(code: int) -> str:
     """What `script_set` would return if it resolved Script and not extensions.
 
@@ -407,8 +422,7 @@ def _script_only(code: int) -> str:
     """
     from jamjet_guardrails._unicode.scripts import SCRIPT_RANGES
 
-    starts = tuple(start for start, _, _ in SCRIPT_RANGES)
-    position = bisect_right(starts, code) - 1
+    position = bisect_right(_range_starts(), code) - 1
     if position >= 0:
         _, end, script = SCRIPT_RANGES[position]
         if code <= end:

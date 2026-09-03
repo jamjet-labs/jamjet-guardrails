@@ -41,6 +41,7 @@ states the machine, the input and the method.
 from __future__ import annotations
 
 from collections.abc import Collection
+from functools import lru_cache
 
 from jamjet_guardrails._spans import _rewrite
 from jamjet_guardrails.errors import GuardrailUnavailableError
@@ -90,6 +91,7 @@ def _quoted(value: object) -> str:
     return shown if len(shown) <= _VALUE_LIMIT else shown[:_VALUE_LIMIT] + "... (truncated)"
 
 
+@lru_cache(maxsize=1)
 def _script_names() -> frozenset[str]:
     """Every long script name the pinned tables can produce, `Unknown` aside.
 
@@ -98,6 +100,18 @@ def _script_names() -> frozenset[str]:
     in the direction that hurts: a script added by a later Unicode version
     would be refused as unknown while the tables resolve code points to it, so
     a caller could not name the script their own text is written in.
+
+    Cached, and safe to cache for a reason rather than by habit: the tables are
+    generated from data pinned at one Unicode version and committed, and a test
+    requires them to be byte-identical to a regeneration from that data, so this
+    set cannot change inside a process. Without the cache every construction
+    walked 979 script ranges and 110 extension sets to build the same 170 names,
+    which a deployment building one chain per configuration pays once and a test
+    suite building many pays many times. Found by a Copilot review on the pull
+    request.
+
+    `maxsize=1` because the function takes no argument: there is one answer and
+    the cache holds it.
     """
     from jamjet_guardrails._unicode.scripts import EXTENSION_SETS, SCRIPT_RANGES
 
