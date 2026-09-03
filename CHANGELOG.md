@@ -13,6 +13,21 @@ a number that changes quietly is a number nobody can rely on.
 
 ### Added
 
+- Both adapter READMEs now say that the framework they install reaches the
+  network, and name the switch that stops it. The core's front page promises
+  "No dependencies. No network calls. No model downloads", which is true of the
+  core and stops being true of a reader's environment the moment they install an
+  adapter. `nemoguardrails` 0.24.0 posts usage statistics to an NVIDIA endpoint
+  by default, off with `NEMO_GUARDRAILS_NO_USAGE_STATS=1` or `DO_NOT_TRACK=1`;
+  `guardrails-ai` 0.11.0 posts usage metrics and builds an OpenTelemetry
+  exporter at import, off with `OTEL_SDK_DISABLED` before the import and
+  `settings.rc.enable_metrics = False` after it. Both facts were already known
+  and written down in a `conftest.py`, which is where the test suite turns them
+  off and which no user reads. A test requires each adapter README to name its
+  own opt-out, because a disclosure a reader cannot act on is a paragraph.
+
+
+
 - New check `confusables`, a constraint in both directions denying by default
   and configurable per direction through `on_detect`. Two finding types:
   `MIXED_SCRIPT_CONFUSABLE`, a token that fails the UTS #39 Highly Restrictive

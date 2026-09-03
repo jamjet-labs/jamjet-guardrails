@@ -145,3 +145,33 @@ Any `metadata` a Guard passes is forwarded to the check as `Context.metadata`.
 ## Licence
 
 Apache-2.0.
+
+## The framework this adapter installs makes network calls
+
+`jamjet-guardrails` says on its own front page: no dependencies, no network
+calls, no model downloads. That is true of the core and it stops being true of
+your environment the moment you install this adapter, so it is said here rather
+than left for you to find.
+
+Measured on `guardrails-ai` 0.11.0: it posts usage metrics unless
+`settings.rc.enable_metrics` is false, and it builds an OpenTelemetry batch span
+exporter AT IMPORT whose flush happens at interpreter exit. On a machine with no
+route to the endpoint, that flush is several seconds of OTLP retries at the end
+of every process; on a machine with one, it is a report.
+
+Both are yours to turn off, and the ORDER matters, because the exporter is built
+during import:
+
+```python
+import os
+os.environ["OTEL_SDK_DISABLED"] = "true"   # before importing guardrails
+
+from guardrails import settings
+settings.rc.enable_metrics = False
+settings.disable_tracing = True
+```
+
+`tests/conftest.py` in this package does exactly that, for the same reason.
+
+Nothing in this adapter sends anything anywhere. The spans and messages it
+returns go back to the host in-process.
