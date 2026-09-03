@@ -161,9 +161,24 @@ agent chain is another model.
 **`pii`** redacts personal data to typed placeholders. **`secrets`** matches
 credentials on their issuer prefix rather than by scoring entropy, which is
 what makes its precision defensible and what keeps it off your git SHAs and
-UUIDs. Two shapes are named here rather than left for you to find:
-`github_pat_` fine-grained tokens and `xapp-` Slack app-level tokens are not
-among the prefixes matched, so both pass through untouched.
+UUIDs. Four shapes are named here rather than left for you to find.
+`github_pat_` fine-grained tokens, `xapp-` Slack app-level tokens and `xoxe-`
+Slack refresh tokens are not among the prefixes matched, so all three pass
+through untouched. And a JWT whose `eyJ` header runs past this check's
+4096-character header bound matches nothing at all rather than matching short.
+Every one of the four is a case in the corpus and costs recall in the row
+above, and
+[corpora/NOTICE.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/corpora/NOTICE.md)
+names each by case id.
+
+The list said two for as long as there were two. The corpus grew from 39 cases
+to 160 and brought a third credential family with it, and the guard that stood
+over this sentence ran one way only: it asserted each named prefix is still a
+miss, and never that every miss is named. The comment in `secrets.py` that
+promised "there is a test naming both" was the same two. Naming the new family
+here rather than in that paragraph is deliberate: a defect record that repeats
+the literal it is about satisfies the guard on the live sentence, which is the
+shape this project has a standing lesson about.
 
 **`url-exfiltration`** looks at what a URL carries rather than at where it
 points. A markdown image is fetched by the client without anyone clicking it,
@@ -357,9 +372,13 @@ applies limits correctly. It says nothing about whether any rule is well
 chosen, and the fixture behind it sets a character limit only, so the row never
 reaches the byte or line paths.
 
-Fifteen `injection-structural` cases carry a label the shipped check gets
-wrong, and eight of them fail on purpose: two deny text somebody wrote
-deliberately, and six allow a payload that really is in there. All fifteen are
+Fifteen `injection-structural` cases are disclosed, and eight of them are the
+check's wrong decisions: two deny text somebody wrote deliberately, and six
+allow a payload that really is in there. The other seven PASS, and are disclosed
+because a reader can reasonably expect the opposite of each. This sentence used
+to say all fifteen carried a label the check gets wrong, which is nearly twice
+the check's error rate and contradicts the wrong-decision column in the table
+above; the guard read the count and never the predicate. All fifteen are
 named by case id in [corpora/NOTICE.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/corpora/NOTICE.md), along with the
 invisible-character families this check does not count and one measured encoder
 for each.
@@ -419,10 +438,23 @@ marker table was read out of, from eight model repositories pinned by revision.
 What travels under them is configuration and not weights: JSON settings, special
 token names and a Jinja template, a few kilobytes each. The three `LicenseRef-`
 terms are SPDX's mechanism for a licence with no short identifier, which these
-three vendor community licences do not have.
+three vendor community licences do not have. The notices for all four, the
+acceptable-use URLs and the pinned revision of each repository are in
+[corpora/NOTICE.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/corpora/NOTICE.md),
+which ships inside the wheel's `dist-info/licenses/` as well as in the source
+distribution.
 
-`Unicode-3.0` is there because the Script, Script_Extensions and confusables
-tables the package matches on are generated from data files published by
+**This paragraph framed those four as sdist-only and they are not.**
+`jamjet_guardrails/detectors/_template_markers.py` is in the wheel and its
+markers ARE the delimiter strings read out of the Gemma 2, Llama 2 and Llama 3
+tokenizer configurations, so the wheel is what carries the derived material. It
+declared the four terms in its own metadata and shipped the text of none of
+them, which is this project's own argument about Unicode arriving one artifact
+over. `pyproject.toml` now names `corpora/NOTICE.md` as a licence file, so the
+notices reach an installer who never sees this repository.
+
+`Unicode-3.0` is there because the Script, Script_Extensions, confusables and
+Identifier_Status tables the package matches on are generated from data files published by
 Unicode, Inc. under the Unicode License v3, which requires its copyright and
 permission notice to travel with copies; the notice, the pinned files and their
 digests are in

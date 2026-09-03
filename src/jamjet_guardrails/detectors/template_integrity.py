@@ -131,7 +131,7 @@ def _prototypes() -> dict[int, str]:
     compile, and `import jamjet_guardrails` must not pay for it: the registry
     imports every detector module, so an import at the top of this file would
     put that cost on every caller of every other check.
-    `tests/test_unicode.py::test_importing_the_package_loads_neither_unicode_table`
+    `tests/test_unicode.py::test_importing_the_package_loads_no_unicode_table`
     holds that, and this indirection is what keeps it true.
     """
     global _PROTOTYPE_TABLE

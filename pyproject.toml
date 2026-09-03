@@ -7,13 +7,14 @@ name = "jamjet-guardrails"
 version = "0.3.0"
 description = "Content guardrails for LLM applications, with published precision and recall and provenance on every decision."
 readme = "README.md"
-# Three licences, and each AND names material this distribution carries beyond
-# its own code.
+# Seven terms, and each AND names material this distribution carries beyond its
+# own code. The first three are set out here and the other four under WHAT EACH
+# TERM COVERS below.
 #
 #   Apache-2.0    every line of code in this repository.
 #   CC-BY-4.0     `corpora/pii/third-party.jsonl`, 300 rows derived from
 #                 nvidia/Nemotron-PII. Sdist only.
-#   Unicode-3.0   `unicode-data/16.0.0/`, the four files published by Unicode,
+#   Unicode-3.0   `unicode-data/16.0.0/`, the five files published by Unicode,
 #                 Inc., in the sdist; AND `src/jamjet_guardrails/_unicode/`,
 #                 which is generated from them and is therefore derived from
 #                 them, in BOTH artifacts. The first draft of this comment said
@@ -56,7 +57,7 @@ readme = "README.md"
 #   Apache-2.0                      the code, and every first-party corpus
 #   CC-BY-4.0                       corpora/pii/third-party.jsonl, derived from
 #                                   nvidia/Nemotron-PII
-#   Unicode-3.0                     unicode-data/16.0.0/ and the two modules
+#   Unicode-3.0                     unicode-data/16.0.0/ and the three modules
 #                                   generated from it, which are that data
 #                                   re-encoded and therefore a derivative work
 #   MIT                             template-data/ from Phi-3, DeepSeek V3,
@@ -77,6 +78,26 @@ readme = "README.md"
 # `corpora/NOTICE.md` carries the notices, the acceptable-use URLs and the
 # gated-mirror provenance for each.
 license = "Apache-2.0 AND CC-BY-4.0 AND Unicode-3.0 AND MIT AND LicenseRef-Llama-2-Community AND LicenseRef-Meta-Llama-3-Community AND LicenseRef-Gemma-Terms"
+# THE WHEEL DECLARED SEVEN TERMS AND CARRIED THE TEXT OF ONE. The argument this
+# file makes for Unicode -- that a derived table travels under the licence of the
+# data it was derived from, and that licence is satisfied where its notice
+# travels with copies or in associated documentation -- was applied to Unicode
+# and to CC-BY and not to the four terms `template-data/` adds.
+#
+# `detectors/_template_markers.py` ships in the WHEEL. Its markers are the
+# delimiter strings read out of the Gemma 2, Llama 2 and Llama 3 tokenizer
+# configurations. The Meta Llama 3 Community License requires its notice text in
+# a distributed NOTICE file, the Gemma terms require the use restrictions to
+# reach downstream recipients, and `dist-info/licenses/` held LICENSE and nothing
+# else. `corpora/NOTICE.md` carries all four notices and their acceptable-use
+# URLs and was sdist-only, so `pip install` delivered an artifact asserting four
+# licences apply and naming no way to read any of them.
+#
+# Naming it here puts it in `dist-info/licenses/` in BOTH artifacts without
+# shipping `corpora/` itself, which is the smallest thing that discharges the
+# obligation. `tests/test_packaging.py::test_the_wheel_carries_a_notice_for_every_licence_it_declares`
+# holds it against the built archive.
+license-files = ["LICENSE", "corpora/NOTICE.md"]
 requires-python = ">=3.10"
 dependencies = []
 authors = [{ name = "Sunil Prakash" }]
@@ -184,7 +205,7 @@ jamjet-guardrails = "jamjet_guardrails.eval.cli:main"
 [tool.hatch.build.targets.sdist]
 # The raw Unicode files, force-included so that no later ignore rule can drop
 # them. They are in the sdist and NOT in the wheel, and the asymmetry is the
-# point: an installer gets the generated tables, and a reader gets the four
+# point: an installer gets the generated tables, and a reader gets the five
 # published files those tables were derived from, so the derivation can be
 # rerun and diffed. The sdist is the evidence.
 #

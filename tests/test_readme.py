@@ -639,3 +639,91 @@ def test_the_readme_states_the_size_of_the_disclosed_set_the_notice_carries() ->
     assert f"All {spelled.lower()} are named by case id" in text, (
         f"the README's 'all N are named by case id' sentence does not say {spelled.lower()}"
     )
+
+
+def test_every_credential_the_check_misses_outright_is_named_in_the_readme() -> None:
+    """The converse of `test_the_prefixes_the_readme_names_as_misses_are_still_misses`.
+
+    That guard runs one way: each prefix the README names must still be a miss.
+    Nothing asserted that every miss is named, and the direction that was not
+    guarded is the one that failed. The corpus grew from 39 cases to 160 and
+    brought a third credential family, `xoxe-` Slack refresh tokens; the
+    conformance document and the notice were both updated and the README was
+    not, so the page a user reads to decide whether they need a second tool
+    understated the families this check lets through.
+
+    `secrets.py` carries the same understatement, and its comment says "there
+    is a test naming both, so they cannot become silent" -- the mechanism it
+    named as its protection is the mechanism that let the third family arrive
+    unnamed.
+
+    Derived from the corpus rather than from a list. A complete miss is a case
+    the corpus labels `redact` or `deny` that the shipped check ALLOWS, which
+    is a property of the two together and needs nobody to maintain it. Each one
+    has to be reachable from the README's own text: some backticked literal in
+    the `secrets` paragraph has to occur in the case, so a family arriving under
+    a new prefix fails here until the sentence names it.
+    """
+    from jamjet_guardrails.eval.corpus import load_corpus
+
+    corpus = load_corpus(ROOT / "corpora" / "secrets" / "in-repo.jsonl", "secrets")
+    guardrail = build("secrets")
+    misses = [
+        case
+        for case in corpus.cases
+        if case.expect_decision != "allow"
+        and guardrail.check(case.text, Context(direction=case.direction, origin="user")).decision
+        == "allow"
+    ]
+    assert misses, "the check misses nothing outright; this guard would prove nothing"
+
+    paragraph = _flat(_section("## The checks"))
+    quoted = set(re.findall(r"`([^`]+)`", paragraph))
+    unnamed = [case.id for case in misses if not any(token in case.text for token in quoted)]
+    assert unnamed == [], (
+        f"the README names nothing that reaches {unnamed}; each is a credential this check "
+        "allows outright, and the README's secrets paragraph is where a reader learns that"
+    )
+
+
+def test_the_readme_does_not_report_the_disclosed_set_as_the_error_count() -> None:
+    """Fifteen cases are DISCLOSED; eight of them are wrong decisions.
+
+    The README said "Fifteen `injection-structural` cases carry a label the
+    shipped check gets wrong", which is nearly twice the check's error rate and
+    contradicts the wrong-decision column in the table two paragraphs above it
+    on the same page. Seven of the fifteen PASS: the three-case balanced-override
+    set and the four imbalanced controls, which `tests/test_corpora.py` labels
+    "Not misses: the BOUNDARY of the bidi signal".
+
+    The guard that stood over this sentence read `len(_INJECTION_DISCLOSED)` and
+    asserted only that the spelled-out count word matched, so "fifteen cases are
+    disclosed" and "fifteen cases are wrong" were indistinguishable to it. Both
+    halves are measured here: the disclosed count from the set that owns it, and
+    the error count from scoring the corpus.
+    """
+    from jamjet_guardrails.eval.corpus import load_corpus
+    from jamjet_guardrails.eval.metrics import evaluate
+    from test_corpora import _INJECTION_DISCLOSED
+
+    corpus = load_corpus(
+        ROOT / "corpora" / "injection-structural" / "in-repo.jsonl", "injection-structural"
+    )
+    evaluation = evaluate(
+        build("injection-structural", **options_for("injection-structural")), corpus
+    )
+    wrong = len({f.case_id for f in evaluation.failures if f.kind == "decision_mismatch"})
+    disclosed = len(_INJECTION_DISCLOSED)
+    assert wrong < disclosed, (
+        "every disclosed case is a wrong decision, so the sentence this guard exists for "
+        "cannot be wrong the way it was; delete this test or restate it"
+    )
+
+    words = {2: "two", 6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "ten"}
+    text = _flat(_text())
+    assert f"{words[wrong]} of them are the check's wrong decisions" in text, (
+        f"the README does not say how many of the disclosed cases are wrong decisions; it is {wrong}"
+    )
+    assert f"The other {words[disclosed - wrong]} PASS" in text, (
+        f"the README does not say that {disclosed - wrong} of the disclosed cases pass"
+    )

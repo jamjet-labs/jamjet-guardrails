@@ -8,6 +8,19 @@ version = "0.1.0"
 description = "NeMo Guardrails input and output rails backed by jamjet-guardrails."
 readme = "README.md"
 license = "Apache-2.0"
+# PEP 639. Hatchling populates `License-File` and `dist-info/licenses/` only from
+# licence files found in the PROJECT root, which for this target is this
+# directory and not the repository root. Both adapters declared `Apache-2.0` and
+# shipped no copy of the text: `dist-info/licenses/` did not exist and METADATA
+# carried no `License-File:` header at all, which is Apache-2.0 section 4(a)
+# unmet by the artifact `pip download` returns. The core got this right only
+# because `LICENSE` happens to sit beside its own pyproject.toml.
+#
+# The file beside this one is a copy of the repository's LICENSE rather than a
+# link, because a wheel cannot carry a symlink out of its own tree.
+# `tests/test_packaging.py::test_every_adapter_distribution_ships_the_licence_it_declares`
+# builds both and reads the archives.
+license-files = ["LICENSE"]
 requires-python = ">=3.10,<3.14"
 authors = [{ name = "Sunil Prakash" }]
 # The core is a runtime dependency HERE and nowhere else. `jamjet-guardrails`

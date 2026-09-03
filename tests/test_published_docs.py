@@ -171,3 +171,52 @@ def test_no_published_document_uses_an_em_dash() -> None:
         if "—" in doc.read_text(encoding="utf-8")
     ]
     assert offenders == [], offenders
+
+
+def test_every_test_a_shipped_source_file_cites_is_defined() -> None:
+    """The same citation rule, applied to the source the sdist ships.
+
+    `test_every_repository_path_any_published_doc_cites_exists` resolves
+    `path::test_name` citations in Markdown, and this repository cites tests
+    from comments and docstrings at least as often as from prose: a comment
+    that names the test holding its claim is the house convention. Nothing read
+    those, and two of them named a test that has never existed under the name
+    they gave, while two other sites in the same tree cited the same test
+    correctly. The repository disagreed with itself about the name of a test
+    across four files and every one of them was green.
+
+    A dangling citation in source is worse placed than one in Markdown. It is
+    the pointer from a defence to the evidence for it, and a reader who cannot
+    find the test concludes the defence is unheld rather than that the name
+    moved.
+
+    ONLY A BACKTICKED CITATION COUNTS, and the delimiters are what separate a
+    citation from a string that merely has the shape of one. `scripts/mutate.py`
+    builds node ids with an f-string and carries a worked example of a
+    MALFORMED one; `tests/test_completeness.py` asserts on node ids as data.
+    None of the three is a claim about a test that exists, and a guard that
+    read them would be met by renaming things nobody cites. The opening and
+    closing delimiters must match in length, which is what keeps the malformed
+    example out: its node part carries a slash where the closing backtick
+    would be.
+
+    Derived from what git tracks, like every other guard in this module, so a
+    module added later is covered without anyone remembering.
+    """
+    missing: list[str] = []
+    checked = 0
+    cited = re.compile(
+        r"(?<!`)(`{1,2})(tests/[A-Za-z0-9_./-]+\.py)::([A-Za-z_][A-Za-z0-9_]*)\1(?!`)"
+    )
+    for name in shipped("*.py"):
+        source = ROOT / name
+        text = source.read_text(encoding="utf-8")
+        for _, path, node in set(cited.findall(text)):
+            checked += 1
+            target = ROOT / path
+            if not target.is_file():
+                missing.append(f"{name} -> {path}::{node} (no such file)")
+            elif not _defines(target.read_text(encoding="utf-8"), node):
+                missing.append(f"{name} -> {path}::{node} (file exists, test does not)")
+    assert checked > 0, "no citations found in the shipped source; this guard would prove nothing"
+    assert missing == [], f"shipped source cites tests that do not exist: {missing}"

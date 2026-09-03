@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import dataclasses
 import re
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, get_args
@@ -886,11 +887,28 @@ def test_the_secrets_section_lists_every_type_that_check_can_produce() -> None:
 def test_the_conformance_document_prints_the_fixture_the_row_was_measured_under() -> None:
     """A configuration quoted in prose is a claim, and this one is the whole
     meaning of the rules row. A fixture that changed without this section
-    changing would publish a number under a configuration nobody used."""
+    changing would publish a number under a configuration nobody used.
+
+    EVERY KEY, derived from the fixture. The version of this test that stood
+    here named `patterns`, `banned`, `limits.max_chars` and `on_match` in a
+    hardcoded list, so a key added to `FIXTURES` later was invisible to it
+    forever, and one was: `fold_confusables` went into the fixture and not into
+    the printed block, in the same commit that added the corpus case only that
+    option catches. The document said "A conforming implementation scores
+    `corpora/rules/in-repo.jsonl` with these options" while a port that did
+    exactly that scored 0.966 recall against a published 1.000, on a case it was
+    never given the option to pass.
+
+    A guard that enumerates the thing it guards is not a guard, it is a second
+    copy that goes stale on a different schedule. The key set is read from the
+    fixture, so the next option is documented or this fails.
+    """
     from jamjet_guardrails.eval.fixtures import options_for
 
     section = _section("## The rules constraint")
     fixture = options_for("rules")
+
+    handled = {"patterns", "banned", "limits", "on_match"}
     patterns = fixture["patterns"]
     assert isinstance(patterns, dict)
     for type_name, pattern in patterns.items():
@@ -905,3 +923,163 @@ def test_the_conformance_document_prints_the_fixture_the_row_was_measured_under(
     limits = fixture["limits"]
     assert f"max_chars: {limits.max_chars}" in section  # type: ignore[attr-defined]
     assert f"on_match: {fixture['on_match']}" in section
+
+    # Everything the four clauses above do not already cover, printed as the
+    # block prints it. `True` is `true` here because the block is YAML-shaped;
+    # anything else is printed as it reads in Python.
+    for key, value in sorted(fixture.items()):
+        if key in handled:
+            continue
+        rendered = str(value).lower() if isinstance(value, bool) else str(value)
+        assert f"{key}: {rendered}" in section, (
+            f"the fixture sets {key}={value!r} and the document does not print it, so a port "
+            "built to what is printed cannot reach the published row"
+        )
+
+
+def test_the_closing_paragraph_names_every_check_with_a_section() -> None:
+    """The sentence that scopes a port's obligations, derived from the headings.
+
+    It closed as FOUR spliced tails. Three branches each rewrote it and each
+    merge appended the new tail rather than replacing the old one, so a porter
+    asking "what am I obliged to match?" got a run of sentence fragments that
+    disagreed about which check was contract, and no version of it named
+    `script-constraint`, whose section marks two rules "both are contract".
+
+    Nothing failed, because `REQUIRED_SECTIONS` above is a list of H2 headings
+    and nothing read the paragraph. A list of checks written into prose is a
+    count of the registry in words, so it is read out of the registry instead:
+    every `## The <check> constraint` heading in the contract region has to be
+    named below the boundary, and a check waived into the general sections has
+    to be named as waived.
+    """
+    text = _text()
+    boundary = text.index("## Third-party corpora")
+    sectioned = set(re.findall(r"^## The ([a-z-]+) constraint$", text[:boundary], re.MULTILINE))
+    assert sectioned, "no per-check sections found; this guard would prove nothing"
+
+    closing = text[text.index("What is not free is everything above") :]
+    missing = sorted(check for check in sectioned if f"`{check}`" not in closing)
+    assert missing == [], (
+        f"the closing paragraph does not say what binds a port for {missing}; "
+        "a check absent from it reads as deliberately unspecified"
+    )
+
+    # The other direction. `pii` has no section and is covered by a waiver, so
+    # the closing paragraph has to say so rather than leave a reader to notice
+    # the absence. Derived the same way: every registered check is either
+    # sectioned or named here.
+    from jamjet_guardrails.detectors import AVAILABLE
+
+    for check in sorted(set(AVAILABLE) - sectioned):
+        assert f"`{check}`" in closing, (
+            f"{check} has no conformance section and the closing paragraph does not "
+            "account for it, so a porter never learns which sections cover it"
+        )
+
+
+def test_every_single_code_point_denial_a_reader_would_call_punctuation_is_named() -> None:
+    """The `Common`/`Inherited` bullet is contract, and its gloss was false.
+
+    It said punctuation, combining marks, ZWJ, ZWNJ and variation selectors
+    "resolve to one of the two, so they pass under every constraint". The
+    headline is true of the RESOLVED set; the gloss is not true of the general
+    category, because resolution takes Script_Extensions where they exist. Five
+    corpus cases are a single punctuation mark, combining mark or modifier
+    letter, are labelled `deny`, and fire. A port implementing the gloss allows
+    all five and scores worse than a port that implements neither rule.
+
+    The document contradicted itself about three of the five twenty lines
+    further down, and the other two were named nowhere at all. The measured
+    figure the bullet publishes is derived and was green throughout, which is
+    what let the false half sit beside it.
+
+    Derived from the corpus, in the general categories a reader would call
+    "punctuation and marks": every such case has to be named by id in this
+    section, so the next one is documented or this fails. The categories are the
+    ones the old gloss claimed, which is what keeps the guard pointed at the
+    claim rather than at today's five cases.
+    """
+    from jamjet_guardrails.eval.corpus import load_corpus
+
+    corpus = load_corpus(
+        ROOT / "corpora" / "script-constraint" / "in-repo.jsonl", "script-constraint"
+    )
+    surprising = []
+    for case in corpus.cases:
+        if case.expect_decision != "deny" or len(case.expect_findings) != 1:
+            continue
+        span = case.expect_findings[0].span
+        if span is None or span[1] - span[0] != 1:
+            continue
+        character = case.text[span[0]]
+        if unicodedata.category(character) in ("Lm",) or unicodedata.category(character)[0] in (
+            "P",
+            "M",
+        ):
+            surprising.append((case.id, f"U+{ord(character):04X}"))
+
+    assert surprising, (
+        "no single-code-point punctuation denials found; this guard would prove nothing"
+    )
+    section = _section("## The script-constraint constraint")
+    missing = [entry for entry in surprising if entry[0] not in section]
+    assert missing == [], (
+        f"the script-constraint section does not name {missing}; each is one punctuation, "
+        "mark or modifier code point that the section's contract bullet reads as always passing"
+    )
+
+
+def test_every_private_constant_the_document_names_exists_in_the_source() -> None:
+    """The document's only pointers from a rule to the code that implements it.
+
+    It cited `_ERROR_TYPE_LIMIT` as the bound on a finding's `type`. The
+    constant was renamed to `_CALLER_STRING_LIMIT` in the same branch, and
+    `chain.py` records the rename in a comment beside it, so the repository
+    disagreed with itself: the `GuardrailChain` docstring, which the porting
+    brief names as contract alongside this document, used the new name while
+    this one used a name `grep` finds nowhere but in that comment.
+
+    The name is not itself normative -- the bound's existence is contract and
+    its spelling is this implementation's means -- but a pointer that resolves
+    to nothing sends a maintainer hunting for a symbol that is right there under
+    another name. Derived over every private constant the document names, so the
+    next rename is caught wherever it happens.
+    """
+    named = sorted(set(re.findall(r"`(_[A-Z][A-Z0-9_]*)`", _text())))
+    assert named, "the document names no private constants; this guard would prove nothing"
+    source = "\n".join(
+        path.read_text(encoding="utf-8") for path in sorted((ROOT / "src").rglob("*.py"))
+    )
+    missing = [
+        name
+        for name in named
+        if re.search(rf"^{re.escape(name)}\s*[:=]", source, re.MULTILINE) is None
+    ]
+    assert missing == [], (
+        f"docs/conformance.md names constants this implementation does not define: {missing}"
+    )
+
+
+def test_the_unicode_version_this_document_names_is_the_one_the_tables_are_pinned_to() -> None:
+    """The version a porter needs to tell version drift from a porting error.
+
+    The bullet granting Unicode-version freedom closed by pointing at a
+    per-corpus record: "each corpus records the version its labels were written
+    against". The corpus schema in this same document says every field is
+    required and no other field is accepted, so there is no field a version
+    could go in, and `load_corpus` raises on a row that carries one. The record
+    the freedom depended on could not exist, and did not.
+
+    So the version is stated once and derived from the directory the tables are
+    pinned in, which is where the pin actually lives. A bump that edits the
+    directory and not this document fails here.
+    """
+    pinned = sorted(path.name for path in (ROOT / "unicode-data").iterdir() if path.is_dir())
+    assert len(pinned) == 1, f"expected one pinned Unicode version, found {pinned}"
+    version = pinned[0]
+    section = _section("## What is deliberately unspecified")
+    assert version in section, (
+        f"the tables are pinned at {version} and the freedom bullet does not name it, so a "
+        "porter on another version cannot tell drift from a porting error"
+    )

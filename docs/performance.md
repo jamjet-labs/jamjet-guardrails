@@ -26,19 +26,20 @@ differ from these can be told apart from one that does not.
 
 **A check added after this page was first written brings its own rows from its
 own run**, on the machine and interpreter named below and with the same
-defaults. `url-exfiltration` and `encoded-content` are two. Rows from two runs
-of the same script on one machine are a few percent apart in the p50 and further
-apart in the p99, which is the variance this page publishes a p99 to show rather
-than to hide; the alternative was rewriting every other check's numbers from
-whichever run happened to be last, and a busier laptop would then read as a
-regression in a check nobody had touched.
-defaults. `url-exfiltration` and `template-integrity` are two. Rows from two
-runs of the same script on
-one machine are a few percent apart in the p50 and further apart in the p99,
-which is the variance this page publishes a p99 to show rather than to hide; the
-alternative was rewriting every other check's numbers from whichever run
-happened to be last, and a busier laptop would then read as a regression in a
-check nobody had touched.
+defaults; the table under [When each row was measured](#when-each-row-was-measured)
+says which run every row came from. Rows from two runs of the same script on one
+machine are a few percent apart in the p50 and further apart in the p99, which is
+the variance this page publishes a p99 to show rather than to hide; the
+alternative was rewriting every other check's numbers from whichever run happened
+to be last, and a busier laptop would then read as a regression in a check nobody
+had touched.
+
+This paragraph stood here twice, once naming `encoded-content` as the second
+example and once naming `template-integrity`, because two branches each rewrote
+its tail and the merge kept both. Naming examples in prose is what made that
+possible and what made each copy read correctly on its own. The list is a table
+now, and `tests/test_performance_doc.py::test_the_measurement_table_names_every_registered_check`
+derives it from the registry.
 
 ## The machine and the interpreter
 
@@ -65,8 +66,21 @@ Rows are ADDED to this table when a check ships, and the rows already in it are
 not re-measured at the same time. Rerunning the whole script for every release
 would move numbers for checks nobody touched, and a reader diffing this page
 would read that as a regression somebody should explain. Every row here was
-taken on the machine and the interpreter named above; `script-constraint` was
-measured on 2026-09-03 and the other four when this page was first written.
+taken on the machine and the interpreter named above.
+
+### When each row was measured
+
+| Check | Measured | Re-measured, and why |
+|---|---|---|
+| `confusables` | 2026-09-03 | 2026-09-04, when the two quadratic sites below were fixed |
+| `encoded-content` | 2026-09-04 | |
+| `injection-structural` | 2026-09-03 | |
+| `pii` | 2026-09-03 | |
+| `rules` | 2026-09-03 | 2026-09-03, when the fixture set `fold_confusables=True` |
+| `script-constraint` | 2026-09-03 | |
+| `secrets` | 2026-09-03 | |
+| `template-integrity` | 2026-09-04 | |
+| `url-exfiltration` | 2026-09-03 | 2026-09-04, when the two quadratic sites below were fixed |
 
 **A row IS re-measured when the check under it changes, and `url-exfiltration`
 was, on 2026-09-04.** Its six rows moved from 0.112 / 0.439 / 1.733 / 6.961 /
@@ -147,24 +161,18 @@ Milliseconds per call. `MB/s` is derived from the p50.
 | pii | 65 536 | 62 | 12.996 | 13.551 | 13.769 | 4.9 |
 | pii | 262 144 | 245 | 51.916 | 53.372 | 54.060 | 4.9 |
 | pii | 1 048 576 | 979 | 206.674 | 211.254 | 215.892 | 4.9 |
-| rules | 1 024 | 2 | 0.135 | 0.150 | 0.176 | 7.3 |
-| rules | 4 096 | 9 | 0.518 | 0.552 | 0.573 | 7.6 |
-| rules | 16 384 | 31 | 2.117 | 2.196 | 2.331 | 7.4 |
-| rules | 65 536 | 123 | 8.313 | 8.767 | 8.901 | 7.6 |
-| rules | 262 144 | 491 | 34.193 | 36.405 | 37.047 | 7.4 |
-| rules | 1 048 576 | 1 959 | 142.608 | 150.364 | 152.402 | 7.1 |
-| script-constraint | 1 024 | 0 | 0.248 | 0.274 | 0.320 | 4.0 |
-| script-constraint | 4 096 | 0 | 0.998 | 1.094 | 1.118 | 3.9 |
-| script-constraint | 16 384 | 0 | 4.049 | 4.252 | 4.312 | 3.9 |
-| script-constraint | 65 536 | 0 | 15.961 | 16.535 | 17.112 | 4.0 |
-| script-constraint | 262 144 | 0 | 63.889 | 66.362 | 68.548 | 3.9 |
-| script-constraint | 1 048 576 | 0 | 255.746 | 263.393 | 267.481 | 3.9 |
 | rules | 1 024 | 2 | 0.699 | 0.763 | 0.838 | 1.4 |
 | rules | 4 096 | 9 | 2.769 | 2.925 | 2.999 | 1.4 |
 | rules | 16 384 | 31 | 10.844 | 11.312 | 11.536 | 1.4 |
 | rules | 65 536 | 123 | 43.738 | 45.006 | 45.828 | 1.4 |
 | rules | 262 144 | 491 | 175.289 | 178.582 | 182.292 | 1.4 |
 | rules | 1 048 576 | 1 959 | 730.951 | 752.094 | 766.248 | 1.4 |
+| script-constraint | 1 024 | 0 | 0.248 | 0.274 | 0.320 | 4.0 |
+| script-constraint | 4 096 | 0 | 0.998 | 1.094 | 1.118 | 3.9 |
+| script-constraint | 16 384 | 0 | 4.049 | 4.252 | 4.312 | 3.9 |
+| script-constraint | 65 536 | 0 | 15.961 | 16.535 | 17.112 | 4.0 |
+| script-constraint | 262 144 | 0 | 63.889 | 66.362 | 68.548 | 3.9 |
+| script-constraint | 1 048 576 | 0 | 255.746 | 263.393 | 267.481 | 3.9 |
 | secrets | 1 024 | 1 | 0.008 | 0.010 | 0.010 | 125.9 |
 | secrets | 4 096 | 4 | 0.021 | 0.026 | 0.027 | 184.1 |
 | secrets | 16 384 | 15 | 0.073 | 0.078 | 0.087 | 216.9 |
@@ -205,7 +213,8 @@ of it, so 4.0 is exactly linear.
   a regular expression whose greedy scheme class backtracked one character at a
   time at every start position in a run of `[A-Za-z0-9+.-]`, and a linear scan
   of every URL run once per `@`. Measured on the shipped file: one megabyte of
-  `"http://a.example/ @ "` took 65.1 seconds against this row's 186 ms, and a
+  `"http://a.example/ @ "` took 65.1 seconds against the 185.595 ms this row
+  then read, and a
   single unbroken 64 KB word -- no URL anywhere -- took 3.58 seconds and
   extrapolated to about sixteen minutes for a megabyte. Both are fixed rather
   than noted: the scan looks for `://` with `str.find` and walks the scheme
@@ -230,13 +239,32 @@ of it, so 4.0 is exactly linear.
   here, and the Luhn validation of every candidate digit run is why: it redacts,
   so the number includes rewriting the content.
 - **`rules`** is near-linear, drifting slightly above 4.0 at the top of the
-  range: 3.93 at 65 KB, 4.11 at 256 KB, 4.17 at 1 MB. The drift is the finding
-  count, which grows faster than for the other checks because this fixture has
-  more patterns matching this input, and merging spans is what those extra
-  findings cost. The fixture also sets `max_chars=2000`, so above that size every
-  call reports a `LENGTH_LIMIT` finding and the redacted output is truncated. The
-  patterns are still scanned over the whole content, which is what these rows
-  measure.
+  range: 4.01 at 256 KB and 4.17 at 1 MB. The drift is the finding count, which
+  grows faster than for the other checks because this fixture has more patterns
+  matching this input, and merging spans is what those extra findings cost. The
+  fixture also sets `max_chars=2000`, so above that size every call reports a
+  `LENGTH_LIMIT` finding and the redacted output is truncated. The patterns are
+  still scanned over the whole content, which is what these rows measure.
+
+  **These figures are 5.1x the ones this page carried before, and the cause is a
+  configuration change rather than a regression.** The fixture now sets
+  `fold_confusables=True`, so every call builds the UTS #39 skeleton of the whole
+  content: two normalisation passes, a fold through the confusables table, and an
+  offset map composed through all three. That is five passes over the content and
+  one integer per character per pass, and it is what the option costs. It is off
+  by default, and a caller who does not set it pays none of it. There is no ASCII
+  shortcut to be had: the confusables table maps eight ASCII code points,
+  including `m` to `rn` and `1`, `I` and `|` to `l`, so an all-ASCII string is
+  not its own skeleton.
+
+  **The rows above stood here twice, old and new, in one unlabelled table**, and
+  the ratios in this bullet were the old run's. The pre-`fold_confusables` block
+  was never removed when the post-`fold_confusables` block was added, so the page
+  published 0.135 ms and 0.699 ms at a kilobyte with no column to tell them
+  apart, and this bullet's tail was appended to the end of the
+  `script-constraint` bullet rather than replacing the text it supersedes.
+  `tests/test_performance_doc.py::test_no_check_is_published_twice_at_one_size`
+  is what stops a table carrying two answers again.
 - **`encoded-content`** is linear. Ratios run 3.90 to 4.12 and the rate holds at
   5.9 to 6.2 megabytes per second across the range. **The findings column is zero
   at every size, and that is what these rows measure**: nothing in the seeded
@@ -264,7 +292,7 @@ of it, so 4.0 is exactly linear.
   the HTML attribute patterns rescanned to the end of the content from every
   `<img` or `<a` that never reached its attribute. A megabyte of a short markdown
   link repeated beside a bare `http://x.example/` took 37.9 seconds, and a megabyte
-  of `<img ` took 37.3, against these rows' 112 ms. Both sites are bisects now and take 0.226 and
+  of `<img ` took 37.3, against the 112.116 ms this row then read. Both sites are bisects now and take 0.226 and
   0.113 seconds on the same two inputs, both curves are 4.0x per 4x, and
   `tests/test_url_exfiltration.py::test_finding_the_urls_is_linear_in_the_content_and_was_not`
   holds each with a budget that is not a performance gate and would not survive
@@ -280,23 +308,6 @@ of it, so 4.0 is exactly linear.
   allows both, so these rows are the PASS path with no findings built and
   nothing rewritten. Content that fires costs more, and how much more depends on
   how many separate runs it carries rather than on how much of it is disallowed.
-  range: 4.01 at 256 KB and 4.17 at 1 MB. The drift is the finding count, which
-  grows faster than for the other checks because this fixture has more patterns
-  matching this input, and merging spans is what those extra findings cost. The
-  fixture also sets `max_chars=2000`, so above that size every call reports a
-  `LENGTH_LIMIT` finding and the redacted output is truncated. The patterns are
-  still scanned over the whole content, which is what these rows measure.
-
-  **These figures are 5.1x the ones this page carried before, and the cause is a
-  configuration change rather than a regression.** The fixture now sets
-  `fold_confusables=True`, so every call builds the UTS #39 skeleton of the whole
-  content: two normalisation passes, a fold through the confusables table, and an
-  offset map composed through all three. That is five passes over the content and
-  one integer per character per pass, and it is what the option costs. It is off
-  by default, and a caller who does not set it pays none of it. There is no ASCII
-  shortcut to be had: the confusables table maps eight ASCII code points,
-  including `m` to `rn` and `1`, `I` and `|` to `l`, so an all-ASCII string is
-  not its own skeleton.
 - **`template-integrity`** is linear on both of its paths, and the rows above
   measure only the one most content takes. Ratios run 3.84 to 4.02 from 4 KB
   upward and the rate holds at 33 to 34 megabytes per second, which makes it the
