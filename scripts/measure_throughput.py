@@ -156,6 +156,11 @@ def cpu_name() -> str:
                 if line.startswith("model name"):
                     return line.split(":", 1)[1].strip()
     except (OSError, subprocess.SubprocessError):
+        # Fall through to the platform read below. Named here rather than left
+        # to the docstring because CodeQL's `py/empty-except` query reads the
+        # STATEMENT, not the prose above it, and it is right to: a bare `pass`
+        # is how a swallowed error that nobody intended looks from the outside,
+        # and a reader scanning for one cannot tell the two apart either.
         pass
     return platform.processor() or platform.machine()
 
