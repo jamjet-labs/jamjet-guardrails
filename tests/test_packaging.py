@@ -142,6 +142,70 @@ def test_the_typing_classifier_and_the_py_typed_marker_agree() -> None:
     )
 
 
+def _built_sdist_names() -> list[str]:
+    """Build the sdist with the declared backend and list what is inside it.
+
+    Through `hatchling.build.build_sdist`, the PEP 517 hook `pyproject.toml`
+    already names as this project's backend, rather than through the `build`
+    frontend. Same artifact, no isolated environment to create and nothing to
+    download, and it takes under half a second, which is what makes it
+    affordable on every CI leg.
+
+    A subprocess rather than an in-process call, because the hook reads
+    `pyproject.toml` from the working directory and the test suite's is not
+    guaranteed to be the repository root.
+    """
+    import subprocess
+    import sys
+    import tarfile
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as out:
+        built = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import sys, hatchling.build as b; print(b.build_sdist(sys.argv[1]))",
+                out,
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        name = built.stdout.strip().splitlines()[-1]
+        with tarfile.open(Path(out) / name) as archive:
+            return archive.getnames()
+
+
+def test_the_sdist_carries_nothing_from_the_adapter_packages() -> None:
+    """The exclusion in pyproject.toml, held against the artifact it describes.
+
+    MEASURED before it was written: hatchling 1.32.0 includes `packages/` in the
+    sdist by DEFAULT, so this is not a precaution. Without
+    `[tool.hatch.build.targets.sdist] exclude`, the core source distribution
+    carried 25 files belonging to the two adapter distributions, including their
+    own pyproject.toml files, each declaring runtime dependencies on a framework.
+
+    The sdist is the evidence for the zero-dependency claim: it is what a
+    distribution reviewer, a licence scanner or a rebuild reads to see what this
+    package IS. And the adapters are separately released distributions with their
+    own tags and their own PyPI names, so nothing about them belongs in this one.
+    """
+    names = _built_sdist_names()
+    assert names, "the sdist is empty"
+    assert any(name.endswith("src/jamjet_guardrails/__init__.py") for name in names), (
+        f"this does not look like this project's sdist: {names[:5]}"
+    )
+    # The other half, and not decoration: if `packages/` ever stops existing, the
+    # assertion below passes over an empty question and the exclusion could be
+    # deleted without anything noticing.
+    adapters = sorted((ROOT / "packages").glob("*/pyproject.toml"))
+    assert adapters, f"no adapter packages under {ROOT / 'packages'}; this guard is vacuous"
+    stray = [name for name in names if "/packages/" in name]
+    assert stray == [], f"the core sdist carries adapter files: {stray}"
+
+
 def test_source_never_imports_jamjet() -> None:
     """Zero JamJet dependency is a hard constraint. Prove it over the source tree."""
     offenders = []

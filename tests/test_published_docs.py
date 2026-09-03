@@ -28,13 +28,23 @@ ROOT = Path(__file__).resolve().parent.parent
 # above it.
 #
 # `unicode-data` was added when `corpora/NOTICE.md` began citing the four
-# pinned Unicode files, and adding it is the whole lesson this module's
-# docstring states: a directory this pattern does not name is a directory whose
-# citations nothing checks, and every path in the new section would have been
-# unverified while the guard sat right here looking thorough.
+# pinned Unicode files, `template-data` when the marker table began citing its
+# own, and adding each is the whole lesson this module's docstring states: a
+# directory this pattern does not name is a directory whose citations nothing
+# checks, and every path in the new section would have been unverified while the
+# guard sat right here looking thorough.
+#
+# `packages/` gets the same treatment one level deeper, and this tree supplied
+# the reason before the directory existed: `docs/conformance.md` uses
+# `packages/media/` as the ILLUSTRATION of what an unanchored gitignore pattern
+# matches, so a bare `packages` prefix turns a worked example about paths into a
+# dangling citation. Anchoring on `packages/jamjet-guardrails-`, which is what
+# both adapter distributions are actually called, covers every path either
+# adapter README can cite and matches nothing that is merely prose about paths.
 _CITED = re.compile(
     r"`((?:benchmarks|corpora|tests|scripts|src/jamjet_guardrails|docs"
     r"|unicode-data|template-data|\.github)/[^`]*"
+    r"|packages/jamjet-guardrails-[^`]*"
     r"|[A-Z]+\.md)`"
 )
 

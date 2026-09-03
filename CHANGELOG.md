@@ -133,6 +133,16 @@ a number that changes quietly is a number nobody can rely on.
   their name ends in a number.
 - `tests/test_published_docs.py` resolves cited `template-data/` paths too, so a
   published document that names a raw source file is held to it existing.
+- The core sdist no longer carries `packages/`. Measured: hatchling 1.32.0
+  includes it by default, so before this the source distribution shipped 25
+  files belonging to the two adapters, including their pyproject.toml files and
+  the framework dependencies those declare. The sdist is the evidence for the
+  zero-dependency claim, and
+  `tests/test_packaging.py::test_the_sdist_carries_nothing_from_the_adapter_packages`
+  now builds it and holds that. The wheel was already limited to `src/` and is
+  unchanged.
+- `tests/test_published_docs.py` recognises `packages/` as a repository path, so
+  a citation from either adapter's README is checked like any other.
 
 ### Security
 
@@ -302,6 +312,31 @@ a number that changes quietly is a number nobody can rely on.
   file under `template-data/` is in the sdist and that none of it is in the
   wheel, and that the generated table is. `build` and `hatchling` join the dev
   extra to make that possible with no network.
+- Two distribution adapters, each its own package under `packages/`, its own
+  PyPI distribution, its own CI job on Python 3.12 and its own release tag.
+  Neither changes anything about the core package, which still declares no
+  runtime dependencies.
+- `jamjet-guardrails-nemo`, released under tags `nemo-v<semver>`. Two NeMo
+  Guardrails system actions and two Colang 1.0 flows shipped as `.co` files.
+  Both chains are built when the rails load, so a check that is named and not
+  installed fails the load rather than the first message, and a direction whose
+  flow and check list disagree is refused there too. Every call writes a JSON
+  audit record to the rail context under `jamjet_guardrails` carrying the
+  decision, each verdict's detector, version, kind, decision, finding types and
+  spans, the SHA-256 of what was inspected, and an error where a check failed.
+  Never the content. Configuration lives under `custom_data` in the rails
+  `config.yml`: measured on nemoguardrails 0.24.0, `RailsConfig` has the pydantic
+  default `extra="ignore"`, so a top-level custom key is parsed and discarded
+  with no error anywhere.
+- `jamjet-guardrails-validators`, released under tags `validators-v<semver>`.
+  One Guardrails AI validator per registered core check, generated from
+  `jamjet_guardrails.detectors.AVAILABLE` at import, plus the `JamJetChain`
+  composite, which is the one to use. Stacking two per-check validators is a
+  measured leak on guardrails-ai 0.11.0 in both of its validator services: the
+  sequential service reproduces the sequential-rewrite leak `GuardrailChain` was
+  rebuilt to close, character for character, and the default async service loses
+  a deny to a redact depending on the order the validators were listed in.
+  `JamJetChain` runs one chain and returns one merged fix, so neither happens.
 
 ## [0.3.0]
 

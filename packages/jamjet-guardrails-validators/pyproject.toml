@@ -1,0 +1,88 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "jamjet-guardrails-validators"
+version = "0.1.0"
+description = "Guardrails AI validators backed by jamjet-guardrails."
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10,<3.14"
+authors = [{ name = "Sunil Prakash" }]
+# The core is a runtime dependency HERE and nowhere else. `jamjet-guardrails`
+# itself declares `dependencies = []` and the repository's own
+# tests/test_packaging.py holds that against the built metadata.
+#
+# Floor and next-major ceiling on both. The floor on the core is 0.3.0, the
+# release whose `GuardrailChain` rebuilds every verdict it records, which is
+# what a validator needs before it can turn a verdict's spans into
+# `ErrorSpan`s and believe them.
+#
+# guardrails-ai is pre-1.0, so its next major is 1.0.0 and a MINOR of it can
+# still break: 0.11.0 is the version this adapter was written and measured
+# against, and the README records what was measured. A ceiling of `<1` is a
+# promise that this package does not follow a major rewrite silently, not a
+# promise that every 0.x minor is safe.
+dependencies = ["jamjet-guardrails>=0.3.0,<1.0.0", "guardrails-ai>=0.11.0,<1.0.0"]
+keywords = ["guardrails", "guardrails-ai", "llm-security", "prompt-injection", "pii", "validator"]
+# No 3.14 classifier and a `<3.14` ceiling above, because guardrails-ai itself
+# declares `>=3.10,<3.14`.
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Security",
+  "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/jamjet-labs/jamjet-guardrails"
+Repository = "https://github.com/jamjet-labs/jamjet-guardrails"
+Issues = "https://github.com/jamjet-labs/jamjet-guardrails/issues"
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.11"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/jamjet_guardrails_validators"]
+artifacts = ["src/jamjet_guardrails_validators/py.typed"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+include = ["*.py", "*.pyi", "**/pyproject.toml"]
+
+[tool.mypy]
+strict = true
+files = ["src", "tests"]
+# 3.12, not the declared 3.10 floor, and for the same third-party reason the
+# NeMo adapter records: `_pytest.python_api` does `from numpy import ndarray`
+# under TYPE_CHECKING, numpy is installed here because guardrails-ai depends on
+# it, and numpy's own stubs use `type` statements, which are 3.12 syntax. Under
+# `python_version = "3.10"` mypy fails while PARSING that stub and stops, having
+# checked nothing in this package. Per-module `follow_imports = "skip"` and
+# `ignore_errors` were both measured and neither helps: a syntax error is raised
+# before per-module settings apply.
+#
+# What that costs is named rather than glossed: stdlib used above 3.10 is not
+# caught here. Ruff infers its target version from `requires-python` above and
+# still refuses 3.11+ SYNTAX, and this package's CI job runs on 3.12.
+python_version = "3.12"
+
+# guardrails-ai ships no py.typed marker. It installs under TWO top-level names,
+# `guardrails` (the library) and `guardrails_ai` (the types its public results
+# are annotated with), and both have to be named or mypy cannot resolve the
+# second one. This override is scoped to that one framework and nothing else:
+# the point of a package-local mypy config is that the adapter's OWN code stays
+# fully checked, and widening this list is how that stops being true.
+[[tool.mypy.overrides]]
+module = ["guardrails", "guardrails.*", "guardrails_ai", "guardrails_ai.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

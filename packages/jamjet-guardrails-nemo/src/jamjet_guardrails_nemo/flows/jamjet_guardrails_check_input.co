@@ -1,0 +1,19 @@
+# The input rail. Colang 1.0.
+#
+# `execute` runs the system action jamjet_guardrails_check_input, which returns
+# false for a deny and true for an allow or a redact. A redact has already
+# replaced $user_message by the time this flow reads $allowed, so there is
+# nothing for the flow to do about it: the rewritten message is what the rest of
+# the turn sees.
+#
+# `bot refuse to respond` is deliberately NOT defined here. It is the name NeMo's
+# own rails use, so a config that already defines it gets its own wording, and a
+# definition shipped in this file would silently replace it. A config that
+# enables this flow must define one; the package README gives the line.
+
+define flow jamjet guardrails check input
+  $allowed = execute jamjet_guardrails_check_input
+
+  if not $allowed
+    bot refuse to respond
+    stop
