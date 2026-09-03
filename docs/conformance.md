@@ -192,18 +192,53 @@ message is the natural place for the value it choked on, so this implementation
 records the exception type and a fixed sentence and drops the message. The
 wording is not fixed by this document; not echoing the content is.
 
+**A `check` that returns without raising is verified too, before its verdict is
+combined into the decision or its spans are collected.** Returning is not
+evidence that the return value is honest, only that the call finished, and a
+`Verdict` a detector builds for itself is a claim about what happened, not a
+record of it. The chain is the only party positioned to grade that claim: it is
+the one that computed `saw` and passed `content` to `check`, so it alone can
+tell an audit record that describes this run from one that describes something
+else. A guardrail attesting to its own provenance is marking its own homework,
+and the failure is silent everywhere else -- a false record and a true one look
+identical in shape, and only the party holding the original content and the
+original digest can tell them apart.
+
+A conforming implementation checks these, in order:
+
+- **The returned value is a `Verdict`.** A `check` is free to return anything.
+- **`verdict.saw` equals the digest the chain itself computed** over the
+  content it gave `check`.
+- **`verdict.provenance.kind`, `.detector` and `.version` equal the
+  guardrail's own declared `kind`, `name` and `version`** -- the identity the
+  chain already knows the guardrail by, not anything the verdict claims about
+  itself.
+- **Every finding's span, on every decision and not only `redact`, satisfies
+  `0 <= start < end <= len(content)`.** A `None` span stays legal: a
+  classifier finding carries no span at all, and that is not the same failure
+  as one that fails the bound.
+
+A verdict that fails any of these is replaced exactly as a raised exception is:
+a synthesised `deny` carrying the guardrail's own DECLARED provenance -- never
+the false one the verdict returned -- and an `error` naming which check failed.
+Not raised, for the same reason a raising `check` does not abandon the run
+either: raising would lose the audit record entirely, and a synthesised deny
+keeps both the fail-closed decision and the evidence that a check misbehaved.
+
 Continuing is safe precisely because the decision cannot weaken. A later
 guardrail may deny too, and its verdict belongs in the audit record.
 
 Three shapes abandon the run instead of producing a `ChainResult`: a `redact`
-carrying no content, a `redact` the chain cannot locate (no findings, a finding
-without a span, or a span that does not index into the content the guardrail was
-given), and a guardrail whose `check` raised while declaring a `kind` this
-library does not know. The second is the first arriving one step later: a chain
-that rewrites from spans and is given none would report `redact` over a string
-nothing rewrote. **A caller must treat any exception out of a chain run as a
-deny.** There is no audit record in any of the three cases, which is acceptable
-only because nothing was allowed through.
+carrying no content, a `redact` the chain cannot locate (no findings, or a
+finding without a span), and a guardrail whose `check` raised while declaring a
+`kind` this library does not know. The second is the first arriving one step
+later: a chain that rewrites from spans and is given none would report `redact`
+over a string nothing rewrote. An out-of-range span is not one of the three: it
+is caught by the verdict check above, on every decision, before a `redact` ever
+reaches this point, and becomes a synthesised `deny` rather than an exception.
+**A caller must treat any exception out of a chain run as a deny.** There is no
+audit record in any of the three cases, which is acceptable only because
+nothing was allowed through.
 
 ## The saw hash
 

@@ -16,11 +16,25 @@ from jamjet_guardrails.types import (
     combine,
 )
 
-# How much of a detector's own class name reaches the audit record. Bounded
-# because the name is a detector's, not ours: a class name is caller-supplied
-# and can be any length, and an unbounded string in a verdict is a cost paid by
-# every log, trace and database column downstream of a ChainResult.
+# How much of any single detector-chosen string reaches the audit record. First
+# written for an exception's class name and reused below by `_contract_violation`
+# for a returned verdict's own claims about itself -- its provenance and its
+# findings' types -- because the argument is identical in every case: none of
+# these strings is ours, each is caller-supplied and can be any length, and an
+# unbounded one in a verdict is a cost paid by every log, trace and database
+# column downstream of a ChainResult.
 _ERROR_TYPE_LIMIT = 200
+
+
+def _bounded_str(value: str) -> str:
+    """Truncate one caller-supplied string to `_ERROR_TYPE_LIMIT`.
+
+    Shared by `_bounded`, directly below, and by `_contract_violation` further
+    down: an exception's type name, a verdict's claimed provenance and a
+    finding's type are four different strings with the same property. Each is
+    chosen by code this library did not write, so each gets the same ceiling.
+    """
+    return value[:_ERROR_TYPE_LIMIT]
 
 
 def _bounded(exc: BaseException) -> str:
@@ -51,7 +65,7 @@ def _bounded(exc: BaseException) -> str:
     which is where that detail belongs and where it is not persisted.
     """
     return (
-        f"{type(exc).__name__[:_ERROR_TYPE_LIMIT]} raised; the message is withheld "
+        f"{_bounded_str(type(exc).__name__)} raised; the message is withheld "
         "because a detector's message may quote the content"
     )
 
@@ -114,17 +128,37 @@ class GuardrailChain:
     safe. ``KeyboardInterrupt`` and ``SystemExit`` are not caught: fail-closed
     covers detector bugs, not the operator pressing ctrl-c.
 
+    Fails closed on a returned verdict too, not only a raised one. ``check``
+    returning without raising says only that the guardrail finished; it says
+    nothing about whether what it returned is TRUE. ``saw`` might be the hash of
+    text nobody sent it, ``provenance`` might name a different detector, kind or
+    version than the one that ran, and a finding's span might index past the
+    content it claims to describe. None of those is distinguishable from an
+    honest verdict by its shape, only by checking it against what the chain
+    itself passed to ``check``: the content, the digest of that exact content,
+    and the guardrail's own declared identity. The chain is the only party
+    holding all three, which makes it the only party able to grade the
+    verdict's account of itself -- a guardrail attesting to its own provenance
+    is marking its own homework, and the mark matters precisely because a false
+    record and a true one read identically to everyone downstream. A verdict
+    that fails this check is replaced exactly as a raised exception is: a
+    synthesised ``deny`` carrying the guardrail's own DECLARED provenance, never
+    the false one the verdict returned, and an ``error`` naming which clause
+    broke. See ``_contract_violation``.
+
     Raises, in the three cases a verdict cannot honestly be applied:
 
     - ``GuardrailChainError`` if a guardrail returns a redact carrying no
       content. ``Verdict`` forbids that state, so this is an assertion about the
       library's own consistency rather than a detector failure.
     - ``GuardrailChainError`` if a guardrail returns a redact the chain cannot
-      LOCATE: no findings, or a finding without a span, or a span that does not
-      index into the content the guardrail was given. The chain rewrites from
+      LOCATE: no findings, or a finding without a span. The chain rewrites from
       spans, so an unlocatable redact would leave the decision at ``redact``
       over a string nothing rewrote, which is the same fail-open the no-content
-      case is about, arriving one step later.
+      case is about, arriving one step later. An out-of-range span does NOT
+      reach this raise: ``_contract_violation`` bounds every finding's span,
+      over every decision, before a redact ever gets here, so a span that fails
+      that bound has already become a synthesised ``deny`` two paragraphs up.
     - ``ValueError`` from ``Verdict`` if a guardrail whose ``check`` raised also
       declares a ``kind`` this library does not know. Provenance is synthesised
       from the guardrail's own declarations; no fallback kind exists that would
@@ -159,20 +193,15 @@ class GuardrailChain:
                 # a tail that is still there.
                 verdict = guardrail.check(content, context)
             except Exception as exc:  # noqa: BLE001 - fail closed on any detector bug
-                # Provenance comes from the guardrail's own declarations: a
-                # classifier that dies must not be recorded as a constraint.
-                verdict = Verdict(
-                    decision="deny",
-                    content=None,
-                    findings=[],
-                    provenance=Provenance(
-                        kind=guardrail.kind,
-                        detector=guardrail.name,
-                        version=guardrail.version,
-                    ),
-                    saw=digest,
-                    error=_bounded(exc),
-                )
+                verdict = self._synthesised_deny(guardrail, digest, _bounded(exc))
+            else:
+                # A `check` that returns rather than raises has said nothing
+                # about whether its answer is honest, only that it finished.
+                # `_contract_violation` is where the chain marks that answer
+                # against what it independently knows.
+                violation = self._contract_violation(verdict, guardrail, digest, content)
+                if violation is not None:
+                    verdict = self._synthesised_deny(guardrail, digest, violation)
             verdicts.append(verdict)
             decision = combine(decision, verdict.decision)
             if verdict.decision == "redact":
@@ -185,6 +214,111 @@ class GuardrailChain:
         # in and the result is total either way.
         rewritten = _rewrite(content, sorted(found, key=lambda pair: pair[1])) if found else content
         return ChainResult(decision=decision, content=rewritten, verdicts=verdicts)
+
+    @staticmethod
+    def _synthesised_deny(guardrail: Guardrail, digest: str, error: str) -> Verdict:
+        """A ``deny`` built from the guardrail's OWN declarations, never its return value.
+
+        Both callers in ``run`` reach this because ``guardrail.check`` produced
+        something the chain will not pass on: an exception, or a ``Verdict``
+        whose account of itself does not match what the chain independently
+        knows. Either way, ``provenance`` here is stamped from ``guardrail.kind``,
+        ``.name`` and ``.version`` -- the identity the guardrail declared by
+        being in the chain at all -- and never from anything the untrustworthy
+        return value claimed about itself. A classifier that misbehaves must not
+        be recorded as a constraint, whether it misbehaved by raising or by
+        lying about what it is.
+        """
+        return Verdict(
+            decision="deny",
+            content=None,
+            findings=[],
+            provenance=Provenance(
+                kind=guardrail.kind, detector=guardrail.name, version=guardrail.version
+            ),
+            saw=digest,
+            error=error,
+        )
+
+    @staticmethod
+    def _contract_violation(
+        verdict: object, guardrail: Guardrail, digest: str, content: str
+    ) -> str | None:
+        """The one clause of the returned-verdict contract this call broke, or ``None``.
+
+        ``check`` returning without raising is not evidence that what it
+        returned is true. ``saw``, ``provenance`` and every finding's span are
+        the guardrail's OWN account of what it did, and the chain is the only
+        party positioned to check that account against reality: it is the one
+        that built ``digest`` and handed ``content`` to ``check``, so it is the
+        one party that knows what "the text the decision was actually made
+        about" actually was. A guardrail attesting to its own provenance is
+        marking its own homework, and grading it here is not optional -- a
+        ``saw`` over different text, a ``provenance`` naming a different
+        detector, or a span into a string the chain never built are wrong
+        VALUES sitting in a right-shaped record. Nothing about their shape
+        marks them as wrong, which is exactly why this failure is silent
+        everywhere else: a false audit record and a true one read identically
+        to anything downstream, and only the party holding the original content
+        and the original digest can tell them apart.
+
+        Checked in this order because every check after the first assumes it:
+        there is no ``.saw`` or ``.provenance`` to read on something that is not
+        a ``Verdict`` at all, which is the one shape a detector can return that
+        this function must not touch before asking.
+
+        Every branch returns a fixed sentence naming the clause that failed.
+        Where a caller-supplied value is included -- a claimed type name, a
+        claimed kind, detector or version, a finding's type -- it is bounded by
+        `_bounded_str` first, the same way `_bounded` bounds an exception's type
+        name: none of those strings is ours, and an unbounded one would let a
+        hostile guardrail grow the audit record without limit simply by
+        returning a longer lie. ``saw`` is shown in full because it is not
+        caller-chosen prose, it is a fixed-length hash, and a hash reveals
+        nothing about what it was taken over. The content itself, and any
+        span's surrounding text, never appear here: only offsets and lengths,
+        which locate a problem without repeating the thing this library exists
+        to keep out of a verdict.
+        """
+        if not isinstance(verdict, Verdict):
+            return (
+                f"guardrail {guardrail.name!r} returned "
+                f"{_bounded_str(type(verdict).__name__)!r} from check(), not a Verdict"
+            )
+        if verdict.saw != digest:
+            return (
+                f"guardrail {guardrail.name!r} returned saw={verdict.saw}, but the chain "
+                f"computed {digest} over the content it gave check()"
+            )
+        if verdict.provenance.kind != guardrail.kind:
+            return (
+                f"guardrail {guardrail.name!r} returned provenance.kind "
+                f"{_bounded_str(str(verdict.provenance.kind))!r}, but declares kind "
+                f"{guardrail.kind!r}"
+            )
+        if verdict.provenance.detector != guardrail.name:
+            return (
+                f"guardrail {guardrail.name!r} returned provenance.detector "
+                f"{_bounded_str(verdict.provenance.detector)!r}, but its own name is "
+                f"{guardrail.name!r}"
+            )
+        if verdict.provenance.version != guardrail.version:
+            return (
+                f"guardrail {guardrail.name!r} returned provenance.version "
+                f"{_bounded_str(verdict.provenance.version)!r}, but its own version is "
+                f"{guardrail.version!r}"
+            )
+        for finding in verdict.findings:
+            if finding.span is None:
+                continue
+            start, end = finding.span
+            if not 0 <= start < end <= len(content):
+                return (
+                    f"guardrail {guardrail.name!r} returned a finding of type "
+                    f"{_bounded_str(finding.type)!r} whose span {(start, end)!r} does not "
+                    f"index into the {len(content)} characters check() was given"
+                )
+        return None
 
     @staticmethod
     def _spans_of(
@@ -204,6 +338,15 @@ class GuardrailChain:
         long prefix of the ORIGINAL, un-redacted content in front of the
         placeholder. So an out-of-range span does not merely mislabel a region,
         it un-redacts one.
+
+        Repeated here rather than trusted from upstream. `_contract_violation`
+        already runs this same bound over every finding of every decision before
+        `run` ever calls this method, so a `redact` reaching here today always
+        has spans already known to be in range. This method's own check is not
+        redundant for that reason: it is what makes `_spans_of` correct on its
+        own terms, callable directly against any `Verdict` a test or a future
+        caller constructs, rather than correct only in combination with a
+        precondition enforced somewhere else in the file.
         """
         if verdict.content is None:
             # Verdict already rejects a redact with no content, so this cannot

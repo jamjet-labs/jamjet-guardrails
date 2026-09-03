@@ -8,6 +8,28 @@ A published precision or recall figure is part of the interface here. A release
 that moves one says so in its entry, with the old value and the new one, because
 a number that changes quietly is a number nobody can rely on.
 
+## [Unreleased]
+
+### Security
+
+- `GuardrailChain.run` now verifies a returned `Verdict` against what the chain
+  itself knows, before combining its decision or collecting its spans: that
+  `verdict.saw` is the digest the chain computed over the content it passed to
+  `check`, that `provenance.kind`, `.detector` and `.version` match the
+  guardrail's own declared identity, and that every finding's span -- on every
+  decision, not only `redact` -- indexes into that content, or is absent.
+  Previously, only a `check` that RAISED produced trustworthy provenance: a
+  `check` that returned successfully could report any detector name, version and
+  kind, hash text it was never given, and carry a finding's span past the end of
+  the content, and every one of those reached the audit record unexamined. A
+  verdict that fails this check is now replaced with a synthesised `deny`
+  carrying the guardrail's own declared provenance and an error naming which
+  part of the contract failed -- the same shape a raised exception already
+  produced, so the run keeps going and the audit record is never lost. The error
+  message never carries the content or a span's surrounding text, and a
+  caller-supplied value it does carry, such as a falsely claimed detector name,
+  is bounded the same way an exception's type name already was.
+
 ## [0.2.0]
 
 ### Added

@@ -1,8 +1,12 @@
+from typing import cast
+
 import pytest
 
 from jamjet_guardrails import build_chain
 from jamjet_guardrails.chain import GuardrailChain
+from jamjet_guardrails.detectors import AVAILABLE, build
 from jamjet_guardrails.errors import GuardrailChainError
+from jamjet_guardrails.eval.fixtures import options_for
 from jamjet_guardrails.protocol import saw
 from jamjet_guardrails.types import Context, Direction, Finding, Kind, Provenance, Verdict
 
@@ -384,13 +388,29 @@ def test_a_redact_the_chain_cannot_locate_raises_rather_than_reporting_a_rewrite
 
 
 @pytest.mark.parametrize("span", [(-3, 4), (0, 0), (4, 2), (2, 99), (99, 200)])
-def test_a_span_that_does_not_index_into_the_content_is_refused(span: tuple[int, int]) -> None:
-    """Spans now drive the rewrite, so they arrive from caller-supplied code.
+def test_a_span_that_does_not_index_into_the_content_becomes_a_synthesised_deny(
+    span: tuple[int, int],
+) -> None:
+    """CHANGED from `test_a_span_that_does_not_index_into_the_content_is_refused`,
+    which asserted that `GuardrailChain([BadSpan()]).run(...)` RAISED
+    `GuardrailChainError`.
+
+    That was right while the range check lived only inside `_spans_of`, reached
+    only for a `redact`. `_contract_violation` now runs the identical bound over
+    every finding of every decision before `_spans_of` is ever called, so a
+    `redact` with an out-of-range span is caught there first and turned into a
+    synthesised `deny` -- the run keeps its audit record rather than losing it
+    to an exception. `_spans_of` still raises for a redact with no findings or
+    an unspanned finding
+    (`test_a_redact_the_chain_cannot_locate_raises_rather_than_reporting_a_rewrite`),
+    because those are not out of range, they are unlocatable, and no decision
+    the chain could stamp would be honest about what happened to the content.
 
     A negative start is the one that leaks rather than merely mislabels:
     `content[cursor:-3]` is measured from the END, so the slice emitted in front
     of the placeholder is a long prefix of the ORIGINAL content. An out-of-range
-    span un-redacts.
+    span un-redacts, which is exactly why it must never reach the rewrite at
+    all now, rather than merely being rejected loudly after the fact.
     """
 
     class BadSpan:
@@ -404,5 +424,281 @@ def test_a_span_that_does_not_index_into_the_content_is_refused(span: tuple[int,
                 "redact", "x", [Finding(type="TOK", span=span)], _prov("bad-span"), saw(content)
             )
 
-    with pytest.raises(GuardrailChainError, match="does not index into"):
-        GuardrailChain([BadSpan()]).run("sensitive-value", OUT)
+    result = GuardrailChain([BadSpan()]).run("sensitive-value", OUT)
+    assert result.decision == "deny"
+    (verdict,) = result.verdicts
+    assert verdict.error is not None
+    assert "does not index into" in verdict.error
+    # The true provenance the guardrail declared, not "x" and not a finding
+    # the guardrail's own redact carried.
+    assert verdict.provenance == _prov("bad-span")
+    assert verdict.content is None
+    assert verdict.findings == ()
+    # Nothing redacted: the one guardrail in the chain no longer decided redact.
+    assert result.content == "sensitive-value"
+
+
+# ==========================================================================
+# The returned-verdict contract: `check` can return without raising and still
+# lie. Every test below reproduces one clause of the report -- a hostile
+# guardrail named `liar`, version `9.9.9`, kind `constraint`, whose returned
+# verdict claimed a different detector, version, kind and saw, all four
+# ACCEPTED by the code this file's tests ran against before this change.
+# ==========================================================================
+
+
+class ProvenanceLiar:
+    """Declares one identity and, by default, reports it honestly.
+
+    Each keyword lets a test make exactly one returned field false while
+    leaving the guardrail's own declared `name`, `version` and `kind` -- and
+    every OTHER returned field -- honest. That isolation is the point: a test
+    that set every field wrong at once could pass even if the chain checked
+    only one of them.
+    """
+
+    name: str = "liar"
+    version: str = "9.9.9"
+    kind: Kind = "constraint"
+    directions: frozenset[Direction] = frozenset({"input", "output"})
+
+    def __init__(
+        self,
+        *,
+        kind: Kind = "constraint",
+        detector: str = "liar",
+        version: str = "9.9.9",
+        saw_text: str | None = None,
+    ) -> None:
+        self._kind = kind
+        self._detector = detector
+        self._version = version
+        self._saw_text = saw_text
+
+    def check(self, content: str, context: Context) -> Verdict:
+        return Verdict(
+            "allow",
+            None,
+            [],
+            Provenance(kind=self._kind, detector=self._detector, version=self._version),
+            saw(self._saw_text) if self._saw_text is not None else saw(content),
+        )
+
+
+def test_a_saw_of_text_never_sent_becomes_a_deny_and_the_run_continues() -> None:
+    """Clause 2: `verdict.saw == digest`. `saw` is a hash of the text a
+    detector CLAIMS it inspected; a chain that never checked it against the
+    text it actually sent would accept a hash of anything.
+    """
+    chain = GuardrailChain([ProvenanceLiar(saw_text="text the chain never sent"), Allower()])
+    result = chain.run("the real content", OUT)
+    assert result.decision == "deny"
+    assert len(result.verdicts) == 2
+    liar_verdict, allower_verdict = result.verdicts
+    assert liar_verdict.decision == "deny"
+    assert liar_verdict.error is not None
+    assert "saw" in liar_verdict.error
+    assert allower_verdict.decision == "allow"  # the later guardrail still ran
+
+
+def test_a_wrong_provenance_kind_alone_becomes_a_deny() -> None:
+    """Clause 3. `ProvenanceLiar`'s `detector` and `version` stay honest here,
+    so a chain that checked only those two would let this one through.
+    """
+    result = GuardrailChain([ProvenanceLiar(kind="classifier")]).run("the real content", OUT)
+    assert result.decision == "deny"
+    (verdict,) = result.verdicts
+    assert verdict.error is not None
+    assert "kind" in verdict.error
+    assert "classifier" in verdict.error  # the CLAIMED kind, not the declared one
+    # The synthesised deny's own provenance is the declared identity, not
+    # what the verdict falsely claimed.
+    assert verdict.provenance == Provenance(kind="constraint", detector="liar", version="9.9.9")
+
+
+def test_a_wrong_provenance_detector_alone_becomes_a_deny() -> None:
+    """Clause 4. `ProvenanceLiar`'s `kind` and `version` stay honest here."""
+    result = GuardrailChain([ProvenanceLiar(detector="pii")]).run("the real content", OUT)
+    assert result.decision == "deny"
+    (verdict,) = result.verdicts
+    assert verdict.error is not None
+    assert "detector" in verdict.error
+    assert "pii" in verdict.error  # the CLAIMED detector, not the declared one
+    assert verdict.provenance == Provenance(kind="constraint", detector="liar", version="9.9.9")
+
+
+def test_a_wrong_provenance_version_alone_becomes_a_deny() -> None:
+    """Clause 5. `ProvenanceLiar`'s `kind` and `detector` stay honest here."""
+    result = GuardrailChain([ProvenanceLiar(version="0.1.0")]).run("the real content", OUT)
+    assert result.decision == "deny"
+    (verdict,) = result.verdicts
+    assert verdict.error is not None
+    assert "version" in verdict.error
+    assert "0.1.0" in verdict.error  # the CLAIMED version, not the declared one
+    assert verdict.provenance == Provenance(kind="constraint", detector="liar", version="9.9.9")
+
+
+def test_a_detector_returning_something_that_is_not_a_verdict_becomes_a_deny() -> None:
+    """Clause 1. Without it, `_contract_violation` reads `.saw` off whatever
+    `check` returned and raises `AttributeError` from inside `run`, which is
+    exactly the "abandon the run" failure a synthesised deny exists to avoid.
+    """
+
+    class ReturnsNonsense:
+        name: str = "nonsense"
+        version: str = "0.1.0"
+        kind: Kind = "constraint"
+        directions: frozenset[Direction] = frozenset({"output"})
+
+        def check(self, content: str, context: Context) -> Verdict:
+            return cast(Verdict, "not a verdict at all")
+
+    result = GuardrailChain([ReturnsNonsense()]).run("hello", OUT)
+    assert result.decision == "deny"
+    (verdict,) = result.verdicts
+    assert verdict.error is not None
+    assert "not a Verdict" in verdict.error
+    assert verdict.provenance == Provenance(kind="constraint", detector="nonsense", version="0.1.0")
+
+
+def test_an_out_of_range_span_on_a_deny_is_caught_which_the_old_code_accepted() -> None:
+    """The report's second gap, reproduced exactly: a `deny` carrying
+    `span=(9999, 10001)` over 22 characters of content. `_spans_of` only ever
+    ran on a `redact`, so a `deny`'s spans were never looked at.
+    """
+    content = "x" * 22
+    guardrail_name = "denier-bad-span"
+
+    class DenierWithBadSpan:
+        name: str = guardrail_name
+        version: str = "0.1.0"
+        kind: Kind = "constraint"
+        directions: frozenset[Direction] = frozenset({"output"})
+
+        def check(self, content: str, context: Context) -> Verdict:
+            return Verdict(
+                "deny",
+                None,
+                [Finding(type="NOPE", span=(9999, 10001))],
+                _prov(guardrail_name),
+                saw(content),
+            )
+
+    result = GuardrailChain([DenierWithBadSpan()]).run(content, OUT)
+    assert result.decision == "deny"
+    (verdict,) = result.verdicts
+    assert verdict.error is not None
+    assert "does not index into" in verdict.error
+    assert verdict.findings == ()  # the false finding did not reach the audit record either
+
+
+def test_an_out_of_range_span_on_an_allow_is_caught_too() -> None:
+    """The third decision the old code never checked at all. `_spans_of` was
+    reachable only via a `redact`, so neither a `deny` nor an `allow` carrying
+    an unlocatable finding was ever looked at. Nothing forbids a finding on an
+    `allow` -- `Verdict.__post_init__` does not -- so the bound applies here
+    too, on the same terms.
+    """
+
+    class AllowerWithBadSpan:
+        name: str = "allow-bad-span"
+        version: str = "0.1.0"
+        kind: Kind = "constraint"
+        directions: frozenset[Direction] = frozenset({"output"})
+
+        def check(self, content: str, context: Context) -> Verdict:
+            return Verdict(
+                "allow",
+                None,
+                [Finding(type="ODD", span=(0, 999))],
+                _prov("allow-bad-span"),
+                saw(content),
+            )
+
+    result = GuardrailChain([AllowerWithBadSpan()]).run("short", OUT)
+    assert result.decision == "deny"
+    (verdict,) = result.verdicts
+    assert verdict.error is not None
+    assert "does not index into" in verdict.error
+
+
+def test_a_none_span_is_still_legal_on_any_decision() -> None:
+    """The carve-out in clause 6. A classifier finding carries no span at all,
+    and that must not be mistaken for one that fails the bound -- on a `deny`
+    exactly as much as on the `allow` the invariant tests already cover.
+    """
+
+    class ClassifierDenyNoSpan:
+        name: str = "classifier-no-span"
+        version: str = "0.1.0"
+        kind: Kind = "classifier"
+        directions: frozenset[Direction] = frozenset({"output"})
+
+        def check(self, content: str, context: Context) -> Verdict:
+            return Verdict(
+                "deny",
+                None,
+                [Finding(type="TOXIC", span=None, confidence=0.97)],
+                Provenance(kind="classifier", detector=self.name, version=self.version),
+                saw(content),
+            )
+
+    result = GuardrailChain([ClassifierDenyNoSpan()]).run("hello", OUT)
+    assert result.decision == "deny"
+    (verdict,) = result.verdicts
+    # Not a contract violation: this deny is the guardrail's own, not synthesised.
+    assert verdict.error is None
+    assert verdict.findings[0].span is None
+
+
+def test_the_synthesised_deny_carries_the_guardrails_true_provenance_not_the_false_one() -> None:
+    """The report's hostile guardrail, all four fields wrong at once: declares
+    name="liar", version="9.9.9", kind="constraint"; returns
+    provenance.detector="pii", provenance.version="0.1.0",
+    provenance.kind="classifier", and a saw of text it was never given. Every
+    field the synthesised deny carries must be the DECLARED one.
+    """
+    liar = ProvenanceLiar(
+        kind="classifier", detector="pii", version="0.1.0", saw_text="text the chain never sent"
+    )
+    result = GuardrailChain([liar]).run("the real content", OUT)
+    assert result.decision == "deny"
+    (verdict,) = result.verdicts
+    assert verdict.provenance == Provenance(kind="constraint", detector="liar", version="9.9.9")
+    assert verdict.saw == saw("the real content")
+    assert verdict.content is None
+    assert verdict.findings == ()
+
+
+def test_a_later_guardrail_still_runs_after_a_contract_violation_and_cannot_weaken_it() -> None:
+    """The failure posture a raised exception already has, now also true of a
+    returned lie: the run does not stop, the later guardrail's own verdict is
+    on the record, and nothing it decides can talk the deny back down.
+    """
+    result = GuardrailChain([ProvenanceLiar(kind="classifier"), Allower()]).run(
+        "the real content", OUT
+    )
+    assert result.decision == "deny"  # the allower did not weaken it
+    assert len(result.verdicts) == 2
+    liar_verdict, allower_verdict = result.verdicts
+    assert liar_verdict.decision == "deny"
+    assert allower_verdict.decision == "allow"
+    assert allower_verdict.error is None  # its own verdict is untouched
+
+
+@pytest.mark.parametrize("name", sorted(AVAILABLE))
+def test_every_bundled_check_still_passes_its_own_returned_verdict_contract(name: str) -> None:
+    """The positive control for every test above it in this file.
+
+    Built the way a caller builds one -- `build`, with the same options
+    `docs/conformance.md` prints beside the published `rules` row
+    (`options_for`) -- and run through the same chain a hostile guardrail is
+    graded by. A detector that honestly declares its own kind, name and
+    version, and hashes and spans the content it was actually given, must
+    never trip `_contract_violation`; if one did, every caller of this
+    library would see contract-error denies on ordinary traffic.
+    """
+    guardrail = build(name, **options_for(name))
+    result = GuardrailChain([guardrail]).run("hello, this is ordinary text.", OUT)
+    assert len(result.verdicts) == 1
+    assert result.verdicts[0].error is None
