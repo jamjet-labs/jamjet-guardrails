@@ -180,12 +180,91 @@ measured nowhere, exactly as combination is. That is how the defect above lived:
 each guardrail was right about the text it was handed, and no score in this
 repository was computed over a chain.
 
+**A rewrite is not a fixpoint, and a conforming chain does not iterate to make
+it one.** Running a chain again over its own `redact` output can produce a
+decision the first pass did not. Redaction removes characters, and a check whose
+exemption reads the characters AROUND a match loses the evidence it granted the
+exemption on:
+
+```
+"\u0915\u200d\u0915\u200d\u0915"   with [injection-structural, script-constraint(Latin, redact)]
+```
+
+`injection-structural` allows those zero-width joiners, because each one sits
+between two Devanagari letters and a conjunct joiner there is what a joiner is
+for. `script-constraint` redacts the letters, because they are not Latin, and
+passes the joiners, which resolve to `Inherited` and pass under every
+constraint. The joiners are in nobody's span, so they survive into the output,
+now between ASCII placeholders that explain nothing. A second pass reads them as
+`ZERO_WIDTH_SMUGGLING` and denies.
+
+**This is a property of redaction, not of composition**, and a port needs the
+distinction because it decides which file to look in. It reproduces with no
+chain in the picture: `script-constraint` called directly returns the same
+string in its own `Verdict.content`, and the SAME corpus cases re-trigger
+through a two-check chain, a one-check chain and the bare detector. It is not
+the merge either, twice over. The configuration above has exactly one check that
+redacts, so there are no two guardrails' spans to merge. And configuring
+`injection-structural` to redact as well, which does give the merge two sources,
+strictly SHRINKS the re-triggering set, because the joiners it reports are then
+in a span and are rewritten away. Both measured by
+`tests/test_chain.py::test_a_two_source_merge_never_adds_a_re_trigger_the_lone_rewrite_lacks`.
+
+What follows for a caller, and what does not:
+
+- **A new finding on a chain's output is not evidence that the chain leaked.** A
+  rewrite only removes, so every character of the output was in the input, and
+  the placeholders are the only thing added. What changed is the evidence a
+  context-dependent exemption was reading.
+- **A caller that checks input and again checks output should treat the second
+  decision as a decision**, not as the chain contradicting itself. Denying on
+  the second pass is the fail-closed direction.
+- **A conforming chain does not re-run its guardrails to reach agreement with
+  itself.** Iterating hands a guardrail a string another guardrail rewrote,
+  which is the defect this whole section exists to prevent, and every `saw` in
+  the run would stop describing the content the caller passed to `run`.
+- **The exemption is still worth having.** Without it every conjunct joiner in
+  every Devanagari word is a finding. What is bounded is its meaning: an
+  exemption is a statement about the input it was granted over, and never a
+  promise about a string derived from it.
+
 When `check` raises, the chain records a synthesised verdict and keeps going:
 
 - `deny`, carrying an `error` and no findings.
 - Provenance taken from the guardrail's own declared `kind`, `name` and
   `version`, so a `classifier` that dies is never recorded as a `constraint`.
 - `saw` over the same content every other guardrail in the run inspected.
+- **Every `BaseException` the guardrail raises, not only every `Exception`.**
+  `class Sneaky(BaseException)` is three words a detector can write, and a
+  handler spelled `except Exception` does not catch it. The two exceptions are
+  below.
+
+**The handler that catches a raise must not itself be able to raise.** It is the
+one piece of code keeping the run alive, so anything it evaluates that a
+guardrail's author controls is a way back out of it, and a second exception
+thrown from a handler propagates past every guardrail that had already run. The
+exception's class NAME is the trap, because it is the one thing worth recording
+and it is not an inert read: `type(exc).__name__` is an attribute lookup, it
+consults the metaclass first, and a metaclass `__name__` property is a function
+the detector's author wrote. A conforming implementation reads that name without
+an attribute lookup, or does not read it at all. Two shapes to reproduce
+against, both reachable from an ordinary guardrail:
+
+- A metaclass whose `__name__` is a property that raises. This implementation
+  reads through `type`'s own descriptor instead, which cannot be shadowed.
+- A `__name__` that is a `str` SUBCLASS whose slicing raises. `type.__name__`'s
+  setter accepts one, because a subclass of `str` is a string. This
+  implementation truncates through `str`'s own unbound method, which runs the
+  built-in over the characters and returns a plain `str`.
+
+**The exceptions are `KeyboardInterrupt` and `SystemExit`**, which a conforming
+chain lets propagate rather than recording as a `deny`. They are the operator's
+and the interpreter's: converting either into a verdict swallows a shutdown and
+carries on down the chain, and a fifty-guardrail chain would need fifty ctrl-c
+presses to interrupt. A guardrail CAN raise them deliberately and abandon a run
+that way, which is the honest limit of "no guardrail behaviour abandons a run".
+It is bounded by what no handler can take back, since the same guardrail can end
+the process outright or never return.
 
 The `error` string **must not quote the content**. A detector's own exception
 message is the natural place for the value it choked on, so this implementation
@@ -303,7 +382,9 @@ a usable identity is refused when the chain is built, before any content has
 been checked, with the same error a registry raises for a check that would not
 check.
 
-**No guardrail behaviour abandons a run.** A `redact` the chain cannot locate,
+**No guardrail behaviour abandons a run**, other than raising one of the two
+exceptions named under Single-pass rewriting, which are not the guardrail's to
+raise. A `redact` the chain cannot locate,
 meaning no findings or a finding without a span, is the last shape that did. A
 chain that rewrites from spans and is given none would report `redact` over a
 string nothing rewrote, so it must not be allowed; a conforming chain refuses it

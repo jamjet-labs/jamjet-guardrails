@@ -219,6 +219,19 @@ a number that changes quietly is a number nobody can rely on.
 
 ### Changed
 
+- `docs/conformance.md` states, under Single-pass rewriting, that a rewrite is
+  not a fixpoint: running a chain again over its own `redact` output can produce
+  a decision the first pass did not, because redaction removes the neighbours a
+  context-dependent exemption reads. Reported as a defect in the chain's merge
+  and it is not one. The reported reproduction has exactly one check that
+  redacts, so no two guardrails' spans are merged at all, and the same output
+  comes back from a one-check chain and from the detector called directly with
+  no chain. Giving the merge a genuine second source SHRINKS the re-triggering
+  set. No behaviour changed; the contract now says what the output of a redact
+  is a statement about, and
+  `tests/test_chain.py::test_a_two_source_merge_never_adds_a_re_trigger_the_lone_rewrite_lacks`
+  holds the claim to the corpora.
+
 - The distribution's SPDX expression names the licences `template-data/` adds:
   `MIT`, and `LicenseRef-Llama-2-Community`, `LicenseRef-Meta-Llama-3-Community`
   and `LicenseRef-Gemma-Terms` for the three vendor community licences that have
@@ -381,6 +394,22 @@ a number that changes quietly is a number nobody can rely on.
   itself is one the contributor writes: none is committed.
 
 ### Security
+
+- A guardrail can no longer abandon a chain run by raising. `GuardrailChain.run`
+  caught `Exception`, which does not catch `class Sneaky(BaseException)`, and
+  built the verdict's `error` from `type(exc).__name__`, which is an attribute
+  lookup that consults the metaclass first. A metaclass `__name__` property that
+  raises, and a `__name__` set to a `str` subclass whose slicing raises, both
+  threw a second exception out of the one handler that keeps a run alive: no
+  `ChainResult`, no audit record, and no verdict for any guardrail that had
+  already run. All three are now a synthesised `deny` and the run continues. The
+  class name is read through `type`'s own getset descriptor and truncated
+  through `str`'s own unbound method, so nothing the handler evaluates is code a
+  guardrail's author controls, and the exception TYPE is still what the record
+  names. `KeyboardInterrupt` and `SystemExit` are re-raised deliberately and are
+  now named as the limit of "no detector behaviour abandons a run" in
+  `GuardrailChain`'s docstring and in `docs/conformance.md`. No published number
+  moves: this is the raised-exception path, which no corpus scores.
 
 - Every GitHub Action in every workflow is pinned to a full commit SHA with a
   comment naming the release it resolves to, in place of the floating tags

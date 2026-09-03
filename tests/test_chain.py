@@ -1,4 +1,5 @@
 import hmac
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -7,6 +8,7 @@ from jamjet_guardrails import build_chain
 from jamjet_guardrails.chain import GuardrailChain, _Identity
 from jamjet_guardrails.detectors import AVAILABLE, build
 from jamjet_guardrails.errors import GuardrailChainError, GuardrailUnavailableError
+from jamjet_guardrails.eval.corpus import load_corpus
 from jamjet_guardrails.eval.fixtures import options_for
 from jamjet_guardrails.protocol import Guardrail, saw
 from jamjet_guardrails.types import (
@@ -2445,3 +2447,339 @@ def test_a_non_finite_confidence_becomes_a_deny(bad: float) -> None:
     assert verdict.error is not None
     assert "confidence" in verdict.error
     assert verdict.findings == ()
+
+
+# ==========================================================================
+# What a detector RAISES, and the handler that catches it. Every double below
+# raises from `check`; none of them returns anything. The handler is the one
+# piece of code in `run` whose only job is to keep the run alive, and it read
+# the exception's class name by attribute lookup and caught `Exception`, so
+# there were four ways to get an exception out of `run` past it. Each cost the
+# whole run: no `ChainResult`, no audit record, and no verdict for any guardrail
+# that had already run -- the exact failure the fail-closed path was rebuilt to
+# eliminate, reached off a raise rather than off a returned verdict.
+# ==========================================================================
+
+
+class _Watcher:
+    """Runs second and records that it ran. The evidence the run was NOT abandoned.
+
+    A test that only asserts `result.decision == "deny"` would pass against a
+    chain that abandoned the run and a caller that caught the exception. What
+    the contract promises is the audit record, so what the tests below assert is
+    that the guardrail AFTER the raising one still produced a verdict.
+    """
+
+    name: str = "watcher"
+    version: str = "0.1.0"
+    kind: Kind = "constraint"
+    directions: frozenset[Direction] = frozenset({"input", "output"})
+
+    def check(self, content: str, context: Context) -> Verdict:
+        return Verdict("allow", None, [], _prov("watcher"), saw(content))
+
+
+def _raising(exception: BaseException) -> Guardrail:
+    """A well-formed guardrail whose only misbehaviour is the exception it raises."""
+
+    class Raiser:
+        name: str = "raiser"
+        version: str = "0.1.0"
+        kind: Kind = "constraint"
+        directions: frozenset[Direction] = frozenset({"input", "output"})
+
+        def check(self, content: str, context: Context) -> Verdict:
+            raise exception
+
+    return Raiser()
+
+
+def _error_of_the_synthesised_deny(exception: BaseException) -> str:
+    """Run `[raiser, watcher]`, assert the run survived, return the deny's `error`."""
+    result = GuardrailChain([_raising(exception), _Watcher()]).run(CONTENT, OUT)
+    assert result.decision == "deny"
+    # Two verdicts, not one. The second is the whole point: the run continued.
+    raised, watched = result.verdicts
+    assert watched.provenance.detector == "watcher"
+    # The identity the guardrail DECLARED, never anything the exception claimed.
+    assert raised.provenance == _prov("raiser")
+    assert raised.error is not None
+    # The chain's own object, never the caller's. A `str` subclass reaching the
+    # audit record is the same defect as one reaching a verdict.
+    assert type(raised.error) is str
+    return raised.error
+
+
+def test_a_class_name_that_raises_denies_instead_of_abandoning_the_run() -> None:
+    """A metaclass `__name__` property is caller code inside the fail-closed handler.
+
+    `_bounded` builds the `error` string from the exception's class name, and
+    `type(exc).__name__` is an attribute lookup: it walks the METACLASS first,
+    so a metaclass with a `__name__` property shadows `type`'s own descriptor
+    and that property runs inside the `except` clause. Raising there is a second
+    exception thrown from a handler, which propagates straight out of `run`.
+
+    Before the fix this raised `RuntimeError("the class name is caller code
+    too")` out of `GuardrailChain.run`, losing the `ChainResult`, the audit
+    record and the watcher's verdict. `_TYPE_NAME` reads through `type`'s own
+    getset descriptor, so the property is never consulted and the TRUE class
+    name is what lands in the record.
+
+    Mutation-checked: restoring `type(exc).__name__` in `_bounded` makes this
+    fail with the RuntimeError escaping `run`.
+    """
+
+    class NameRaises(type):
+        # `type: ignore[override]` because mypy is right and that is the point:
+        # `type.__name__` is a writable attribute and this replaces it with a
+        # read-only property, which is exactly the shape a hostile detector
+        # writes and exactly what the runtime allows.
+        @property
+        def __name__(cls) -> str:  # type: ignore[override]
+            raise RuntimeError("the class name is caller code too")
+
+    class Hostile(Exception, metaclass=NameRaises):
+        pass
+
+    error = _error_of_the_synthesised_deny(Hostile("boom"))
+    # The real name, read past the lying property, so the record still says
+    # WHICH kind of failure this was.
+    assert error.startswith("Hostile raised;")
+    # And the detector's own message is still withheld, which is the property
+    # `_bounded` existed for in the first place.
+    assert "boom" not in error
+
+
+def test_a_class_name_that_is_a_lying_str_subclass_denies_too() -> None:
+    """`type.__name__`'s setter admits a `str` SUBCLASS, and slicing one is caller code.
+
+    Reading through `type`'s descriptor removes the metaclass property but not
+    this: `Sub.__name__ = LyingStr("Sub")` is accepted by CPython, because the
+    setter checks for a string and a subclass is one. `value[:200]` then
+    dispatches on `type(value)` and runs `LyingStr.__getitem__` inside the same
+    handler, one step further along than the defect above.
+
+    `_bounded_str` slices through `str`'s own unbound method, which runs the
+    built-in over the underlying characters and returns a plain `str`.
+
+    Mutation-checked: restoring `value[:_CALLER_STRING_LIMIT]` in `_bounded_str`
+    makes this fail with the RuntimeError escaping `run`.
+    """
+
+    class LyingStr(str):
+        def __getitem__(self, item: object) -> str:
+            raise RuntimeError("slicing the class name is caller code too")
+
+    class SubclassName(Exception):
+        pass
+
+    SubclassName.__name__ = LyingStr("SubclassName")
+
+    error = _error_of_the_synthesised_deny(SubclassName("boom"))
+    assert error.startswith("SubclassName raised;")
+
+
+def test_a_two_million_character_class_name_cannot_grow_the_audit_record() -> None:
+    """The ceiling still holds after the read stops going through the metaclass.
+
+    A metaclass `__name__` property returning two million characters used to be
+    the only way an over-long class name reached `_bounded_str`, and reading
+    through `type`'s descriptor now returns the real name instead. The bound is
+    kept and tested anyway, on a class whose name really is over the ceiling,
+    so `_bounded_str` is correct on its own terms rather than only in
+    combination with where its argument comes from.
+    """
+    long_name = "L" * 2_000_000
+    huge = type(long_name, (Exception,), {})
+    error = _error_of_the_synthesised_deny(huge("boom"))
+    assert len(error) < 400
+    assert error.startswith("L" * 200 + " raised;")
+
+
+def test_a_base_exception_that_is_not_an_exception_denies_instead_of_escaping() -> None:
+    """`except Exception` does not catch `class Sneaky(BaseException)`.
+
+    Three words a detector can write. The clause's own comment said it was
+    reserving the handler for ctrl-c and `SystemExit`, and `Exception` does not
+    spell that: it also lets through every other `BaseException` subclass, and
+    the chain cannot tell an operator's interrupt from a detector's
+    `raise Sneaky()` by that means.
+
+    Mutation-checked: narrowing `except BaseException` back to `except
+    Exception` makes this fail with `Sneaky` escaping `run`.
+    """
+
+    class Sneaky(BaseException):
+        pass
+
+    error = _error_of_the_synthesised_deny(Sneaky("not an Exception"))
+    assert error.startswith("Sneaky raised;")
+    assert "not an Exception" not in error
+
+
+@pytest.mark.parametrize(
+    "control", [KeyboardInterrupt(), SystemExit(1)], ids=["KeyboardInterrupt", "SystemExit"]
+)
+def test_the_two_control_exceptions_still_propagate(control: BaseException) -> None:
+    """The named limit of "no detector behaviour abandons a run", asserted.
+
+    These two are not the detector's: one is the operator's ctrl-c and the other
+    is the interpreter being told to stop. Turning either into a `deny` would
+    swallow a shutdown, carry on down the chain and hand back a `ChainResult`
+    that reads like an ordinary set of denials, and a fifty-guardrail chain
+    would need fifty ctrl-c presses to interrupt.
+
+    A detector CAN raise them on purpose and abandon a run that way. That is the
+    carve-out `GuardrailChain`'s docstring and `docs/conformance.md` both state,
+    and it is bounded by what no handler can take back: the same detector can
+    call `os._exit`, crash a C extension, or never return.
+
+    Mutation-checked: deleting the `except (KeyboardInterrupt, SystemExit):
+    raise` clause makes this fail, because the chain then returns a deny.
+    """
+    with pytest.raises(type(control)):
+        GuardrailChain([_raising(control), _Watcher()]).run(CONTENT, OUT)
+
+
+# ==========================================================================
+# A redaction can re-trigger another check on the chain's own output, and the
+# chain is not what does it. Reported as "the single-pass merge destroys the
+# context another check's exemption depends on". The observation reproduces
+# exactly; the attribution does not, and the two tests below are what separate
+# them. They exist so the next reader who finds the observation does not go
+# looking for the cause in `run`, where it is not, and does not "fix" it by
+# iterating the chain, which would reintroduce the leak the whole single-pass
+# design exists to prevent.
+# ==========================================================================
+
+# 5 conjunct joiners, each one excused by `injection-structural` because of the
+# Devanagari letters on either side of it, and each letter redacted by
+# `script-constraint` because it is not Latin.
+_CONJUNCT = ("क‍" * 5) + "क"
+_RETRIEVED = Context(direction="input", origin="retrieved")
+
+
+def _joiner_findings(text: str, context: Context) -> int:
+    """How many ZERO_WIDTH_SMUGGLING findings `injection-structural` reports."""
+    probe = build("injection-structural")
+    return sum(1 for f in probe.check(text, context).findings if f.type == "ZERO_WIDTH_SMUGGLING")
+
+
+def _latin_only_redactor() -> Guardrail:
+    return build("script-constraint", allowed_scripts=frozenset({"Latin"}), on_match="redact")
+
+
+def test_a_rewrite_re_triggers_another_check_and_no_merge_is_involved() -> None:
+    """The reported sequence, reproduced, and then attributed.
+
+    `injection-structural` exempts a zero-width joiner whose NEIGHBOURS explain
+    it: a joiner between two Devanagari letters is a conjunct, which is what
+    joiners are for. `script-constraint` redacts those letters, because they are
+    not Latin, and passes the joiners themselves, which resolve to `Inherited`
+    and pass under every constraint. The joiners are in nobody's span, so they
+    survive into the output -- now between ASCII placeholders that explain
+    nothing, where the same `injection-structural` reads them as a smuggling
+    payload. The chain returns `redact`; a second pass over that `redact`
+    denies.
+
+    All true. What is not true is that the chain's merge did it. In this exact
+    configuration only ONE guardrail redacts, so `_rewrite` is handed one
+    guardrail's spans and `_merge` has nothing to merge; the same string comes
+    back from a chain holding that one check, and from calling the check
+    directly with no chain at all. Asserted three ways below, because the
+    identity is the whole argument.
+
+    The fix for this is not in this file. It is either the exemption's, in
+    `injection-structural`, or nobody's -- see `docs/conformance.md`, "Single-
+    pass rewriting", which states it as contract.
+    """
+    chain = GuardrailChain([build("injection-structural"), _latin_only_redactor()])
+    result = chain.run(_CONJUNCT, _RETRIEVED)
+
+    assert result.decision == "redact"
+    assert [v.decision for v in result.verdicts] == ["allow", "redact"]
+    # One redact, so the merge had a single guardrail's spans: whatever this
+    # output is, a merge across guardrails is not what produced it.
+    assert sum(v.decision == "redact" for v in result.verdicts) == 1
+    # Every joiner survives the rewrite, un-redacted and now unexplained.
+    assert result.content.count("‍") == 5
+    assert _joiner_findings(_CONJUNCT, _RETRIEVED) == 0
+    assert _joiner_findings(result.content, _RETRIEVED) == 5
+
+    # A second pass over the chain's own `redact` denies it.
+    assert chain.run(result.content, _RETRIEVED).decision == "deny"
+
+    # The attribution. Byte-identical from a two-check chain, from a one-check
+    # chain, and from the detector called directly with no chain at all.
+    alone = GuardrailChain([_latin_only_redactor()]).run(_CONJUNCT, _RETRIEVED)
+    bare = _latin_only_redactor().check(_CONJUNCT, _RETRIEVED)
+    assert result.content == alone.content == bare.content
+
+    # Nothing of the CONTENT was added: a rewrite only ever removes, so the only
+    # characters in the output that were not in the input are the placeholder's
+    # own. What changed is the evidence the exemption was reading, not the
+    # payload -- which is why a new finding on this output is not a leak.
+    assert set(result.content) - set(_CONJUNCT) == set("[REDACTED:DISALLOWED_SCRIPT]")
+
+
+def test_a_two_source_merge_never_adds_a_re_trigger_the_lone_rewrite_lacks() -> None:
+    """The same claim over every shipped corpus case, and over a real merge.
+
+    This is the guard behind the sentence in `docs/conformance.md` that says the
+    same cases re-trigger through a two-check chain, a one-check chain and the
+    bare detector. It asserts SET EQUALITY of the case ids rather than a count,
+    so corpus growth moves the evidence without moving the claim.
+
+    The last assertion is the one that closes the attribution. Configuring
+    `injection-structural` to redact too gives the chain two guardrails
+    contributing spans, which is the merge the report named -- and it strictly
+    REDUCES the re-triggering set, because the joiners it reports are then in a
+    span and get rewritten away. A real merge never adds a re-trigger that the
+    lone rewrite does not already have.
+
+    Mutation-checked: making the sweep compare a chain against itself makes the
+    subset assertion vacuous and the equality trivially true, which is why the
+    non-emptiness assertion is here too.
+    """
+    root = Path(__file__).resolve().parent.parent / "corpora"
+    cases = [
+        case
+        for path in sorted(root.rglob("*.jsonl"))
+        for case in load_corpus(path, name=path.parent.name).cases
+    ]
+    assert cases, "no corpus cases found; the sweep below would pass over nothing"
+
+    def re_triggering(chain: GuardrailChain) -> set[str]:
+        ids = set()
+        for case in cases:
+            context = Context(direction=case.direction, origin="retrieved")
+            before = _joiner_findings(case.text, context)
+            after = _joiner_findings(chain.run(case.text, context).content, context)
+            if after > before:
+                ids.add(case.id)
+        return ids
+
+    through_the_chain = re_triggering(
+        GuardrailChain([build("injection-structural"), _latin_only_redactor()])
+    )
+    one_check_only = re_triggering(GuardrailChain([_latin_only_redactor()]))
+    assert through_the_chain, "the sweep found nothing; it is no longer evidence of anything"
+    assert through_the_chain == one_check_only
+
+    # The bare detector, with no chain in the picture at all.
+    detector = _latin_only_redactor()
+    bare: set[str] = set()
+    for case in cases:
+        context = Context(direction=case.direction, origin="retrieved")
+        verdict = detector.check(case.text, context)
+        rewritten = case.text if verdict.content is None else verdict.content
+        if _joiner_findings(rewritten, context) > _joiner_findings(case.text, context):
+            bare.add(case.id)
+    assert bare == through_the_chain
+
+    # Two guardrails both contributing spans: the merge the report named, and it
+    # only ever removes cases from the set.
+    both_redact = re_triggering(
+        GuardrailChain([build("injection-structural", on_match="redact"), _latin_only_redactor()])
+    )
+    assert both_redact < through_the_chain
