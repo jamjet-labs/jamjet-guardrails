@@ -242,6 +242,15 @@ a number that changes quietly is a number nobody can rely on.
   tracks rather than a list of names, parses each with PyYAML, and fails on any
   `uses:` that is not a 40-hex commit SHA carrying a version comment.
 
+- `docs/performance.md` gains `url-exfiltration`: 112 ms median for one megabyte
+  of the seeded input, 9.4 megabytes per second, ratios of 3.90 to 4.04 per 4x of
+  input, which is the fastest of the four scanning checks. Its rows come from
+  their own run of `scripts/measure_throughput.py` on the machine that page names
+  rather than from a regeneration of the whole table, and the page says so: two
+  runs on one laptop differ by a few percent in the p50 and more in the p99, so
+  rewriting every other check's numbers would have read as a regression in
+  checks nobody had touched.
+
 ### Disclosed
 
 - **DNS-label exfiltration is not detected**, and neither is prose in a hostname.

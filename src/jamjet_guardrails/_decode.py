@@ -23,8 +23,11 @@ Private by name and on purpose. Nothing here is re-exported from the package
 root, and ``docs/conformance.md`` says a port may reach the same verdicts by any
 other means.
 
-Linear in the length of the content. Each alphabet is one ``finditer`` pass, and
-each candidate run is decoded at most once per alphabet.
+Linear in the length of what it is given. Each alphabet is one ``finditer`` pass
+and each candidate run is decoded at most once per alphabet, so a caller pays per
+RUN rather than per document. It carries no published latency figure of its own,
+because it is not a check and nothing calls it on a whole document: the figure
+for its one caller today is in ``docs/performance.md`` under ``url-exfiltration``.
 
 ## The floors, and what each side of one costs
 

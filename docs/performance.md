@@ -24,6 +24,15 @@ every setting recorded under Method is the script's own default. The JSON
 carries the same settings in its `environment` block, so a run whose parameters
 differ from these can be told apart from one that does not.
 
+**A check added after this page was first written brings its own rows from its
+own run**, on the machine and interpreter named below and with the same
+defaults. `url-exfiltration` is one. Rows from two runs of the same script on
+one machine are a few percent apart in the p50 and further apart in the p99,
+which is the variance this page publishes a p99 to show rather than to hide; the
+alternative was rewriting every other check's numbers from whichever run
+happened to be last, and a busier laptop would then read as a regression in a
+check nobody had touched.
+
 ## The machine and the interpreter
 
 | | |
@@ -114,6 +123,12 @@ Milliseconds per call. `MB/s` is derived from the p50.
 | secrets | 65 536 | 61 | 0.290 | 0.326 | 0.335 | 217.2 |
 | secrets | 262 144 | 244 | 1.141 | 1.232 | 1.276 | 221.2 |
 | secrets | 1 048 576 | 979 | 4.697 | 4.990 | 5.199 | 214.9 |
+| url-exfiltration | 1 024 | 0 | 0.112 | 0.117 | 0.156 | 9.2 |
+| url-exfiltration | 4 096 | 0 | 0.439 | 0.470 | 0.486 | 9.4 |
+| url-exfiltration | 16 384 | 0 | 1.733 | 1.811 | 1.839 | 9.5 |
+| url-exfiltration | 65 536 | 0 | 6.961 | 7.354 | 7.471 | 9.5 |
+| url-exfiltration | 262 144 | 0 | 28.090 | 29.141 | 34.361 | 9.4 |
+| url-exfiltration | 1 048 576 | 0 | 112.116 | 115.217 | 118.193 | 9.4 |
 
 ## What each check does with the length
 
@@ -136,6 +151,16 @@ of it, so 4.0 is exactly linear.
   call reports a `LENGTH_LIMIT` finding and the redacted output is truncated. The
   patterns are still scanned over the whole content, which is what these rows
   measure.
+- **`url-exfiltration`** is linear. Ratios run 3.90 to 4.04 and the rate holds
+  at 9.2 to 9.5 megabytes per second across the range, which makes it the
+  fastest of the four scanning checks. **The findings column is zero at every
+  size, and that is what these rows measure**: the seeded input carries no URL,
+  so the number is the discovery pass over the whole content and none of the
+  decoding. Content full of URLs costs more, because each one is taken apart and
+  its components are decoded at up to four alphabets each; that work is bounded
+  by the number of URLs and by their length, not by the length of the document
+  around them, so it is linear in a different variable rather than a worse power
+  of this one.
 - **`secrets`** is linear from 16 KB upward, at ratios of 3.97, 3.93 and 4.12.
   Below that it is dominated by fixed overhead rather than by the content: the
   first step reads as 2.62x and the second as 3.48x, climbing towards 4.0 as the

@@ -37,8 +37,15 @@ over module names and not over behaviour, deliberately, because a guard that
 tried to tell parsing from fetching inside a package would be a guard nobody
 could check.
 
-Linear in the length of the content: a fixed number of ``finditer`` passes, then
-one bounded decode per URL component.
+Cost, and the shape of it. Linear in the content length: a fixed number of
+``finditer`` passes, then one bounded decode per URL component. 112 ms median
+for one megabyte of the seeded input recorded in `docs/performance.md`, on an
+Apple M3 Max under CPython 3.14.5, rising 3.9x to 4.0x per 4x of input across
+the whole range from 1 KB. That input carries no URL, so the figure is the
+discovery pass and none of the decoding; content full of URLs costs more, and
+that extra cost is bounded by how many URLs there are and how long they are
+rather than by the document around them. `scripts/measure_throughput.py` reruns
+it, and `docs/performance.md` states the machine, the input and the method.
 """
 
 from __future__ import annotations
