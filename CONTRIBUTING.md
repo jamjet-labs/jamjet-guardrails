@@ -100,15 +100,50 @@ module:
 
     ./.venv/bin/python scripts/new_check.py my-check
 
-It deliberately leaves four edits to you, and `tests/test_completeness.py` fails
-until each is done, naming the one that is missing:
+It then prints twelve edits it deliberately did not make, and this is the same
+list. Twelve rather than four because someone followed the four-item version in
+a fresh clone with only this file as a guide, and finished with a green suite, a
+check missing from two published tables, a detector no caller could configure,
+and a `NameError` that stopped pytest collecting before any test could name it.
 
-1. Register it in `src/jamjet_guardrails/detectors/__init__.py`, in both
-   `AVAILABLE` and `TYPES`.
-2. Record the baseline with `--write-baselines`, as above.
-3. Add a section to `docs/conformance.md`. A check nobody can port is a check
-   whose corpus cannot grade a port.
-4. Add an entry to `corpora/NOTICE.md` for your corpus.
+**The order is load-bearing twice.** Steps 1 and 2 are one edit to one file and
+neither works alone. Step 6 copies a generated row, so it cannot be done before
+step 5.
+
+1. **Import it**, in `src/jamjet_guardrails/detectors/__init__.py`. The scaffold
+   prints the exact import. This step is first because registering without it
+   raises `NameError` while the package is being imported, and pytest then
+   reports collection errors and no test results at all: the one failure shape
+   this list cannot describe is the one it used to produce.
+2. **Register it**, in the same file, in both `AVAILABLE` and `TYPES`.
+3. **Add it to `tests/test_registry.py`**, to the literal set in
+   `test_every_bundled_detector_is_registered`.
+4. **Add it to `tests/test_chain.py`**: to `_DECISIONS_PRODUCED`, `_ON_MATCH`
+   and `_DECISION_KEYWORD`, and one input your check detects to `_SAMPLES`.
+   Without that input the positive control cannot reach the decisions you just
+   declared, and it fails on your declaration rather than on your check.
+5. **Record the baseline** with `--write-baselines`, as above.
+6. **Add your row to `README.md`** under "Measured, not asserted", copied out of
+   the regenerated `BENCHMARKS.md` in the position that file sorts it into.
+7. **Add a row to the "The checks" table** in `README.md`, with the kind, the
+   directions and every finding type.
+8. **Name it in the self-graded sentence** in `README.md`, the one listing every
+   check with no third-party corpus, unless you shipped one for it.
+9. **Add a row to "What it catches"** in `README.md`, in plain words. It is the
+   first table a reader sees and the last one anybody remembers to edit.
+10. **Add a section to `docs/conformance.md`.** A check nobody can port is a
+    check whose corpus cannot grade a port.
+11. **Add two entries to `corpora/NOTICE.md`**, not one: a row in the summary
+    table near the top, and a section of its own below it.
+12. **Mutation-check every test you wrote**, and rewrite each comment the
+    scaffold left in your test module to say what you actually watched fail.
+
+`tests/test_completeness.py` and `tests/test_readme.py` name steps 5 to 11 for
+you as they fail. Steps 1 to 4 they cannot: every test in
+`tests/test_completeness.py` is parametrised over `AVAILABLE`, so until step 2
+lands it does not know your check exists, and steps 3 and 4 go red in two other
+files whose messages say what set is wrong and not what you are in the middle
+of. Step 12 is checked by nobody but you.
 
 Then the rules that apply to every check in this repository: the corpus labels
 what should happen and not what your code does, every exemption is derived from
@@ -142,9 +177,28 @@ guard that reproduced the very string it existed to keep out and a staleness
 check that searched its own exemption list and so could never go stale.
 
 `scripts/mutate.py` runs the loop mechanically over a list of mutations and
-reports any that stayed green:
+reports any that stayed green. The list is a file you write; none is committed,
+and the path is yours to name:
 
     ./.venv/bin/python scripts/mutate.py mutations.json
+
+Each entry names the test by its full pytest node id, the file to edit, and the
+exact string to replace:
+
+    [
+      {
+        "name": "widen the pattern",
+        "test": "tests/test_my_check.py::test_ordinary_text_is_allowed",
+        "path": "src/jamjet_guardrails/detectors/my_check.py",
+        "old": "r\"MY-\\d+\"",
+        "new": "r\".+\""
+      }
+    ]
+
+Run the node id on its own before you mutate anything. A node id naming a test
+that does not exist makes pytest exit 4, the runner reads any non-zero exit as
+the test having failed, and your mutation is printed as killed by a test that
+never ran.
 
 Use it rather than editing by hand where you can. It clears the bytecode cache
 between steps, and that is load-bearing: a same-length edit written inside one

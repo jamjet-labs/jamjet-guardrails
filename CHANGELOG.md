@@ -10,7 +10,6 @@ a number that changes quietly is a number nobody can rely on.
 
 ## [Unreleased]
 
-
 ### Added
 
 - Both adapter READMEs now say that the framework they install reaches the
@@ -159,6 +158,24 @@ a number that changes quietly is a number nobody can rely on.
   silent failure the constructor already refuses five other ways. The chain
   refuses the verdict, so the composition fails closed, and the test asserts that
   containment beside the miss.
+- `docs/migrating-from-llm-guard.md`, linked from `README.md`. One row per
+  llm-guard scanner class at its final release 0.3.16, all 37 of them, each
+  marked mapped, partial or gap with the check it maps to and one sentence on
+  what differs. Counts: 6 mapped, 9 partial, 22 gap, printed at the top and held
+  against the table's own rows by `tests/test_migration_guide.py`, which also
+  refuses a replacement naming a check `build` cannot construct and refuses a
+  percentage anywhere on the page. The page counts exported classes at the final
+  release and says why that is 37 where the modules are 36, the archived branch
+  is 38 and the documentation navigation is 35. It states what is lost as well
+  as what is gained: 23 of the 37 classes are a model making a judgment and
+  nothing here replaces them.
+- A guard on the README's first table:
+  `tests/test_readme.py::test_the_lead_table_names_every_check_the_registry_can_build`.
+  A recorded contributor walkthrough added a check end to end, followed every
+  message the suite produced, and reached five green gates with "What it
+  catches" never mentioning it.
+- A guard on the scaffold's own output:
+  `tests/test_completeness.py::test_the_scaffold_writes_a_detector_a_caller_can_still_configure`.
 
 ### Changed
 
@@ -266,6 +283,29 @@ a number that changes quietly is a number nobody can rely on.
   `-v` and a version, and a core prerelease such as `v0.4.0-rc.1` is not. A
   test evaluates all three job conditions against all four tag shapes and
   requires each to fire exactly one publisher.
+- The "Adding a check" section of `CONTRIBUTING.md`, and the checklist
+  `scripts/new_check.py` prints, rewritten from a recorded walkthrough that
+  followed the old four-item version literally in a fresh clone. Twelve edits
+  now, in order, because four of them were in files the list never named and two
+  of them cannot be done in either order. The import is a step of its own:
+  registering a check without importing it raises `NameError` while the package
+  is imported, so pytest reports collection errors and no test results at all,
+  and nothing in that output names the missing line. The claim that
+  `tests/test_completeness.py` fails until each edit is done is gone, because
+  every test in that module is parametrised over `AVAILABLE` and cannot see an
+  unregistered check.
+- `scripts/new_check.py` writes a detector that takes `on_match`. It passed
+  `on_match="deny"` and `**options` into the same call, so
+  `build("<name>", on_match="redact")` raised `TypeError: PatternGuardrail() got
+  multiple values for keyword argument 'on_match'`, and every check scaffolded
+  before this shipped unconfigurable. Its test template now says which mutation
+  to run rather than claiming one was run.
+- `scripts/mutate.py` takes a full pytest node id. It built one from
+  `tests/test_training_data.py` and a bare test name, with the path hardcoded,
+  so it could not address the test file a new check writes, which is the file
+  `CONTRIBUTING.md` points its readers at. A bare name still means that module, so existing lists keep
+  working. The module docstring now carries an example entry, and the file
+  itself is one the contributor writes: none is committed.
 
 ### Security
 

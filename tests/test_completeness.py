@@ -13,6 +13,7 @@ check from every other angle, including a green suite and a published number.
 
 from __future__ import annotations
 
+import importlib.util
 import re
 import subprocess
 import sys
@@ -23,6 +24,7 @@ import pytest
 from jamjet_guardrails.detectors import AVAILABLE, TYPES, build
 from jamjet_guardrails.eval.corpus import load_corpus
 from jamjet_guardrails.eval.fixtures import FIXTURES, options_for
+from jamjet_guardrails.types import Context
 
 ROOT = Path(__file__).resolve().parent.parent
 CORPORA = ROOT / "corpora"
@@ -38,6 +40,8 @@ CONTRIBUTING = ROOT / "CONTRIBUTING.md"
 # scaffold's own output rather than to a sentence, because "about twenty-five
 # lines" is a number in prose and a number in prose is a claim.
 _DETECTOR_LINE_BUDGET = 25
+
+CONTEXT = Context(direction="input", origin="user")
 
 CHECKS = sorted(AVAILABLE)
 
@@ -270,6 +274,45 @@ def test_the_scaffold_writes_every_artifact_the_completeness_tests_demand(tmp_pa
         assert (tmp_path / relative).is_file(), f"the scaffold did not write {relative}"
 
 
+def test_the_scaffold_writes_a_detector_a_caller_can_still_configure(tmp_path: Path) -> None:
+    """A scaffolded check has to accept `on_match`, which for a while it did not.
+
+    The template passed `on_match="deny"` and `**options` into the same call, so
+    `build("<name>", on_match="redact")` raised
+
+        TypeError: PatternGuardrail() got multiple values for keyword argument
+        'on_match'
+
+    A TypeError out of `build` is the error class `detectors.build` exists to
+    keep out of that seam, and every check scaffolded before the fix shipped
+    unconfigurable. Nothing caught it: the three tests the scaffold writes never
+    pass an option, and the table that would have caught it lives in
+    `tests/test_chain.py`, which the scaffold's checklist did not name. Found by
+    the recorded walkthrough, so the guard is here rather than in the checklist.
+
+    The module is imported from the scaffold's own output rather than read as
+    text, because the defect is in what the call does and not in how it is
+    spelled.
+    """
+    subprocess.run(
+        [sys.executable, str(SCAFFOLD), "example-check", "--into", str(tmp_path)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    detector = tmp_path / "src" / "jamjet_guardrails" / "detectors" / "example_check.py"
+    spec = importlib.util.spec_from_file_location("_scaffolded_example_check", detector)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    factory = module.build_example_check
+    assert factory().name == "example-check"
+    for decision in ("deny", "redact"):
+        guardrail = factory(on_match=decision)
+        assert guardrail.check("REPLACE-ME-1", CONTEXT).decision == decision
+
+
 def test_the_scaffold_refuses_a_name_that_is_already_registered(tmp_path: Path) -> None:
     result = subprocess.run(
         [sys.executable, str(SCAFFOLD), "pii", "--into", str(tmp_path)],
@@ -295,3 +338,27 @@ def test_contributing_documents_the_scaffold_it_tells_people_to_run() -> None:
     text = CONTRIBUTING.read_text(encoding="utf-8")
     assert "scripts/new_check.py" in text
     assert str(_DETECTOR_LINE_BUDGET) in text
+
+
+def test_the_mutation_runner_can_address_a_test_outside_one_module() -> None:
+    """CONTRIBUTING sends every contributor at `scripts/mutate.py`, and for a
+    while it could only run one file.
+
+    The node id was `f"tests/test_training_data.py::{test}"`, hardcoded, so a
+    mutation naming a test in `tests/test_<name>.py` ran a node id that does not
+    exist. Pytest exits 4 on an unknown node id, `run` reads any non-zero exit
+    as the test having failed, and the script therefore PRINTS the mutation as
+    killed. Only the revert re-run notices, and it reports "revert did not
+    restore green", which points at the revert. That is the false pass this
+    script exists to find, produced by the script.
+
+    Both directions: a bare name still means the module every entry written
+    before the fix lived in, so an existing list keeps working.
+    """
+    spec = importlib.util.spec_from_file_location("_mutate_runner", ROOT / "scripts" / "mutate.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert module.node_id("tests/test_pii.py::test_a") == "tests/test_pii.py::test_a"
+    assert module.node_id("test_a") == "tests/test_training_data.py::test_a"
