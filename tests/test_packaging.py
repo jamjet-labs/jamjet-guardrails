@@ -484,39 +484,28 @@ def test_the_ship_bar_was_recorded_before_any_model_existed() -> None:
 # wheel, where it would be dead weight in every consumer's environment and
 # would put third-party licensed files inside an installed package.
 #
-# `--no-isolation` so the build needs no network: it uses the hatchling already
-# in the dev extra rather than downloading a build environment. Session-scoped,
-# because one build answers both questions and it costs about a second.
+# The archives are built ONCE for the session by `built` above, and the member
+# names come from that same build rather than from a second one. Two fixtures
+# named `built` arrived here from two branches, one returning the paths and one
+# returning the member names, and ruff caught the redefinition; a second build
+# would also have been a second answer to one question, which is how two tests
+# end up disagreeing about what shipped.
 
 
 @pytest.fixture(scope="session")
-def built(tmp_path_factory: pytest.TempPathFactory) -> tuple[list[str], list[str]]:
-    """The member names of a freshly built sdist and wheel."""
-    out = tmp_path_factory.mktemp("dist")
-    result = subprocess.run(
-        [sys.executable, "-m", "build", "--no-isolation", "--outdir", str(out), str(ROOT)],
-        capture_output=True,
-        text=True,
-        # Not `check=True`: a CalledProcessError shows the command and hides
-        # the backend's own message, which is the only line that says WHY a
-        # build failed. The assertion below prints both streams.
-        check=False,
-    )
-    assert result.returncode == 0, f"build failed:\n{result.stdout}\n{result.stderr}"
-    sdists = sorted(out.glob("*.tar.gz"))
-    wheels = sorted(out.glob("*.whl"))
-    assert len(sdists) == 1 and len(wheels) == 1, f"expected one of each, got {sdists} {wheels}"
-    with tarfile.open(sdists[0]) as archive:
-        # The sdist nests everything under `<name>-<version>/`. Strip it, so
-        # the names below read as repository paths and a version bump does not
+def built_names(built: tuple[Path, Path]) -> tuple[list[str], list[str]]:
+    """The member names inside the sdist and the wheel `built` produced."""
+    sdist, wheel = built
+    with tarfile.open(sdist) as archive:
+        # The sdist nests everything under `<name>-<version>/`. Strip it, so the
+        # names below read as repository paths and a version bump does not
         # change what this file asserts.
         sdist_names = [name.partition("/")[2] for name in archive.getnames()]
-    wheel_names = zipfile.ZipFile(wheels[0]).namelist()
-    return sdist_names, wheel_names
+    return sdist_names, zipfile.ZipFile(wheel).namelist()
 
 
 def test_the_built_sdist_carries_every_committed_template_data_file(
-    built: tuple[list[str], list[str]],
+    built_names: tuple[list[str], list[str]],
 ) -> None:
     """The sdist is the evidence, so the evidence has to be in it.
 
@@ -526,7 +515,7 @@ def test_the_built_sdist_carries_every_committed_template_data_file(
     `scripts/generate_template_markers.py` is covered here without anyone
     remembering.
     """
-    sdist_names, _ = built
+    sdist_names, _ = built_names
     expected = sorted(
         str(path.relative_to(ROOT)) for path in TEMPLATE_DATA.rglob("*") if path.is_file()
     )
@@ -536,7 +525,7 @@ def test_the_built_sdist_carries_every_committed_template_data_file(
 
 
 def test_the_built_wheel_carries_the_table_and_none_of_its_raw_sources(
-    built: tuple[list[str], list[str]],
+    built_names: tuple[list[str], list[str]],
 ) -> None:
     """Both halves, because either alone is satisfied by the wrong artifact.
 
@@ -546,7 +535,7 @@ def test_the_built_wheel_carries_the_table_and_none_of_its_raw_sources(
     the tokenizer configuration it was generated from is third-party material
     that has no business inside a consumer's site-packages.
     """
-    _, wheel_names = built
+    _, wheel_names = built_names
     assert "jamjet_guardrails/detectors/_template_markers.py" in wheel_names, (
         "the wheel ships no marker table"
     )
