@@ -38,6 +38,13 @@ Nothing was pinned to a core and the machine was not otherwise quiesced, so the
 tail includes whatever else the operating system was doing. That is the point of
 publishing a p99 rather than a mean.
 
+On a machine whose clock is coarser than the call, the script prints a dash in
+the MB/s column and names the resolution of its own timer underneath the table.
+That is not a check running infinitely fast, it is a row that measured the clock
+instead: `secrets` costs 8 microseconds over a kilobyte here, which is inside one
+tick of a 15.6 millisecond timer by three orders of magnitude. Raise
+`--sizes` until the numbers move.
+
 ## The input
 
 One deterministic string per size, built by

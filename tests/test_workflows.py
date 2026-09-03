@@ -4,10 +4,12 @@ A tag is a movable pointer. `actions/checkout@v7` says "whatever the owner of
 that tag points it at today", and what it points at runs inside the job that
 builds, tests and publishes this package: it reads the repository, it holds a
 job token, and in `release.yml` it stands next to an OIDC identity that PyPI
-trusts. A security library that publishes precision and recall for four checks
-and then floats its own supply chain has made the argument and not applied it
-to itself, which is the same fault `pyproject.toml` records against a bare
-`Apache-2.0` licence field.
+trusts. A security library that publishes a measured number for every check it
+ships and then floats its own supply chain has made the argument and not applied
+it to itself, which is the same fault `pyproject.toml` records against a bare
+`Apache-2.0` licence field. The count of checks is deliberately not written here:
+a number in prose that counts a thing in code is a claim, and this one would go
+stale on the next check that lands.
 
 DERIVED FROM WHAT GIT TRACKS, never from a list of filenames, and that is the
 whole shape of this file. The defect this repository produces more than any
@@ -75,6 +77,16 @@ def _tracked_workflows() -> list[Path]:
 
     An untracked workflow does not run, and a workflow added in the same change
     as this guard is covered by it without anyone remembering to add a name.
+
+    Restricted to `.yml` and `.yaml`, and that restriction is an exemption, so
+    it is made by a PROPERTY and its reason is written down: GitHub reads only
+    those two suffixes out of this directory, so a file with any other suffix
+    cannot run an action and cannot float a tag. Without the filter, an ordinary
+    README placed beside the workflows would fail
+    `test_every_workflow_is_valid_yaml`, which is a red suite over a file that
+    has nothing to do with the supply chain and exactly the sort of failure
+    somebody fixes by deleting a guard. The earlier version of this docstring
+    claimed to return workflow files and returned every tracked path here.
     """
     tracked = subprocess.run(
         ["git", "ls-files", ".github/workflows"],
@@ -83,7 +95,7 @@ def _tracked_workflows() -> list[Path]:
         text=True,
         check=True,
     ).stdout.split()
-    return [ROOT / name for name in tracked]
+    return [ROOT / name for name in tracked if name.endswith((".yml", ".yaml"))]
 
 
 def _parsed_references(document: Any) -> list[str]:

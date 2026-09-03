@@ -239,6 +239,29 @@ def environment(
 _COLUMNS = ("check", "chars", "findings", "p50 ms", "p95 ms", "p99 ms", "MB/s")
 
 
+def throughput(utf8_bytes: int, p50_ms: float) -> float | None:
+    """Megabytes per second, or None when the timer could not see the call.
+
+    A p50 of exactly zero is not a fast measurement, it is an absent one: the
+    call finished inside one tick of `perf_counter`, so the only thing the
+    number says is that the clock is coarser than the work. Dividing by it
+    raises `ZeroDivisionError` and takes down a script whose whole job is to
+    produce a table somebody else can reproduce on their own machine, which is
+    the machine most likely to have the coarser clock. This repository's own
+    fastest row is `secrets` at 8 microseconds over a kilobyte, which is inside
+    one tick of a 15.6 millisecond timer by three orders of magnitude, so the
+    condition is not hypothetical on a platform with a coarse one.
+
+    Returning None rather than raising or printing zero, because zero is a
+    throughput a reader would believe. `table` renders it as a dash and the
+    header note names the clock's resolution, which is the fact that actually
+    explains the gap.
+    """
+    if p50_ms <= 0:
+        return None
+    return (utf8_bytes / 1_048_576) / (p50_ms / 1000)
+
+
 def table(rows: Sequence[dict[str, Any]]) -> str:
     header = (
         f"{_COLUMNS[0]:<22}{_COLUMNS[1]:>10}{_COLUMNS[2]:>10}"
@@ -246,12 +269,20 @@ def table(rows: Sequence[dict[str, Any]]) -> str:
     )
     lines = [header, "-" * len(header)]
     for row in rows:
-        rate = (row["utf8_bytes"] / 1_048_576) / (row["p50_ms"] / 1000)
+        rate = throughput(row["utf8_bytes"], row["p50_ms"])
+        rendered = "-" if rate is None else f"{rate:.1f}"
         lines.append(
             f"{row['check']:<22}{row['chars']:>10}{row['findings']:>10}"
             f"{row['p50_ms']:>10.3f}{row['p95_ms']:>10.3f}{row['p99_ms']:>10.3f}"
-            f"{rate:>9.1f}"
+            f"{rendered:>9}"
         )
+    resolution = time.get_clock_info("perf_counter").resolution * 1000
+    lines.append("")
+    lines.append(
+        f"perf_counter resolution on this machine: {resolution:.6f} ms. "
+        "A dash in MB/s means p50 came back at zero, which means the call ran "
+        "inside one tick and the row measures the clock rather than the check."
+    )
     return "\n".join(lines)
 
 
