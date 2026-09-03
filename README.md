@@ -1,3 +1,5 @@
+![A friendly robot holding a magnifying glass over a long blank scroll. Hidden marks are visible only inside the glass.](docs/banner.png)
+
 # jamjet-guardrails
 
 Inspect what goes into an LLM and what comes out of it. Catch the instruction
