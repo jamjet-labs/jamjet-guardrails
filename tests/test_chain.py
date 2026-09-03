@@ -1792,20 +1792,13 @@ _ON_MATCH: dict[str, tuple[Decision, ...]] = {
 # here as a missing key rather than as a TypeError from inside a parametrised
 # run naming a keyword nobody was looking at.
 _DECISION_KEYWORD: dict[str, str] = {
+    "confusables": "on_detect",
     "injection-structural": "on_match",
     "pii": "on_match",
     "rules": "on_match",
     "script-constraint": "on_match",
     "secrets": "on_match",
     "url-exfiltration": "on_detect",
-}
-
-_DECISION_KEYWORD: dict[str, str] = {
-    "confusables": "on_detect",
-    "injection-structural": "on_match",
-    "pii": "on_match",
-    "rules": "on_match",
-    "secrets": "on_match",
 }
 
 # One input per detection path, plus one that every check allows. Between them
