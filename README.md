@@ -377,14 +377,10 @@ carries the old figures beside the new ones.
 
 Numbers measured on a corpus we wrote are reported separately from numbers
 measured on a corpus we did not, and the two are never merged. There is no
-third-party corpus for `confusables`, `encoded-content`,
-`injection-structural`, `rules`, `script-constraint`, `secrets` or
+third-party corpus for `confusables`, `encoded-content`, `injection-structural`,
+`rules`, `script-constraint`, `secrets`, `template-integrity` or
 `url-exfiltration`. No compatibly licensed one was found for any of them, so all
-seven are measured on our own corpora only and are self-graded.
-third-party corpus for `confusables`, `injection-structural`, `rules`,
-`script-constraint`, `secrets`, `template-integrity` or `url-exfiltration`. No
-compatibly licensed one was found for any of them, so all seven are measured on
-our own corpora only and are self-graded.
+eight are measured on our own corpora only and are self-graded.
 
 The third-party PII corpus is derived from
 [nvidia/Nemotron-PII](https://huggingface.co/datasets/nvidia/Nemotron-PII),
