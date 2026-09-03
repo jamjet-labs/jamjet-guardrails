@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hmac
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import cast
@@ -373,12 +374,22 @@ def _verified(returned: object, identity: _Identity, digest: str, content: str) 
             f"guardrail {identity.named!r} returned a provenance.model or "
             "provenance.revision that is neither a str nor None",
         )
-    if claimed_threshold is not None and type(claimed_threshold) not in (float, int):
+    if claimed_threshold is not None and (
+        type(claimed_threshold) not in (float, int) or not math.isfinite(claimed_threshold)
+    ):
+        # `math.isfinite`, not another comparison. NaN fails every comparison,
+        # `<` and `>` included, so a bound spelled as one more comparison would
+        # let NaN walk straight through it exactly as an unchecked `!=` let a
+        # lying `str` subclass through before `type(x) is str` was checked
+        # first here. `float` and `int` are both always safe to call it on,
+        # which is why the type check runs first and stays an `or`, not a
+        # second `if`: calling `math.isfinite` on a value that failed it would
+        # be calling it on caller data of an unknown shape.
         return _synthesised_deny(
             identity,
             digest,
             f"guardrail {identity.named!r} returned a provenance.threshold that is "
-            "neither a number nor None",
+            "neither a finite number nor None",
         )
     if claimed_content is not None and type(claimed_content) is not str:
         return _synthesised_deny(
@@ -426,12 +437,39 @@ def _verified(returned: object, identity: _Identity, digest: str, content: str) 
                 digest,
                 f"guardrail {identity.named!r} returned a finding whose type is not a str",
             )
-        if confidence is not None and type(confidence) not in (float, int):
+        if len(finding_type) > _ERROR_TYPE_LIMIT:
+            # `finding.type` is the one detector-chosen string this library lets
+            # reach the rewrite AT ALL, by design: a redaction placeholder has to
+            # NAME what claimed the region, so `[REDACTED:EMAIL]` is `EMAIL` read
+            # straight out of the finding that redacted it. Unbounded, that design
+            # choice is a channel rather than a label. `Finding(type=content,
+            # span=(0, len(content)))` on a `redact` makes the placeholder BE the
+            # content, reproducing it verbatim inside a string this library calls
+            # safe to forward, and a finding whose type runs to millions of
+            # characters inflates every audit record downstream of a
+            # `ChainResult` by the same amount for one finding. The bound does
+            # not and cannot stop a SHORT type from equalling a short secret --
+            # see `docs/conformance.md` -- only the unbounded case; it is the
+            # same ceiling `_bounded_str` already holds every other caller-chosen
+            # string to, and it is generous next to a real type name, which is a
+            # short constant such as `INVISIBLE_TAG_CHARS`.
+            return _synthesised_deny(
+                identity,
+                digest,
+                f"guardrail {identity.named!r} returned a finding whose type "
+                f"exceeds {_ERROR_TYPE_LIMIT} characters",
+            )
+        if confidence is not None and (
+            type(confidence) not in (float, int) or not math.isfinite(confidence)
+        ):
+            # Same reasoning as `provenance.threshold` above: NaN and infinity
+            # are both `float`, so the type check alone admits them, and neither
+            # is a confidence a caller could threshold against.
             return _synthesised_deny(
                 identity,
                 digest,
                 f"guardrail {identity.named!r} returned a finding whose confidence is "
-                "neither a number nor None",
+                "neither a finite number nor None",
             )
         # Coerced once, above the branch, so both shapes of finding carry the
         # same rebuilt value and neither can be changed without the other.
@@ -555,6 +593,20 @@ class GuardrailChain:
     detail is not lost either: each ``Verdict`` keeps its own findings, its own
     spans and its own ``content``, which is that detector's view of the same
     input.
+
+    **A finding's ``type`` is the one detector-chosen string this library lets
+    reach the rewrite, by design.** A placeholder has to name what claimed the
+    region it replaces, so the type is read straight out of the finding that
+    redacted it -- that is what ``EMAIL`` in ``[REDACTED:EMAIL]`` is. What is
+    bounded is its length, not its content: a type longer than
+    ``_ERROR_TYPE_LIMIT`` characters is a contract violation, refused like any
+    other over-long caller string in this module, because unbounded it stops
+    being a label and becomes a channel -- a finding whose type IS the content
+    it redacted reproduces that content, verbatim, inside a string this
+    library calls safe to forward. The bound does not stop a SHORT type from
+    equalling a short secret; a real type name is a short constant such as
+    ``INVISIBLE_TAG_CHARS``, and the bound is generous next to one. See
+    ``_verified``.
 
     A guardrail's own ``Verdict.content`` is therefore NOT what the chain
     returns. It is that one guardrail's rewrite of the input, correct on its own

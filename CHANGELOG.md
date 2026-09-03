@@ -18,17 +18,34 @@ a number that changes quietly is a number nobody can rely on.
   digest over the content it passed to `check`, `provenance` carries the identity
   the chain holds for that guardrail, and the findings are fresh objects with
   their own strings and plain integer spans. Nothing a detector returned reaches
-  `ChainResult.verdicts`, the combined decision or the rewrite. Previously a
-  `check` that returned successfully could report any detector name, version and
-  kind, hash text it was never given, and carry a finding's span past the end of
-  the content, and all of it was recorded unexamined. Verifying that verdict and
-  then keeping it was not enough either: a `str` subclass whose `__eq__` returns
-  True passes every comparison, an object whose `__class__` says `Verdict` passes
-  `isinstance` and can answer a property honestly while it is being checked and
-  falsely while it is being recorded, and an `int` subclass passes
-  `0 <= start < end <= len(content)` and then slices as a negative number, which
-  emitted a prefix of the ORIGINAL content in front of a redaction placeholder
-  under a `redact` decision.
+  `ChainResult.verdicts`, the combined decision or the rewrite AS THE OBJECT it
+  arrived in. Previously a `check` that returned successfully could report any
+  detector name, version and kind, hash text it was never given, and carry a
+  finding's span past the end of the content, and all of it was recorded
+  unexamined. Verifying that verdict and then keeping it was not enough either: a
+  `str` subclass whose `__eq__` returns True passes every comparison, an object
+  whose `__class__` says `Verdict` passes `isinstance` and can answer a property
+  honestly while it is being checked and falsely while it is being recorded, and
+  an `int` subclass passes `0 <= start < end <= len(content)` and then slices as
+  a negative number, which emitted a prefix of the ORIGINAL content in front of a
+  redaction placeholder under a `redact` decision. Every strictness check reads
+  `type(x) is T`, never `isinstance`, because a subclass with a lying `__eq__` or
+  `__str__` walks straight through the comparison or the coercion `isinstance`
+  would still allow.
+- A finding's `type` is bounded to the same length every other caller-chosen
+  string in an error message already was. It is still, by design, the one
+  detector-chosen string that reaches `ChainResult.content`: a redaction
+  placeholder has to name what claimed the region, so `EMAIL` in
+  `[REDACTED:EMAIL]` is a finding's `type`. Unbounded, a `redact` whose
+  finding's type IS the content it redacted reproduced that content, verbatim,
+  inside a string this library calls safe to forward, and a type running to
+  millions of characters inflated the audit record by the same amount for one
+  finding. The bound stops the second failure, not the first: a short type
+  equalling a short secret is not new, and is not what the bound closes.
+- `provenance.threshold` and a finding's `confidence` are checked for
+  finiteness, not only type. Both are `float | None`, and NaN and infinity are
+  both a `float`, so the type check alone let either one reach the audit
+  record. A non-finite value is now a contract violation like any other.
 - A malformed finding span no longer abandons the run. A span of `(1, 2, 3)`,
   `("a", "b")` or `5` raised out of `run` from validation that sat outside the
   try, losing the whole run's audit record and every guardrail after the one

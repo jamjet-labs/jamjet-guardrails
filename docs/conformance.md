@@ -213,7 +213,25 @@ read that records it, and an `int` subclass passes `0 <= start < end <=
 len(content)` and then indexes as a negative number. A conforming implementation
 therefore reads each field ONCE, checks the read strictly, and constructs a new
 verdict from those reads. Nothing a detector returned reaches the audit record,
-the combined decision or the rewrite.
+the combined decision or the rewrite AS THE OBJECT it arrived in -- every field
+is copied into a value this implementation built.
+
+One field is copied through ON PURPOSE rather than replaced: a finding's
+`type`. A redaction placeholder has to name what claimed the region it
+replaces, so the type a detector reports is the one detector-chosen string
+this document requires in `ChainResult.content` at all -- `EMAIL` in
+`[REDACTED:EMAIL]` is a finding's `type`, read straight out of the finding
+that redacted it. What is fixed is its LENGTH, not its content: a `type`
+longer than **200 characters** is a failed check, refused like any other
+over-long caller string (`_ERROR_TYPE_LIMIT` in this implementation, shared
+with the bound its own error messages already used), because unbounded it
+stops being a label: a `redact` whose finding's type IS the content it
+redacted reproduces that content, verbatim, inside a string this document
+calls safe to forward, and a type of a few million characters inflates every
+audit record downstream by the same amount for one finding. The bound does
+not, and cannot, stop a SHORT type from equalling a short secret -- a real
+type name is a short constant such as `INVISIBLE_TAG_CHARS`, and 200
+characters is generous next to one.
 
 Read once, then check:
 
@@ -234,6 +252,14 @@ Read once, then check:
   pair of integers, is a failed check and not an exception: `(1, 2, 3)`,
   `("a", "b")` and `5` are shapes a chain must refuse without abandoning the
   run.
+- **Every finding's `type` is no longer than 200 characters.** Not a claim
+  about content, only about length -- see above.
+- **`provenance.threshold` and a finding's `confidence`, where either is
+  present, are finite.** Both are numbers a caller may threshold or sort
+  against, and NaN and infinity are both a `float`, so a type check alone
+  admits them. A value that walks through a comparison-based guard is this
+  library's own hole once already: every comparison against NaN is false, so a
+  bound spelled as one more comparison treats NaN as though it had passed.
 - **`error` is not set.** It is the chain's field, and it says the chain
   synthesised this verdict.
 

@@ -1,3 +1,4 @@
+import hmac
 from typing import cast
 
 import pytest
@@ -1483,7 +1484,10 @@ def test_a_confidence_that_is_not_a_number_becomes_a_deny() -> None:
     assert result.decision == "deny"
     (verdict,) = result.verdicts
     assert verdict.error is not None
-    assert "confidence is neither a number nor None" in verdict.error
+    # CHANGED: the message now reads "neither a finite number nor None" -- the
+    # same clause grew a second reason to fire (`math.isfinite`, added for
+    # NaN and infinity) without splitting into a second message.
+    assert "confidence is neither a finite number nor None" in verdict.error
     assert verdict.provenance == Provenance(
         kind="classifier", detector="odd-confidence", version="0.1.0"
     )
@@ -1761,3 +1765,536 @@ def test_a_bundled_redaction_still_rewrites_the_content_the_chain_returns(name: 
         assert "[REDACTED:" in result.content
         assert result.content != text
     assert redacted, f"no sample made {name} redact, so this test asserted nothing"
+
+
+# ==========================================================================
+# Fix round two: the strictness clauses are load-bearing, and now held down
+# individually. `type(x) is str`, `type(x) is int`, `type(verdict) is Verdict`
+# and `str.__eq__(known, kind) is True` all read as defensive-programming
+# tidiness to a reader who has not seen the attack, and every test above this
+# section still passes if any one of them is weakened to the `isinstance` or
+# `==` such a reader would suggest: every existing hostile double either is
+# not a str/int/Verdict AT ALL, which `isinstance` refuses exactly as well, or
+# carries a VALUE some OTHER check catches independently. Each test below
+# removes every other reason the chain might have to refuse its double, so
+# the one clause it names is the only thing standing, confirmed by mutation
+# in the commit message this change ships with.
+# ==========================================================================
+
+
+class SelfLyingStr(str):
+    """A `str` subclass whose own characters are honest but whose `__str__`
+    returns something else entirely.
+
+    `LyingStr` above lies about equality; this one lies about coercion, and it
+    exists for exactly one clause: `_identity_of` builds `_Identity.named` with
+    `str(name)`, so if `type(name) is not str` were ever weakened to
+    `isinstance`, that `str(...)` call would be the next line of defence --
+    and it is not one. Confirmed empirically, not assumed: `str(x)` on a
+    subclass with no `__str__` of its own copies the characters into a fresh
+    exact `str`, but a subclass that overrides `__str__`, as this one does,
+    has `str(x)` return exactly what that method returns, unexamined, as long
+    as it is itself a `str`. `type(x) is str` is the only check here that
+    never asks the object anything.
+    """
+
+    def __new__(cls, real_characters: str, coerces_to: str) -> "SelfLyingStr":  # noqa: PYI034
+        # `Self` (the fix ruff suggests) needs Python 3.11; this repository's
+        # floor is 3.10, so the class's own name stays the honest return type.
+        instance = super().__new__(cls, real_characters)
+        instance._coerces_to = coerces_to  # type: ignore[attr-defined]
+        return instance
+
+    def __str__(self) -> str:
+        return self._coerces_to  # type: ignore[attr-defined,no-any-return]
+
+
+def test_a_guardrail_name_that_is_a_str_subclass_is_refused_even_though_it_reads_honest() -> None:
+    """Clause 1 of 7: `type(name) is not str` in `_identity_of`. Reproduces the
+    report's `r2e.py`: a guardrail named `honest-detector`, validated as such
+    by anything that compares it, whose `str()` coercion alone would have
+    recorded it as `pii`.
+
+    Nothing here needs a lying `__eq__`: `_identity_of` never compares `name`
+    against anything, only type-checks it and later coerces it, so the
+    ordinary `==` an exact `str` gives for free is enough to make this double
+    look completely honest to any check that is not `type(x) is str` itself.
+    """
+    lying = SelfLyingStr("honest-detector", "pii")
+    assert isinstance(lying, str)  # would pass a weakened `isinstance` guard
+    assert lying == "honest-detector"  # and an equality check, with no lying dunder needed
+    assert str(lying) == "pii"  # the "just coerce it to be safe" escape hatch, defeated
+
+    class LyingName:
+        name = lying
+        version: str = "0.1.0"
+        kind: Kind = "constraint"
+        directions: frozenset[Direction] = frozenset({"input", "output"})
+
+        def check(self, content: str, context: Context) -> Verdict:  # pragma: no cover
+            raise AssertionError("must not run: refused when the chain is built")
+
+    with pytest.raises(
+        GuardrailUnavailableError, match="declares a name that is not a str"
+    ) as exc_info:
+        GuardrailChain([cast(Guardrail, LyingName())])
+    # The refusal names the guardrail by POSITION, this module's own
+    # knowledge, never by the value that failed to declare itself, so what
+    # lands in the error is an exact position and neither the honest nor the
+    # lying string appears in it at all.
+    assert "position 0" in str(exc_info.value)
+    assert "honest-detector" not in str(exc_info.value)
+    assert "pii" not in str(exc_info.value)
+
+
+def test_a_guardrail_version_that_is_a_str_subclass_is_refused_too() -> None:
+    """Clause 2 of 7: `type(version) is not str`, the same clause `_identity_of`
+    runs for `name`, on the field right beside it. A check written to catch a
+    subclass in `name` alone would leave `version` stamped into every verdict
+    as whatever object the guardrail handed over -- `LyingStr` is enough to
+    show it, with no `__str__` override needed, since `version` is never
+    coerced anywhere `name` was not already checked first.
+    """
+    lying = LyingStr("0.1.0")
+    assert isinstance(lying, str)
+    assert lying == "0.1.0"
+
+    class LyingVersion:
+        name: str = "versioned"
+        version = lying
+        kind: Kind = "constraint"
+        directions: frozenset[Direction] = frozenset({"input", "output"})
+
+        def check(self, content: str, context: Context) -> Verdict:  # pragma: no cover
+            raise AssertionError("must not run: refused when the chain is built")
+
+    with pytest.raises(
+        GuardrailUnavailableError, match="declares a version that is not a str"
+    ) as exc_info:
+        GuardrailChain([cast(Guardrail, LyingVersion())])
+    assert "position 0" in str(exc_info.value)
+    assert "0.1.0" not in str(exc_info.value)
+
+
+def test_a_saw_whose_characters_match_but_whose_type_does_not_still_denies() -> None:
+    """Clause 3 of 7: `type(claimed_saw) is not str`, isolated from the two
+    checks beside it in the same `if`.
+
+    Every EXISTING saw-lying test in this file (`SawLiar`,
+    `test_a_saw_that_lies_through_a_str_subclass_becomes_a_deny`) wraps a
+    digest of text the chain never sent, which `hmac.compare_digest` refuses
+    on the characters alone -- it reads the bytes directly rather than asking
+    the object anything, so it does not care that `LyingStr.__ne__` always
+    answers False. That is precisely why weakening `type(claimed_saw) is not
+    str` to `isinstance` would leave every existing saw test green: the
+    value-based net downstream still catches them. This one wraps the CORRECT
+    digest in the same lying subclass instead, so `claimed_saw != digest` is
+    False (the lying `__ne__`) AND `hmac.compare_digest` reports the two equal
+    (the characters genuinely match) -- only `type(claimed_saw) is not str` is
+    left standing.
+    """
+    content = "the real content, hashed honestly"
+    digest = saw(content)
+    lying_saw = LyingStr(digest)
+    assert lying_saw == digest
+    assert (lying_saw != digest) is False
+    assert hmac.compare_digest(lying_saw, digest)  # the value-based net, proven insufficient alone
+
+    class SawTypeLiar:
+        name: str = "saw-type-liar"
+        version: str = "0.1.0"
+        kind: Kind = "constraint"
+        directions: frozenset[Direction] = frozenset({"input", "output"})
+
+        def check(self, content: str, context: Context) -> Verdict:
+            return Verdict("allow", None, [], _prov("saw-type-liar"), lying_saw)
+
+    result = GuardrailChain([SawTypeLiar()]).run(content, OUT)
+    assert result.decision == "deny"
+    (verdict,) = result.verdicts
+    _assert_the_record_is_the_chains_own(
+        verdict, detector="saw-type-liar", version="0.1.0", content=content
+    )
+    assert "saw" in (verdict.error or "")
+
+
+def test_a_decision_that_is_a_valid_looking_str_subclass_still_denies() -> None:
+    """Clause 4 of 7: `type(decision) is not str`, isolated from the membership
+    check (`decision not in _DECISIONS`) beside it.
+
+    `in` on a tuple tries the RIGHT operand's `__eq__` first when it is an
+    instance of a subclass of the left operands' type -- confirmed
+    empirically: `LyingStr("redact") in ("allow", "redact", "deny")` is True
+    for the honest reason, and `LyingStr("bogus") in (...)` is ALSO True, for
+    a dishonest one, because the lying `__eq__` answers True against "allow"
+    before either one's real characters are ever compared. A value-only
+    fixture therefore cannot isolate this clause: weakening `type(...) is not
+    str` to `isinstance` lets this decision through the membership check for
+    what looks like the right reason, same as an honest `str` would.
+
+    The redact-content and finding-span checks a few lines below this one also
+    compare `decision` with plain `==`, so a `LyingStr` whose `__eq__` always
+    answers True satisfies THOSE too, whatever it is compared against -- a
+    first attempt at this test used `content=None`, which the "redact
+    carrying no content" clause then caught instead, for the wrong reason, and
+    passed even with clause 4 fully disabled. Supplying real content and a
+    real, in-range finding closes every OTHER route to a deny, so what is left
+    is clause 4 alone: correct code denies before membership, content or the
+    span are ever looked at; weakened code sails all the way through to a
+    genuine, unflagged `redact`.
+    """
+    lying = LyingStr("redact")
+    assert lying in ("allow", "redact", "deny")  # would pass membership even if it were honest
+    assert isinstance(lying, str)
+
+    class DecisionTypeLiar:
+        name: str = "decision-type-liar"
+        version: str = "0.1.0"
+        kind: Kind = "constraint"
+        directions: frozenset[Direction] = frozenset({"input", "output"})
+
+        def check(self, content: str, context: Context) -> Verdict:
+            return Verdict(
+                cast(Decision, lying),
+                "[REDACTED:X]",
+                [Finding(type="X", span=(0, 4))],
+                _prov("decision-type-liar"),
+                saw(content),
+            )
+
+    result = GuardrailChain([DecisionTypeLiar()]).run(CONTENT, OUT)
+    assert result.decision == "deny"
+    (verdict,) = result.verdicts
+    _assert_the_record_is_the_chains_own(
+        verdict, detector="decision-type-liar", version="0.1.0", content=CONTENT
+    )
+    assert type(verdict.decision) is str
+    assert verdict.decision == "deny"
+    # Nothing was rewritten: a genuinely accepted "redact" here would have
+    # applied the finding's span, which is exactly what clause 4 prevents.
+    assert result.content == CONTENT
+
+
+def test_a_content_that_is_a_str_subclass_denies_rather_than_being_quietly_coerced() -> None:
+    """Clause 5 of 7: `type(claimed_content) is not str` in `_verified`.
+
+    Nothing else grades `content`: it is never compared against anything the
+    chain already knows, so this double does not need a lying `__eq__` at all
+    -- the type check is the WHOLE of its defence. Without it, `str(...)` on a
+    subclass that overrides no `__str__` of its own would quietly launder this
+    into a harmless-looking exact `str`, and the verdict would be ACCEPTED
+    rather than denied. Acceptance itself is what this test tells apart from
+    denial; there is no wrong VALUE to find in the record, because the type
+    check is the only thing standing between "this content was never
+    inspected" and "this looks fine."
+    """
+
+    class ContentTypeLiar:
+        name: str = "content-type-liar"
+        version: str = "0.1.0"
+        kind: Kind = "constraint"
+        directions: frozenset[Direction] = frozenset({"input", "output"})
+
+        def check(self, content: str, context: Context) -> Verdict:
+            return Verdict(
+                "redact",
+                cast(str, LyingStr("[REDACTED:X]")),
+                [Finding(type="X", span=(0, 4))],
+                _prov("content-type-liar"),
+                saw(content),
+            )
+
+    result = GuardrailChain([ContentTypeLiar()]).run(CONTENT, OUT)
+    assert result.decision == "deny"
+    (verdict,) = result.verdicts
+    _assert_the_record_is_the_chains_own(
+        verdict, detector="content-type-liar", version="0.1.0", content=CONTENT
+    )
+    assert verdict.content is None  # nothing the detector supplied was kept, coerced or otherwise
+
+
+class FindingLookalike:
+    """Not a `Finding`. `isinstance` says otherwise, and every field it carries
+    is honest.
+
+    Deliberately harmless in every field, which is the point: this is what
+    proves the danger is ACCEPTING a foreign object at all, not any
+    particular lie planted inside it. `Finding` is frozen and slotted; this is
+    neither -- a plain, mutable object that claims the right `__class__` and
+    nothing else. `Verdict` and `Finding` validate nothing about what
+    `findings` holds (`docs/conformance.md`: "`Provenance` and `Finding`
+    reject nothing"), so a hostile guardrail can put this straight into a
+    `findings` list with no `object.__setattr__` bypass required at all.
+    """
+
+    __class__ = Finding  # type: ignore[assignment]
+
+    def __init__(self, type_: str, span: tuple[int, int], confidence: float | None) -> None:
+        self.type = type_
+        self.span = span
+        self.confidence = confidence
+
+
+def test_a_finding_that_only_claims_to_be_a_finding_denies_rather_than_being_read() -> None:
+    """Clause 6 of 7: `type(finding) is not Finding` in `_verified`'s findings
+    loop -- the same defence `type(returned) is not Verdict` gives the verdict
+    itself, one level down.
+
+    Every OTHER check in that loop grades a VALUE; this is the one that grades
+    whether the object is even the right THING, before any of its fields are
+    read. `FindingLookalike`'s fields are all valid, so the difference this
+    test measures is acceptance versus refusal of the object itself, not a
+    wrong value reaching the record.
+    """
+    lookalike = FindingLookalike("TOK", (0, 4), None)
+    assert isinstance(lookalike, Finding)  # would pass a weakened `isinstance` guard
+    assert type(lookalike) is not Finding
+
+    class FindingSpoofer:
+        name: str = "finding-spoofer"
+        version: str = "0.1.0"
+        kind: Kind = "constraint"
+        directions: frozenset[Direction] = frozenset({"input", "output"})
+
+        def check(self, content: str, context: Context) -> Verdict:
+            return Verdict(
+                "redact",
+                "[REDACTED:TOK]",
+                [cast(Finding, lookalike)],
+                _prov("finding-spoofer"),
+                saw(content),
+            )
+
+    result = GuardrailChain([FindingSpoofer()]).run(CONTENT, OUT)
+    assert result.decision == "deny"
+    (verdict,) = result.verdicts
+    _assert_the_record_is_the_chains_own(
+        verdict, detector="finding-spoofer", version="0.1.0", content=CONTENT
+    )
+    assert verdict.findings == ()  # the lookalike never reaches the record, honest fields or not
+    assert result.content == CONTENT  # and nothing it claimed was applied to the rewrite
+
+
+def test_a_kind_that_lies_through_reflected_equality_is_refused_rather_than_normalised() -> None:
+    """Clause 7 of 7: `str.__eq__(known, kind) is True`, not `known == kind`,
+    when `_identity_of` resolves a guardrail's declared `kind` against
+    `_KINDS`.
+
+    `known == kind` gives a `str` SUBCLASS on the right reflected priority
+    over the plain `str` literal on the left, so `kind`'s own overridden
+    `__eq__` decides the comparison instead of `known`'s honest one --
+    confirmed empirically below. A subclass whose `__eq__` always answers True
+    then matches `_KINDS`'s FIRST member regardless of what it actually
+    declared, and the guardrail would be silently normalised to
+    `kind="constraint"` rather than refused: not accepted as what it claimed
+    to be, and not refused for not being it either. `str.__eq__(known, kind)`
+    is `str`'s own comparison called directly on the two operands, so it is
+    never routed through `kind`'s overridden method at all.
+    """
+    lying_kind = LyingStr("not-a-real-kind")
+    assert ("constraint" == lying_kind) is True  # reflected priority: ordinary `==` is fooled
+    assert str.__eq__("constraint", lying_kind) is False  # str's OWN comparison is not
+
+    class KindLiar:
+        name: str = "kind-liar"
+        version: str = "0.1.0"
+        kind = lying_kind
+        directions: frozenset[Direction] = frozenset({"input", "output"})
+
+        def check(self, content: str, context: Context) -> Verdict:  # pragma: no cover
+            raise AssertionError("must not run: refused when the chain is built")
+
+    with pytest.raises(
+        GuardrailUnavailableError, match="declares a kind that is not one of"
+    ) as exc_info:
+        GuardrailChain([cast(Guardrail, KindLiar())])
+    assert "position 0" in str(exc_info.value)
+    assert "not-a-real-kind" not in str(exc_info.value)
+
+
+# ==========================================================================
+# A finding's type is bounded, and it is bounded for a reason a length check
+# alone does not convey on its own: it is the one detector-chosen string this
+# library lets reach the rewrite AT ALL, by design, because a placeholder has
+# to name what claimed the region. Unbounded, that design choice is a
+# channel: the type can BE the content, or dwarf it.
+# ==========================================================================
+
+
+def test_a_finding_type_that_would_dwarf_the_content_becomes_a_deny_before_the_rewrite() -> None:
+    """The report's reproduction: a 2,000,000-character type over a
+    32-character secret produced a 2,000,041-character `ChainResult.content`.
+    The finding claims one character (`span=(0, 1)`), the smallest possible
+    in-range span, so nothing about the SPAN is what gets refused here --
+    only the type's length.
+    """
+    content = "AKIAIOSFODNN7EXAMPLE is the key"
+    bomb = "A" * 2_000_000
+
+    class TypeBomb:
+        name: str = "type-bomb"
+        version: str = "0.1.0"
+        kind: Kind = "constraint"
+        directions: frozenset[Direction] = frozenset({"input", "output"})
+
+        def check(self, content: str, context: Context) -> Verdict:
+            return Verdict(
+                "redact", "x", [Finding(type=bomb, span=(0, 1))], _prov("type-bomb"), saw(content)
+            )
+
+    result = GuardrailChain([TypeBomb()]).run(content, OUT)
+    assert result.decision == "deny"
+    (verdict,) = result.verdicts
+    assert verdict.error is not None
+    assert "exceeds" in verdict.error
+    assert bomb not in verdict.error
+    assert len(verdict.error) < 400
+    # Nothing was rewritten: the claimed redact never reached `_spans_of`, so
+    # the record carries the ORIGINAL content's length, not the bomb's.
+    assert result.content == content
+    assert len(result.content) == len(content)
+
+
+def test_a_finding_type_that_equals_the_content_reaches_the_rewrite_by_design() -> None:
+    """The positive control `docs/conformance.md` now documents: a SHORT type,
+    even one that happens to equal the exact content a detector was checking,
+    is not what the bound exists to stop, and it is not stopped.
+
+    Real type names are short constants (`EMAIL`, `INVISIBLE_TAG_CHARS`), so
+    this is not the shape a well-behaved detector produces -- it is the
+    narrowest case the bound deliberately leaves open, pinned here so the gap
+    is a documented decision and not a silent one.
+    """
+    content = "AKIAIOSFODNN7EXAMPLE is the key"
+
+    class TypeLeak:
+        name: str = "type-leak"
+        version: str = "0.1.0"
+        kind: Kind = "constraint"
+        directions: frozenset[Direction] = frozenset({"input", "output"})
+
+        def check(self, content: str, context: Context) -> Verdict:
+            return Verdict(
+                "redact",
+                "[REDACTED:X]",
+                [Finding(type=content, span=(0, len(content)))],
+                _prov("type-leak"),
+                saw(content),
+            )
+
+    result = GuardrailChain([TypeLeak()]).run(content, OUT)
+    assert result.decision == "redact"
+    assert result.content == f"[REDACTED:{content}]"
+    assert content in result.content
+
+
+def test_a_marker_planted_as_a_finding_type_is_caught_before_it_ever_reaches_content() -> None:
+    """Extends `test_no_error_message_repeats_a_string_the_detector_chose`.
+
+    That test's `MarkerFindingType` gives its finding an out-of-range span, so
+    the claimed redact never reaches `_spans_of` or the rewrite: the marker is
+    absent from `ChainResult.content` only because nothing about that verdict
+    was ever applied to it, which would be just as true of any content
+    regardless of what the finding's type said. This uses an IN-RANGE span
+    instead, over ordinary content the marker has no other relationship to, so
+    the redact would genuinely apply if nothing stopped it. What stops it is
+    the type-length bound: the marker, repeated past `_ERROR_TYPE_LIMIT`, is
+    refused before the rewrite runs, and the marker is absent from
+    `ChainResult.content` for THAT reason, not because the span was never
+    valid.
+    """
+    marker = "MARKER-2f8a1c-this-string-is-the-content"
+    huge_marker = marker * 6  # 240 characters, comfortably past _ERROR_TYPE_LIMIT (200)
+    assert len(huge_marker) > 200
+    content = "ordinary content the marker is not a part of"
+
+    class MarkerFindingTypeInRange:
+        name: str = "leaky4"
+        version: str = "0.1.0"
+        kind: Kind = "constraint"
+        directions: frozenset[Direction] = frozenset({"input", "output"})
+
+        def check(self, content: str, context: Context) -> Verdict:
+            return Verdict(
+                "redact",
+                "[REDACTED:X]",
+                [Finding(type=huge_marker, span=(0, len(content)))],
+                _prov("leaky4"),
+                saw(content),
+            )
+
+    result = GuardrailChain([MarkerFindingTypeInRange()]).run(content, OUT)
+    assert result.decision == "deny"
+    (verdict,) = result.verdicts
+    assert verdict.error is not None
+    assert marker not in verdict.error
+    assert marker not in result.content  # the extension: absent from content too, not only error
+    assert result.content == content  # untouched: the claimed redact was never applied
+
+
+# ==========================================================================
+# Threshold and confidence are range-checked now, not only type-checked. NaN
+# and infinity are both `float`, so `type(x) not in (float, int)` alone
+# admits them, and they are exactly the shape this repository has its own
+# rule about: every comparison against NaN is False, so a bound written as
+# one more comparison treats NaN as though it had passed rather than failed.
+# ==========================================================================
+
+
+@pytest.mark.parametrize(
+    "bad", [float("nan"), float("inf"), float("-inf")], ids=["nan", "inf", "-inf"]
+)
+def test_a_non_finite_threshold_becomes_a_deny(bad: float) -> None:
+    class NonFiniteThreshold:
+        name: str = "non-finite-threshold"
+        version: str = "0.1.0"
+        kind: Kind = "constraint"
+        directions: frozenset[Direction] = frozenset({"input", "output"})
+
+        def check(self, content: str, context: Context) -> Verdict:
+            return Verdict(
+                "allow",
+                None,
+                [],
+                Provenance(
+                    kind="constraint",
+                    detector="non-finite-threshold",
+                    version="0.1.0",
+                    threshold=bad,
+                ),
+                saw(content),
+            )
+
+    result = GuardrailChain([NonFiniteThreshold()]).run(CONTENT, OUT)
+    assert result.decision == "deny"
+    (verdict,) = result.verdicts
+    assert verdict.error is not None
+    assert "provenance.threshold" in verdict.error
+    assert verdict.provenance.threshold is None
+
+
+@pytest.mark.parametrize(
+    "bad", [float("nan"), float("inf"), float("-inf")], ids=["nan", "inf", "-inf"]
+)
+def test_a_non_finite_confidence_becomes_a_deny(bad: float) -> None:
+    class NonFiniteConfidence:
+        name: str = "non-finite-confidence"
+        version: str = "0.1.0"
+        kind: Kind = "classifier"
+        directions: frozenset[Direction] = frozenset({"input", "output"})
+
+        def check(self, content: str, context: Context) -> Verdict:
+            return Verdict(
+                "deny",
+                None,
+                [Finding(type="TOXIC", span=None, confidence=bad)],
+                Provenance(kind="classifier", detector="non-finite-confidence", version="0.1.0"),
+                saw(content),
+            )
+
+    result = GuardrailChain([NonFiniteConfidence()]).run(CONTENT, OUT)
+    assert result.decision == "deny"
+    (verdict,) = result.verdicts
+    assert verdict.error is not None
+    assert "confidence" in verdict.error
+    assert verdict.findings == ()
