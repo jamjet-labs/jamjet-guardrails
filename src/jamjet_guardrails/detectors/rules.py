@@ -8,6 +8,16 @@ repository exercise one engine with one set of published numbers behind it.
 Its version is this module's, not the primitive's, because what a caller pins
 when they pin `rules` is the behaviour of this registration: the name on the
 verdict, the default decision, and which directions it declares.
+
+Cost, and the shape of it. Near-linear in the content length. 143 ms median for
+one megabyte of the seeded input recorded in `docs/performance.md`, on an Apple
+M3 Max under CPython 3.14.5, with the median rising 4.17x over the last 4x step
+of input rather than 4.0x. The drift is span merging over a finding count that
+grows faster than the input does, not the scan. Measured under the fixture in
+`jamjet_guardrails.eval.fixtures`, which is the configuration the published row
+uses; patterns a user writes carry their own cost and no claim here covers them.
+`scripts/measure_throughput.py` reruns it, and `docs/performance.md` states the
+machine, the input and the method.
 """
 
 from __future__ import annotations

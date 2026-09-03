@@ -12,6 +12,14 @@ overlapping stretches of the input are each right about their own bytes, so
 keeping one and discarding the other leaves the discarded one's bytes in the
 output. In a redactor an ambiguous span has to resolve toward more redaction,
 never less.
+
+Cost, and the shape of it. Linear in the content length, and this is the slowest
+check in the package. 207 ms median for one megabyte of the seeded input recorded
+in `docs/performance.md`, on an Apple M3 Max under CPython 3.14.5, rising 4.0x
+per 4x of input across the whole range from 1 KB. Validating every candidate
+digit run is what that buys, and the figure includes the redaction rewrite.
+`scripts/measure_throughput.py` reruns it, and `docs/performance.md` states the
+machine, the input and the method.
 """
 
 from __future__ import annotations
