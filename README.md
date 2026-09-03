@@ -1,24 +1,10 @@
 # jamjet-guardrails
 
-Content guardrails for LLM applications. Every decision carries provenance:
-which check made it, over exactly what text, and why.
+Inspect what goes into an LLM and what comes out of it. Get back a decision,
+the findings behind it, and a record of which check made it over exactly what
+text.
 
 No dependencies. No network calls. No model downloads. Python 3.10 and above.
-
-## The problem
-
-An LLM application that handles real data has three ways to leak it, and all
-three are quiet:
-
-- The model repeats back a customer email or card number it was given.
-- A key pasted into a prompt is echoed into a log, a trace, or a reply.
-- A check is configured, silently fails to load, and the application runs
-  unguarded while its configuration says otherwise.
-
-This library addresses the first two by inspecting content and the third by
-refusing to start.
-
-## Install
 
 ```
 pip install jamjet-guardrails
@@ -49,25 +35,28 @@ EMAIL (5, 22) pii
 OPENAI_KEY (31, 66) secrets
 ```
 
+That block is executed in CI and its output is compared against what you just
+read, so the quickstart cannot rot.
+
 ## What you get back
 
-Every check returns a `Verdict` carrying its decision, its findings, and a
-provenance record naming the detector and its version. Each verdict also
-carries `saw`, the SHA-256 of the exact string that check inspected, so a
-decision can be tied afterwards to the text it was made about.
+Every check returns a `Verdict`: the `decision`, the `findings` behind it, a
+`provenance` record naming the `detector` and its `version`, and `saw`, the
+SHA-256 of the exact string that check inspected. A decision can be tied
+afterwards to the text it was made about.
 
 Decisions combine restrictively: `deny` > `redact` > `allow`. No code path can
 weaken a decision another check has already made.
 
-Every check in a chain inspects the content you passed in. No check sees a
-string another check has already rewritten, so every span above indexes into
-your input and every verdict hashes the same text. Redactions from all the
-checks are merged and applied in one pass, and a region two checks both claim
-comes back as one placeholder naming both.
+Every check in a chain inspects the content you passed in. No check ever sees a
+string another check has already rewritten, so every span indexes into your
+input and every verdict hashes the same text. Redactions from all the checks
+are merged and applied in one pass, and a region two checks both claim comes
+back as one placeholder naming both.
 
-That rule is a leak fix, not a tidiness one. Rewriting one check at a time let a
-personal-data redaction cut a credential in half, so the next check matched only
-the stump and the rest of the credential survived into content the chain
+That rule is a leak fix, not a tidiness one. Rewriting one check at a time let
+a personal-data redaction cut a credential in half, so the next check matched
+only the stump and the rest of the credential survived into content the chain
 reported as redacted.
 
 On a `deny` the returned content is the audit record, not something to send.
@@ -82,47 +71,126 @@ Branch on the decision first.
 | `rules` | constraint | input, output | `INTERNAL_HOST`, `LENGTH_LIMIT`, `PROJECT_CODENAME`, `TICKET_ID` |
 | `secrets` | constraint | input, output | `ANTHROPIC_KEY`, `AWS_ACCESS_KEY`, `GITHUB_TOKEN`, `JWT`, `OPENAI_KEY`, `PRIVATE_KEY`, `SLACK_TOKEN` |
 
-A type name says what a check labels a match as, not that every value of that
-kind matches. The secrets patterns are anchored on a prefix, and two common
-shapes are named here rather than left for you to find: `github_pat_`
-fine-grained GitHub tokens and `xapp-` Slack app-level tokens are not among
-the prefixes matched, so both pass through untouched. Per-type precision and
-recall are in [BENCHMARKS.md](BENCHMARKS.md).
+**`pii`** redacts personal data to typed placeholders. **`secrets`** matches
+credentials on their issuer prefix rather than by scoring entropy, which is
+what makes its precision defensible and what keeps it off your git SHAs and
+UUIDs. Two shapes are named here rather than left for you to find:
+`github_pat_` fine-grained tokens and `xapp-` Slack app-level tokens are not
+among the prefixes matched, so both pass through untouched.
 
-**`rules` is the one check whose types you choose.** It takes your own regular
-expressions, banned substrings and size limits, so the types in its row are the
-ones the published measurement was taken with, not a fixed set. That row
-measures the engine: whether a span is right, whether two rules claiming one
-stretch of text collapse into one placeholder, whether a limit fires one
-character past its bound. It is not a measurement of any rule you write, and
-your rules carry their own rates. The exact configuration behind the row is in
-[docs/conformance.md](docs/conformance.md).
+**`injection-structural`** looks at instruction smuggling in the encoding
+rather than in the words: Unicode tag characters that mirror ASCII invisibly,
+bidirectional controls that make text render differently from how it parses,
+and zero-width steganography. A classifier trained on natural language does
+not see any of it. Two published prompt-injection models were run over this
+check's own corpus and both scored far below it, because the tokenizer
+collapses a run of tag characters to a single unknown token at any length, so
+the payload never reaches the model. Both directions of that comparison, the
+counts, and what it does and does not support are in
+[benchmarks/RESULTS.md](benchmarks/RESULTS.md).
 
-Size limits are characters, bytes and lines. There is no token limit, because
-counting tokens needs a tokenizer this library does not carry and will not
-guess at.
+It runs on output as well as input, because a model that emits tag characters
+into its own reply is smuggling to whatever reads that reply next, which in an
+agent chain is another model.
 
-**This row is not comparable to the other rows in the table below.** The other
-checks are heuristics over open-ended text, and their precision and recall
-describe how often the heuristic is right on text nobody controlled. `rules`
-here is a deterministic engine running against a fixed set of rules we wrote
-for the published measurement, so a high score means the engine computes
-spans, merges overlapping regions and applies limits correctly against that
-configuration. It is not a claim that any rule is well chosen, and a perfect
-score on this row carries none of the weight a perfect score on `pii` or
-`secrets` would.
+**`rules`** is the check whose types you choose. It takes your own regular
+expressions, banned substrings and size limits.
 
-The published measurement also only exercises one of the three limit kinds.
-The fixture sets a character limit and no byte or line limit, so the row never
-reaches the byte-boundary or line-boundary code paths at all. A limit the row
-cannot reach is a limit the row does not cover, not a limit proven correct.
+## Your own rules
+
+```py
+from jamjet_guardrails import Context, Limits, build
+
+guard = build(
+    "rules",
+    patterns={"TICKET_ID": r"\bJIRA-\d{4,}\b"},
+    banned={"CODENAME": ("project bluebird",)},
+    limits=Limits(max_chars=20_000),
+    on_match="redact",
+)
+guard.check("see JIRA-1234 about Project Bluebird", Context(direction="input", origin="user"))
+```
+
+Banned substrings match without regard to case, and the span you get back
+points into your original text even where case folding changed a character's
+width. Size limits are characters, bytes and lines. There is no token limit,
+because counting tokens needs a tokenizer this library does not carry and will
+not guess at.
+
+Configuration mistakes are refused when you build the check, not when content
+arrives. A pattern that matches the empty string, a pattern that nests
+unbounded repeats, a decision named for a direction the check does not
+declare, a set of options that selects nothing: each raises rather than
+handing back a check that quietly passes everything.
+
+## Add a check
+
+The engine above is public, so a new check is a small amount of code and a
+corpus. Everything else, the span collection, the merging, the verdict, the
+refusals, comes with it.
+
+```py
+from jamjet_guardrails.authoring import PatternGuardrail
+from jamjet_guardrails.protocol import Guardrail
+
+_VERSION = "0.1.0"
+
+MY_CHECK_TYPES = frozenset({"MY_CHECK_MATCH"})
+
+_PATTERNS = {"MY_CHECK_MATCH": r"REPLACE-ME-\d+"}
+
+
+def build_my_check(**options: object) -> Guardrail:
+    return PatternGuardrail(
+        name="my-check", version=_VERSION, patterns=_PATTERNS, on_match="deny", **options
+    )
+```
+
+Start with the scaffold, which writes the detector, a starter corpus and a test
+module:
+
+```console
+python scripts/new_check.py my-check
+```
+
+It deliberately leaves four edits to you, and the test suite fails until each
+is done, naming the one that is missing: register it, record its baseline, add
+a section to [docs/conformance.md](docs/conformance.md) so somebody can port
+it, and add its corpus to [corpora/NOTICE.md](corpora/NOTICE.md).
+
+What you get for that: your check ships with its own precision and recall,
+measured on the corpus you wrote and gated in CI, published beside every other
+check. [CONTRIBUTING.md](CONTRIBUTING.md) has the rest, including the one habit
+this project asks for, which is to break each test you write and watch it fail
+before you trust it.
+
+## How it fails
+
+Two failure modes, chosen deliberately.
+
+- **A check that raises becomes `deny`, never `allow`.** The chain records the
+  error on that check's verdict and carries on. A crashing detector blocks
+  content rather than passing it through unexamined. The error message is
+  withheld from the verdict, because a detector's message may quote the content
+  it failed on.
+- **A check named in configuration that is not installed raises
+  `GuardrailUnavailableError`.** Configuration that silently means "this check
+  is not running" is the failure this library exists to prevent, so it is
+  refused before any content is processed. An empty list of checks is refused
+  for the same reason, and so is a check asked about a direction it does not
+  declare.
+
+Treat any exception out of `run` as a deny. The cases that raise abandon the
+run, so there is no result and no audit record, which is acceptable only
+because nothing was allowed through.
 
 ## Measured, not asserted
 
 Every check ships with a labelled corpus and published precision and recall.
 CI refuses a change that lowers either beyond a small tolerance, or that gets
 one more decision wrong than the committed baseline. The misses are published
-beside the scores.
+beside the scores, which is the part worth reading: a number without its
+failures is a number you cannot check.
 
 | Check | Corpus | Source | Version | Cases | Precision | Recall | F1 | TP | FP | FN | Wrong decisions |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -132,60 +200,37 @@ beside the scores.
 | rules | rules/in-repo | in-repo | `f1b809114b13` | 40 | 1.000 | 1.000 | 1.000 | 28 | 0 | 0 | 0 |
 | secrets | secrets/in-repo | in-repo | `e9e0ed70dc37` | 39 | 0.957 | 0.880 | 0.917 | 22 | 1 | 3 | 4 |
 
-**A *balanced* override still reorders, and `injection-structural` allows it.**
-The signal is imbalance, not presence. `transfer <RLO>001<PDF> USD` renders as
-`transfer 100 USD`, measured with GNU FriBidi 1.0.16, and this check reports
-nothing, so Trojan Source written with a closed pair passes it. That is named
-here rather than left for you to find. The reason it is allowed is that flagging
-balanced controls would deny ordinary Arabic and Hebrew, which are written with
-these controls; what imbalance buys is a divergence the author cannot bound,
-because an unclosed control runs to the end of the paragraph.
-
-**It also does not read every invisible character, and it publishes no minimum
-cost for getting past it.** Variation selectors and the directional marks are
-not counted, because counting them denies five keycaps, a Japanese document
-naming five people whose names take variant glyphs, and a bilingual invoice; the
-control families and several others are not counted either. So a payload encoded
-in any of them goes through: 256 variation selectors is a byte per character,
-and measured, 32 of them carry a 32-character instruction with nothing on the
-page and nothing reported. That figure is the cost of that one encoding and not
-a bound. No minimum is published, because a minimum is a claim about every
-possible encoding and a measurement only ever exhibits one.
-[corpora/NOTICE.md](corpora/NOTICE.md) lists the uncounted families with one
-measured encoder each, which is the claim this check can actually support.
-
 See [BENCHMARKS.md](BENCHMARKS.md) for the per-type scores and the worst misses
 behind these numbers, and [corpora/NOTICE.md](corpora/NOTICE.md) for what each
 corpus is and where it came from.
 
-**The in-repo PII corpus is a stress set, not a sample of ordinary traffic.** It
-is written to hold the shapes this detector is worst at, so its precision is
-lower than you would see on real text and is meant to be.
-[corpora/NOTICE.md](corpora/NOTICE.md) breaks that figure down, names the one
-shape it over-represents on purpose, and scores the same corpus without it. The
+**How to read these rows.** Every corpus labels a case with what should happen,
+never with what the detector does. A known false positive is labelled `allow`
+and costs precision; a known false negative is labelled `deny` and costs
+recall. That is why these numbers are lower than the checks behave on ordinary
+text, and it is the only way two rows in one table can be compared.
+
+The in-repo `pii` corpus is a stress set rather than a sample of ordinary
+traffic. It is written to hold the shapes that detector is worst at, so its
+precision is lower than you would see on real text and is meant to be. The
 third-party corpus is the one to read for ordinary text: 300 rows we did not
 write, named in the Source column beside its own numbers.
 
-**Every corpus here labels a case with what should happen, never with what the
-detector does.** A known false positive is labelled `allow` and costs precision;
-a known false negative is labelled `deny` and costs recall. That is why these
-numbers are lower than the checks behave on ordinary text, and it is the only
-way two rows in one table can be compared. Fifteen `injection-structural`
-cases carry such a label and eight of them fail on purpose: two deny text
-somebody wrote on purpose, and six allow a payload that really is in there. All
-fifteen are named by case id in [corpora/NOTICE.md](corpora/NOTICE.md).
+The `rules` row is not comparable to the others. The other checks are
+heuristics over open-ended text, and their numbers describe how often the
+heuristic is right on text nobody controlled. `rules` is a deterministic engine
+running against a fixed set of rules we wrote for the measurement, so a high
+score there means the engine computes spans, merges overlapping regions and
+applies limits correctly. It says nothing about whether any rule is well
+chosen, and the fixture behind it sets a character limit only, so the row never
+reaches the byte or line paths.
 
-**Four scattered invisible characters go through, and that is a deliberate
-trade.** This check reports an unexplained zero-width character when two are
-ADJACENT or when five appear anywhere in the input. Four, no two of them
-touching, is allowed, because four is what ordinary text reaches: Thai marked up
-for line breaking, Persian written with ASCII digits, a 2,503-character page
-with four incidental zero-width characters, mathematical markup extracted to
-plain text, and four UTF-8 files concatenated with each keeping its own
-byte-order mark are all four occurrences and all pass. The corpus carries three
-payloads of exactly four characters that this lets through, labelled `deny` so
-they cost recall. The residual is bounded rather than a channel: a fifth
-character denies whatever else the message contains.
+Fifteen `injection-structural` cases carry a label the shipped check gets
+wrong, and eight of them fail on purpose: two deny text somebody wrote
+deliberately, and six allow a payload that really is in there. All fifteen are
+named by case id in [corpora/NOTICE.md](corpora/NOTICE.md), along with the
+invisible-character families this check does not count and one measured encoder
+for each.
 
 Numbers measured on a corpus we wrote are reported separately from numbers
 measured on a corpus we did not, and the two are never merged. There is no
@@ -198,40 +243,22 @@ The third-party PII corpus is derived from
 used under CC-BY-4.0. Changes were made, and they are listed in
 [corpora/NOTICE.md](corpora/NOTICE.md).
 
-## How it fails
+## Porting it
 
-Two failure modes, chosen deliberately.
-
-- **A check that raises becomes `deny`, never `allow`.** The chain records the
-  error on that check's verdict and carries on. A crashing detector blocks
-  content rather than passing it through unexamined.
-- **A check that would be configured and silent raises `GuardrailUnavailableError`.
-  This is raised at construction when a guardrail is not installed or cannot
-  be built, and also when ``PatternGuardrail.check`` is called with a direction
-  it does not declare.** Configuration that silently means "this check is not
-  running" is the failure this library exists to prevent, so it is refused
-  before any content is processed. An empty list of checks is refused for the
-  same reason.
-
-Treat any exception out of `run` as a deny. The cases that raise abandon the
-run, so there is no result and no audit record, which is acceptable only
-because nothing was allowed through.
+[docs/conformance.md](docs/conformance.md) specifies the verdict fields, the
+combination order, the single-pass rewriting rule, the `saw` hash and the
+corpus schema, and states what is deliberately unspecified. An implementation
+in another language conforms if it produces the same verdicts on the same
+corpora, whatever machinery it uses to get there.
 
 ## What this is not
 
 It does not classify intent, score toxicity, or call a model. The checks here
-are constraints: patterns with published false-positive and false-negative
-rates. That is why the numbers exist and why they are worth reading.
+are constraints: patterns and structural rules with published false-positive
+and false-negative rates. That is why the numbers exist and why they are worth
+reading.
 
 It is a library, not a service. No configuration file, no daemon, no account.
-
-## Porting it
-
-[docs/conformance.md](docs/conformance.md) specifies the verdict fields, the
-combination order, the single-pass rewriting rule, the `saw` hash and the corpus
-schema, and states what is deliberately unspecified. An implementation in
-another language conforms if it produces the same verdicts on the same corpora,
-whatever machinery it uses to get there.
 
 ## Licence
 
