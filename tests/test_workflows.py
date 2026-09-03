@@ -44,6 +44,7 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
+WORKFLOWS = ROOT / ".github" / "workflows"
 
 # A GitHub action reference: `owner/repo@ref`, optionally with a subdirectory,
 # as `github/codeql-action/init@ref`. The ref is captured whole rather than
@@ -260,3 +261,77 @@ def test_the_pinning_checks_reject_what_they_are_written_to_reject() -> None:
         ("owner/repo@0123456789abcdef0123456789abcdef01234567", "v1.2.3"),
         ("owner/other@v9", None),
     ], scanned
+
+
+# The tag shapes `release.yml` fires on, and the ONE job each must reach. Written
+# out rather than derived from the workflow, because deriving both sides from the
+# same file is a test that agrees with whatever is there.
+_RELEASE_TAGS = {
+    "v0.4.0": "publish",
+    "v1.0.0-rc.1": "publish",
+    "nemo-v0.1.0": "publish-nemo",
+    "validators-v0.1.0": "publish-validators",
+}
+
+
+def _fires(condition: str, ref: str) -> bool:
+    """Evaluate the subset of the GitHub expression language these jobs use.
+
+    Three operators, and nothing else is accepted: `startsWith`, `contains` and
+    a leading `!`, joined by `&&`. A condition using anything outside that
+    raises rather than being guessed at, because a guard that silently mis-reads
+    a condition it does not understand reports a routing nobody has.
+    """
+    for clause in condition.split("&&"):
+        clause = clause.strip()
+        negated = clause.startswith("!")
+        clause = clause.lstrip("!").strip()
+        match = re.fullmatch(r"(startsWith|contains)\(github\.ref_name, '([^']*)'\)", clause)
+        if match is None:
+            raise AssertionError(f"this guard cannot evaluate the clause {clause!r}")
+        operator, needle = match.group(1), match.group(2)
+        value = ref.startswith(needle) if operator == "startsWith" else needle in ref
+        if value == negated:
+            return False
+    return True
+
+
+def test_the_condition_evaluator_agrees_with_python_on_the_operators_it_claims() -> None:
+    """The guard on the guard. An evaluator that answered True to everything
+    would make the routing test below pass over any condition at all."""
+    assert _fires("startsWith(github.ref_name, 'v')", "validators-v0.1.0") is True
+    assert _fires("startsWith(github.ref_name, 'nemo-v')", "v0.4.0") is False
+    assert _fires("!contains(github.ref_name, '-v')", "v0.4.0") is True
+    assert _fires("!contains(github.ref_name, '-v')", "nemo-v0.1.0") is False
+    assert _fires("startsWith(github.ref_name, 'v') && !contains(github.ref_name, '-v')", "v0.4.0")
+    with pytest.raises(AssertionError):
+        _fires("github.event_name == 'push'", "v0.4.0")
+
+
+def test_each_release_tag_shape_fires_exactly_one_publish_job() -> None:
+    """A tag must reach one publisher, and `startsWith` alone does not do that.
+
+    `startsWith(github.ref_name, 'v')` is TRUE for `validators-v0.1.0`: the
+    string starts with the letter v. So the core publish job fired on a
+    validators release as well as its own. It failed rather than publishing
+    anything wrong, because the version gate strips one leading `v` and compares
+    `alidators-v0.1.0` against the pyproject version, but a release that always
+    carries one red job is a release nobody reads the jobs of.
+
+    Both directions are asserted: the expected job fires, AND no other one does.
+    Only the second half catches this, and only because a prerelease shape is in
+    the table too, so the fix cannot be "core tags contain no hyphen".
+
+    Mutation-checked: dropping the `!contains` clause from the core job makes
+    the validators row fail, and swapping any two expected jobs fails.
+    """
+    document = yaml.safe_load((WORKFLOWS / "release.yml").read_text(encoding="utf-8"))
+    jobs = document["jobs"]
+    publishers = {name: job["if"] for name, job in jobs.items() if "if" in job}
+    assert len(publishers) >= 3, f"expected a publish job per distribution, found {publishers}"
+
+    for ref, expected in _RELEASE_TAGS.items():
+        firing = sorted(name for name, cond in publishers.items() if _fires(cond, ref))
+        assert firing == [expected], (
+            f"the tag {ref!r} fires {firing} and should fire exactly ['{expected}']"
+        )

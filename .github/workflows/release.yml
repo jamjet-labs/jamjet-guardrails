@@ -26,7 +26,25 @@ on:
     tags: ["v*", "nemo-v*", "validators-v*"]
 jobs:
   publish:
-    if: startsWith(github.ref_name, 'v')
+    # `!contains(..., '-v')` is not belt and braces, it is the whole condition
+    # doing its job. `startsWith(github.ref_name, 'v')` is TRUE for
+    # `validators-v0.1.0`, because that string starts with the letter v, so a
+    # validators release fired this job as well as its own. It failed rather
+    # than publishing anything wrong -- the version gate below strips one
+    # leading `v` and compares `alidators-v0.1.0` against the pyproject version
+    # -- but a release that always carries one red job is a release nobody reads
+    # the jobs of, and the next thing to break gets the same shrug.
+    #
+    # The test is a PROPERTY of the naming scheme rather than a list of adapter
+    # names: an adapter tag is `<distribution>-v<version>` and therefore contains
+    # `-v`, and a core tag never does, including a prerelease such as
+    # `v0.4.0-rc.1`. A list would have to grow with the third adapter, and an
+    # exemption list that has to be remembered is the shape this repository
+    # refuses everywhere else.
+    #
+    # `tests/test_workflows.py::test_each_release_tag_shape_fires_exactly_one_publish_job`
+    # evaluates all three conditions against all three tag shapes.
+    if: startsWith(github.ref_name, 'v') && !contains(github.ref_name, '-v')
     runs-on: ubuntu-latest
     environment: pypi
     permissions:

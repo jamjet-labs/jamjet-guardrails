@@ -237,6 +237,21 @@ a number that changes quietly is a number nobody can rely on.
   which indexes the content the chain was given whatever view the match was
   found in.
 
+### Fixed
+
+- A `validators-v*` tag no longer fires the core PyPI publish job.
+  `startsWith(github.ref_name, 'v')` is true for `validators-v0.1.0`, because
+  that string starts with the letter v, so the core job ran on a validators
+  release as well as its own. It failed rather than publishing anything wrong,
+  since the version gate strips one leading `v` and compares the remainder
+  against the packaged version, but a release that always carries one red job
+  is a release nobody reads the jobs of. The condition now also requires the
+  tag not to contain `-v`, which is a property of the naming scheme rather than
+  a list of adapter names: an adapter tag is the distribution name followed by
+  `-v` and a version, and a core prerelease such as `v0.4.0-rc.1` is not. A
+  test evaluates all three job conditions against all four tag shapes and
+  requires each to fire exactly one publisher.
+
 ### Security
 
 - Every GitHub Action in every workflow is pinned to a full commit SHA with a
