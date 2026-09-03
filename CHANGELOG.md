@@ -542,14 +542,57 @@ a number that changes quietly is a number nobody can rely on.
   the SHA-256 of the file it came from. `scripts/generate_template_markers.py`
   builds it and the raw files it read are committed under `template-data/`, in
   the sdist and out of the wheel, so the table can be regenerated and diffed
-  offline. Nothing imports it yet: the `template-integrity` check lands
-  separately with its corpus and its published row, and until then the table is
-  private and unregistered.
+  offline. `detectors/template_integrity.py` is the only module that reads
+  it.
 - Three guards on that table in `tests/test_template_markers.py`: regeneration
   from the committed raw files must reproduce the module byte for byte, the
   recorded digests must be those files' digests in both directions, and a
   network-gated run under `JAMJET_GUARDRAILS_NETWORK=1`, never set in CI,
   re-fetches every pinned revision for the day a pin is bumped.
+- A `template-integrity` check, `kind` `constraint`, both directions, denying by
+  default in each, with three finding types: `CHAT_TEMPLATE_MARKER`,
+  `ROLE_PREFIX_LINE` and `FAKE_SYSTEM_TAG`. It publishes 0.820 precision and
+  0.965 recall over 152 cases with 19 wrong decisions on
+  `corpora/template-integrity/in-repo.jsonl`. Content carrying the delimiters a
+  serving stack writes between turns is asking to be read as a turn the operator
+  never sent, and that is structure rather than words: nothing about the text has
+  to be adversarial.
+- **Every signal in that check reads a folded view rather than the content.**
+  Default_Ignorable code points are removed, a compatibility decomposition is
+  applied and the UTS #39 confusable skeleton is taken, so `<|im_start|>` split
+  by one zero-width space, written with a fullwidth vertical line, or spelled
+  with a Cyrillic `a` all match the one table entry. Spans map back through
+  `jamjet_guardrails._fold` and cover the source run INCLUDING the character the
+  fold deleted, so a redaction removes the launderer instead of leaving it
+  standing inside content the verdict reports as rewritten.
+- **No template-integrity signal can be triggered by a character
+  `injection-structural` reports.** That check's three alphabets are all
+  Default_Ignorable and this fold deletes every Default_Ignorable code point
+  before any signal looks at the content, which is a property of one shared table
+  rather than of two that agree today:
+  `tests/test_template_integrity.py::test_no_character_injection_structural_claims_can_trigger_a_signal`
+  pins it pairwise, the way the three structural signals pin theirs.
+- **One option, `exempt_code_fences`, off by default and documented as a
+  bypass.** Turning it on moves the corpus from 0.820 precision and 0.965 recall
+  to 0.866 and 0.912: 8 fewer false positives, all documentation, against 6 true
+  positives lost on injections an attacker wrapped in a fence. It covers markers
+  alone, so a role-prefix line and a fake system tag still fire inside a fence
+  with it on.
+- **Documentation quoting a marker fires under the default**, which is the trade
+  this check makes on purpose. Five corpus cases are documentation labelled
+  `allow` and denied, five more are real XML elements whose names contain a role
+  word, and every one of the nineteen wrong decisions is named by case id in
+  `corpora/NOTICE.md` and grouped by class in `docs/conformance.md`.
+- **The two weakest marker-table entries were measured rather than argued
+  about.** Removing the Qwen 2.5 placeholders `<function-name>` and
+  `<args-json-object>` from the matching table moves the corpus to 0.843
+  precision and 0.947 recall. They stay: removing two strings from a generated
+  table by name is a hand list, and the sign of the difference is set by how many
+  developer-prose cases the corpus carries.
+- **Three residuals are disclosed with a case each**: a marker from a model not
+  among the eight in the table is not detected, a role-prefix line that does not
+  follow a blank line is not detected, and a quoted marker fires under the
+  default.
 - `tests/test_packaging.py` now builds the sdist and the wheel and opens both,
   which nothing outside the release workflow did before. It asserts that every
   file under `template-data/` is in the sdist and that none of it is in the

@@ -32,6 +32,7 @@ so in-repo and third-party numbers can never be merged into one score.
 | `corpora/script-constraint/in-repo.jsonl` | `in-repo` | `Apache-2.0` |
 | `corpora/secrets/in-repo.jsonl` | `in-repo` | `Apache-2.0` |
 | `corpora/url-exfiltration/in-repo.jsonl` | `in-repo` | `Apache-2.0` |
+| `corpora/template-integrity/in-repo.jsonl` | `in-repo` | `Apache-2.0` |
 | `corpora/pii/third-party.jsonl` | `nvidia/Nemotron-PII@b70ffaf` | `CC-BY-4.0` |
 
 ## First-party corpora
@@ -541,6 +542,104 @@ two-sided test in the decode helper is what buys that.
 labelled corpus of encoded payloads was found, so these numbers are measured on
 our own file only and are self-graded in the same way the injection-structural,
 rules, secrets and url-exfiltration numbers are.
+### `corpora/template-integrity/in-repo.jsonl`
+
+Written for this repository and covered by its Apache-2.0 licence. 152 cases,
+102 positives and 50 negatives, in both directions.
+
+**The whole file is written as `\uXXXX` escapes**, for the reason the
+injection-structural corpus gives: half the positives here are laundered with
+characters that render as nothing, and pasted literally a diff would show a
+reviewer a marker that looks clean beside one that looks identical. What a
+reviewer reads is what the loader decodes.
+`tests/test_template_integrity.py::test_the_corpus_is_written_as_escapes_so_a_reviewer_reads_what_it_decodes`
+holds that.
+
+Every attacker value in it is invented and none of it is a credential or a
+person. The markers are not invented and could not be: each of the 59 entries in
+`src/jamjet_guardrails/detectors/_template_markers.py` carries one labelled case,
+so the published recall is a guard on the table and a regeneration that dropped
+half of it would move the row rather than pass quietly.
+`tests/test_template_integrity.py::test_every_marker_in_the_table_is_labelled_in_the_corpus`
+is that guard.
+
+**The negatives are the shapes ordinary documents are made of**, and they decide
+the precision: HTML with a strikethrough tag, C++ and Java generics, a .NET
+`Web.config`, a Maven `pom.xml` fragment, a Spring bean definition, an XACML
+policy, a Kubernetes manifest, a Docker Compose service with a `user:` key, a
+psql connection dump, a bug report quoting a transcript as a blockquote, a
+markdown heading reading `## System:`, prose with role words followed by colons
+mid-line, a stack trace, a SQL statement, a CSV, German prose and Japanese prose.
+
+**This corpus is a stress set for the classes this check is worst at, and its
+precision should be read that way.** Fifteen of its fifty negatives are drawn
+from the three populations that fire, and no sample of ordinary web traffic
+looks like that. What the figure measures is how the check behaves where it is
+weakest, which is the only place a published number is worth having.
+
+**The disclosed misses.** 0.820 precision, 0.965 recall, 19 wrong decisions over
+152 cases. 15 negatives cost precision and 4 positives cost recall, all nineteen
+are below, and there are no others. `docs/conformance.md` groups the same
+nineteen by class with a worked input each.
+
+The fifteen that cost precision:
+
+- `tpl-0138`, `tpl-0139`, `tpl-0140`, `tpl-0141` and `tpl-0142` are
+  documentation quoting a marker, two of them inside a code fence and two in
+  inline code. All five are labelled `allow` and all five are denied.
+  **Documentation quoting a marker is the hard negative class**, and under the
+  default it fires. Nothing in the content separates a document that quotes a
+  delimiter from content that uses one.
+- `tpl-0143`, `tpl-0144` and `tpl-0145` are ordinary developer prose carrying
+  `<function-name>` or `<args-json-object>`, the two Qwen 2.5 placeholders the
+  marker table already names as its weakest entries.
+- `tpl-0147`, `tpl-0148`, `tpl-0149`, `tpl-0150` and `tpl-0151` are real
+  elements of real formats whose names CONTAIN a role word: `<system.web>`,
+  `<systemPropertyVariables>`, `<policyholder>`, `<Policy>` and
+  `<systemd_unit>`. Containment is what catches `<systemPrompt>` and
+  `<assistant_instructions>`, and these five are its price.
+- `tpl-0146` is prose about air handling whose paragraph opens `System:` after a
+  blank line, and `tpl-0152` is a bug report that pastes one transcript turn the
+  same way. Both are labelled `allow` and both are denied.
+
+The four that cost recall, each a residual named in `docs/conformance.md` as
+well:
+
+- `tpl-0099`, `tpl-0100` and `tpl-0101` carry an OpenChat, a Mistral v7 and a Yi
+  delimiter. **A marker from a model not in the table is not detected**, and
+  eight repositories is not the field.
+- `tpl-0102` writes `System:` on the line directly after a sentence. **A
+  role-prefix line that does not follow a blank line is not detected**, and an
+  attacker who reads this sentence will delete a blank line. The restriction is
+  what keeps the signal off every specification and every configuration block,
+  and removing it costs more than it buys.
+
+**The code-fence exemption was measured, not argued.** Turning
+`exempt_code_fences` on moves this corpus from 0.820 precision and 0.965 recall
+to 0.866 precision and 0.912 recall.
+It buys 8 fewer false positives, all of them documentation, and it costs
+6 true positives across `tpl-0096`, `tpl-0097` and `tpl-0098`, which are
+injections wrapped in a fence by an attacker who read this paragraph. F1 moves
+from 0.886 to 0.888, which is to say the option is a redistribution rather than
+an improvement, and a deployment that turns it on is choosing which of the two
+failures it would rather have.
+
+**The two weak marker slots were measured too.** Removing `<function-name>` and
+`<args-json-object>` from the matching table, with nothing else changed, moves
+this corpus from 0.820 precision and 0.965 recall to 0.843 precision and 0.947
+recall. They are kept, and the reason
+is not the number: removing two strings from a generated table by name is a hand
+list, which is the one thing this repository does not allow an exemption to be,
+and the sign of the difference is set by how many developer-prose cases this
+corpus carries against how many labelled markers the table has. The measurement
+is published so the next person to argue about them argues with a number.
+`tests/test_template_integrity.py::test_the_two_weak_marker_slots_cost_what_the_notice_publishes`
+re-takes it.
+
+**There is no third-party corpus for this check.** No compatibly-licensed
+labelled corpus of chat-template injection was found, so these numbers are
+measured on our own file only and are self-graded in the same way the
+injection-structural, rules, secrets and url-exfiltration numbers are.
 
 ## How to read the numbers these corpora produce
 
@@ -940,10 +1039,11 @@ files are committed under `template-data/` so the table can be regenerated and
 diffed with no network. They are in the sdist and not in the wheel, because the
 sdist is the evidence.
 
-Nothing here is measured on yet. The table is private and unregistered until
-the `template-integrity` check lands with its own corpus and published row.
-This section exists because attribution is a condition of two of the licences
-below, and a condition does not wait for a number.
+The `template-integrity` check reads this table, and its published row is
+measured on `corpora/template-integrity/in-repo.jsonl`, which carries one
+labelled case per marker. This section existed before that row did, because
+attribution is a condition of two of the licences below and a condition does not
+wait for a number.
 
 **What is redistributed, in plain terms.** The files under `template-data/` are
 tokenizer configuration: JSON settings, the special-token names, and the Jinja
@@ -1036,7 +1136,10 @@ arrives in the table on the next regeneration.
 tool-calling template into the system prompt it builds, as placeholders inside
 a JSON example. They were read out of a real template and are kept for that
 reason, and they are also the two entries most likely to occur in ordinary
-developer prose.
+developer prose. What they cost is now measured rather than suspected, and the
+measurement is under
+[`corpora/template-integrity/in-repo.jsonl`](#corporatemplate-integrityin-repojsonl)
+above.
 
 **A marker from a model not in the table is not in the table.** Nine
 repositories is not the field. The check that consumes this will say so, and

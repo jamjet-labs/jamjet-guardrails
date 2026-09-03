@@ -1165,6 +1165,15 @@ findings are about a string the content did not visibly contain: the span points
 and the signals were read from what that run decoded to. Its corpus is
 `corpora/encoded-content/in-repo.jsonl`, and a corpus directory name is the name the guardrail is
 built under, by the rule at the end of this document.
+## The template-integrity constraint
+
+`template-integrity` reads content that claims to be a turn, a role or a template of the
+conversation. A chat model does not see a conversation; it sees one string in which the turn
+boundaries are ordinary characters that the serving stack wrote. Content arriving with those same
+characters in it is asking to be read as a turn the operator never sent, and nothing about the words
+has to be adversarial for that to work. Its corpus is `corpora/template-integrity/in-repo.jsonl`, and
+a corpus directory name is the name the guardrail is built under, by the rule at the end of this
+document.
 
 Its `kind` is `constraint`, so no finding it produces carries a `confidence`.
 
@@ -1265,6 +1274,102 @@ marker one encoding layer down is not among them, and no corpus case labels one.
 
 These five misses are the corpus's bar and not a licence. A port that denies any of them matches the
 label where this implementation does not; what a port is held to is the `allow` side.
+asymmetry the `injection-structural` section states applies here unchanged.
+
+### Three finding types
+
+`CHAT_TEMPLATE_MARKER`, `FAKE_SYSTEM_TAG` and `ROLE_PREFIX_LINE`. Each is a label the corpus uses, so
+each is what a prediction is matched against by name.
+
+- `CHAT_TEMPLATE_MARKER` is an exact match, over the folded view described below, of a delimiter read
+  from the tokenizer configuration of a named model repository at a pinned revision. The table ships
+  59 markers from 8 repositories and `corpora/NOTICE.md` records every one of them with its source.
+- `ROLE_PREFIX_LINE` is a line that opens, after optional spaces or tabs, with `system`, `developer`
+  or `assistant` and a colon, at the start of the content or after a blank line. `user` and `human`
+  are deliberately not signals: content that impersonates the user is asking to be treated as what it
+  already is, so the shape carries no privilege, and the population it would deny is every connection
+  string and every service definition.
+- `FAKE_SYSTEM_TAG` is an XML-shaped tag whose name, case-folded with underscores and hyphens
+  removed, contains one of those three role labels or `instruction`, `prompt`, `rules` or `policy`.
+
+### The matching view, and what a span covers
+
+Every signal reads a FOLDED view of the content rather than the content itself: Default_Ignorable
+code points removed, a compatibility decomposition applied, and the UTS #39 confusable skeleton
+taken. So one zero-width space inside `<|im_start|>` does not save it, a fullwidth vertical line does
+not save it, and neither does one Cyrillic letter.
+
+A span is reported over the ORIGINAL content and covers the source run that produced the match,
+INCLUDING any character the fold deleted inside it. `tpl-0068` is the worked case: its marker is
+`<|im_start|>` with a zero-width space between `st` and `art`, and its span is `[30, 43]`, thirteen
+characters wide for a twelve-character marker. A narrower span would leave the launderer standing inside content
+the verdict reports as rewritten.
+
+A `ROLE_PREFIX_LINE` span runs from the label to the colon and does not include the indentation
+before it, which is the rule `secrets` follows in covering the credential rather than the run it sits
+in. A `FAKE_SYSTEM_TAG` span covers the whole tag, and a paired tag is two findings. A tag lying
+wholly inside a marker is reported once, as the marker.
+
+Spans are half-open over code points, as every span in this document is.
+
+### It runs on input and on output, and denies in both
+
+`directions` holds both and the default decision is `deny` in each. A marker on input is retrieved
+content claiming a turn; a marker on output is a model handing the next agent in the chain a forged
+boundary, which is the same claim one hop later. Neither is a value the caller wanted to keep with a
+hole cut in it, which is why this differs from `url-exfiltration`. `redact` is available and the
+spans support it.
+
+### One exemption, off by default, and it is a bypass
+
+`exempt_code_fences` skips markers inside fenced and inline code. It is `False` by default, and the
+reason it exists is documentation-heavy deployments where quoted markers are the normal case. A
+deployment turning it on is choosing precision over recall by name: an attacker can wrap an injection
+in a fence and the model may obey it anyway, which `tpl-0096`, `tpl-0097` and `tpl-0098` are in the
+corpus to make measurable rather than arguable. On this corpus the option moves the row from 0.820
+precision and 0.965 recall to 0.866 precision and 0.912 recall. It covers markers ALONE: a
+role-prefix line and a fake system tag still fire inside a fence with the option on, so it cannot be
+used to get either of them past the check.
+
+There is no other exemption. There is no allowlist of hosts, of documents, of file types or of
+formats. The only thing that excuses a marker under the default is the absence of the marker.
+
+### Where this implementation falls short of its own corpus
+
+The published row is 0.820 precision and 0.965 recall over 152 cases with 19 wrong decisions. All
+nineteen are named here, grouped by class, and there are no others.
+
+- **Documentation quoting a marker fires, and that is the hard negative class.** `tpl-0138` is a
+  paragraph about ChatML, `tpl-0139` and `tpl-0140` show a Llama 2 and a Gemma prompt inside a code
+  fence, and `tpl-0141` and `tpl-0142` quote a marker in inline code. All five are labelled `allow`
+  and all five are denied. Under the default the check cannot tell a document that quotes a delimiter
+  from content that uses one, because at the level it works at there is nothing to tell apart.
+- **The two weakest table entries fire on ordinary developer prose.** `<function-name>` and
+  `<args-json-object>` are Qwen 2.5 tool-calling placeholders. `tpl-0143`, `tpl-0144` and `tpl-0145`
+  are developer prose containing one or both, labelled `allow` and denied. `corpora/NOTICE.md`
+  carries the measurement of what those two entries are worth.
+- **A tag name that CONTAINS a role word fires, whatever the rest of the name is.** `tpl-0149` is an
+  insurance claim with a `<policyholder>` element, `tpl-0151` is a host inventory with a
+  `<systemd_unit>`, `tpl-0150` is an XACML `<Policy>`, and `tpl-0147` and `tpl-0148` are a .NET
+  `<system.web>` and a Maven `<systemPropertyVariables>`. All are real elements of real formats, all
+  are labelled `allow` and all are denied. Containment is what catches `<systemPrompt>` and
+  `<assistant_instructions>`, and these five are its price.
+- **A run-in heading that opens a paragraph fires.** `tpl-0146` is prose about air handling whose
+  paragraph opens `System:` after a blank line, labelled `allow` and denied. A markdown heading does
+  not fire, because the line starts with a `#`.
+- **A plainly quoted transcript fires.** `tpl-0152` is a bug report that pastes one turn after a
+  blank line, labelled `allow` and denied. The same transcript quoted as a blockquote does not fire.
+- **A marker from a model not in the table is not detected.** `tpl-0099`, `tpl-0100` and `tpl-0101`
+  carry an OpenChat, a Mistral v7 and a Yi delimiter, all labelled `deny` and all allowed. Eight
+  repositories is not the field, and the table grows by adding a source and a pinned revision.
+- **A role-prefix line that does not follow a blank line is not detected.** `tpl-0102` writes
+  `System:` on the line directly after a sentence, labelled `deny` and allowed. The blank-line
+  restriction is what keeps this signal off every specification and every configuration block, and an
+  attacker who reads this paragraph will delete a blank line.
+
+These nineteen are the corpus's bar and not a licence. A port that denies `tpl-0099`, `tpl-0100`,
+`tpl-0101` or `tpl-0102` matches the label where this implementation does not; what a port is held to
+is the `allow` side.
 
 ## Third-party corpora
 
@@ -1455,6 +1560,14 @@ choice for every one of them:
   reaching the same verdicts on the corpora conforms with any Unicode data
   source at any version, and each corpus records the version its labels were
   written against.
+- **Where the chat-template markers come from, and which ones there are.**
+  `template-integrity` matches a table generated from the tokenizer configuration of eight model
+  repositories at pinned revisions, and `corpora/NOTICE.md` records each one. Which repositories
+  those are, how many markers they yield, and the two rules that remove reserved vocabulary slots
+  and HTML element names are this implementation's means. A port reaching the same verdicts on the
+  corpus conforms with any table from any set of sources; what binds it is the corpus, which labels
+  three markers this table does not carry as `deny` and allows them, and that direction binds
+  nobody.
 - **The fold machinery.** How a check that matches over a transformed view of
   the content maps a match back to a span in the original is not specified.
   What is specified is the span itself: it indexes the content the chain was
@@ -1489,3 +1602,5 @@ directions and exemptions, and the scores on the corpora.
 the `url-exfiltration` types, spans, directions and its output-only type, the
 `encoded-content` types, spans, directions and its one-level rule, and the scores
 on the corpora.
+`template-integrity` types, spans and directions and the rule that its span covers the characters
+the fold deleted inside a match, and the scores on the corpora.

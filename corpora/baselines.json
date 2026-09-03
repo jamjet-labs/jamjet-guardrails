@@ -39,6 +39,11 @@
     "precision": 0.88,
     "recall": 0.872
   },
+  "template-integrity/in-repo/afb0a7245664": {
+    "decision_mismatches": 19,
+    "precision": 0.819,
+    "recall": 0.964
+  },
   "url-exfiltration/in-repo/c8015e4e93e2": {
     "decision_mismatches": 6,
     "precision": 0.914,

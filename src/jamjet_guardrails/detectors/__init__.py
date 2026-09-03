@@ -21,6 +21,10 @@ from jamjet_guardrails.detectors.script_constraint import (
     ScriptConstraintGuardrail,
 )
 from jamjet_guardrails.detectors.secrets import SECRET_TYPES, SecretsGuardrail
+from jamjet_guardrails.detectors.template_integrity import (
+    TEMPLATE_INTEGRITY_TYPES,
+    TemplateIntegrityGuardrail,
+)
 from jamjet_guardrails.detectors.url_exfiltration import (
     URL_EXFILTRATION_TYPES,
     UrlExfiltrationGuardrail,
@@ -37,6 +41,7 @@ AVAILABLE: dict[str, Callable[..., Guardrail]] = {
     "rules": build_rules,
     "script-constraint": ScriptConstraintGuardrail,
     "secrets": SecretsGuardrail,
+    "template-integrity": TemplateIntegrityGuardrail,
     "url-exfiltration": UrlExfiltrationGuardrail,
 }
 
@@ -64,6 +69,7 @@ TYPES: dict[str, frozenset[str]] = {
     "rules": RULES_TYPES,
     "script-constraint": SCRIPT_CONSTRAINT_TYPES,
     "secrets": SECRET_TYPES,
+    "template-integrity": TEMPLATE_INTEGRITY_TYPES,
     "url-exfiltration": URL_EXFILTRATION_TYPES,
 }
 
@@ -301,6 +307,7 @@ __all__ = [
     "PiiGuardrail",
     "ScriptConstraintGuardrail",
     "SecretsGuardrail",
+    "TemplateIntegrityGuardrail",
     "UrlExfiltrationGuardrail",
     "build",
     "build_chain",

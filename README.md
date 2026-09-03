@@ -51,6 +51,7 @@ Coming from llm-guard, archived in July 2026? [docs/migrating-from-llm-guard.md]
 | `rules` | whatever you define | your ticket ids, internal hostnames, banned codenames, size limits |
 | `script-constraint` | text written in a script your deployment did not ask for | a Cyrillic paragraph in an English page, one Greek letter inside a Latin word |
 | `confusables` | words that read as one script and are written in two | `pаypal` with a Cyrillic a, a spoofed host label, a banned word dodged by one substituted letter |
+| `template-integrity` | content claiming a role in the conversation that it does not have | a chat template marker, a line beginning `system:`, a tag named after a privileged role |
 
 Every check runs on input and on output, returns `allow`, `redact` or `deny`,
 and reports the exact span it matched so a redaction can be applied and
@@ -134,6 +135,7 @@ Branch on the decision first.
 | `rules` | constraint | input, output | `INTERNAL_HOST`, `LENGTH_LIMIT`, `PROJECT_CODENAME`, `TICKET_ID` |
 | `script-constraint` | constraint | input, output | `DISALLOWED_SCRIPT` |
 | `secrets` | constraint | input, output | `ANTHROPIC_KEY`, `AWS_ACCESS_KEY`, `GITHUB_TOKEN`, `JWT`, `OPENAI_KEY`, `PRIVATE_KEY`, `SLACK_TOKEN` |
+| `template-integrity` | constraint | input, output | `CHAT_TEMPLATE_MARKER`, `FAKE_SYSTEM_TAG`, `ROLE_PREFIX_LINE` |
 | `url-exfiltration` | constraint | input, output | `DATA_URI_PAYLOAD`, `LINK_QUERY_PAYLOAD`, `MARKDOWN_IMAGE_EXFIL`, `NESTED_REDIRECT`, `SCRIPT_SCHEME` |
 
 **`injection-structural`** is the one worth reading about. It looks at
@@ -188,6 +190,17 @@ JWT is not exempted either: it does not fire because its payload decodes to JSON
 and its signature does not decode at all. It decodes ONE level, so a doubly
 encoded payload passes, and that residual is published with the case that proves
 it in
+**`template-integrity`** catches content that claims to be a turn of the
+conversation. A chat model never sees a conversation, only one string in which
+the turn boundaries are ordinary characters the serving stack wrote, so a
+retrieved page carrying `<|im_start|>` or `[INST]` is asking to be read as a
+turn nobody sent. The delimiters it matches are read out of the tokenizer
+configuration of eight model repositories at pinned revisions rather than typed
+into the source, and it matches them through a fold that removes invisible
+characters, collapses fullwidth forms and folds lookalike letters, so one
+zero-width space inside a delimiter does not buy a bypass. Documentation that
+quotes a delimiter fires under the default, which is the trade it makes on
+purpose and the cases are named in
 [corpora/NOTICE.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/corpora/NOTICE.md).
 
 **`rules`** is the check whose types you choose. It takes your own regular
@@ -312,6 +325,7 @@ failures is a number you cannot check.
 | rules | rules/in-repo | in-repo | `8fe119ddb734` | 42 | 1.000 | 1.000 | 1.000 | 29 | 0 | 0 | 0 |
 | script-constraint | script-constraint/in-repo | in-repo | `92fddb0f04be` | 85 | 1.000 | 1.000 | 1.000 | 50 | 0 | 0 | 0 |
 | secrets | secrets/in-repo | in-repo | `337e35f03cad` | 160 | 0.881 | 0.873 | 0.877 | 96 | 13 | 14 | 8 |
+| template-integrity | template-integrity/in-repo | in-repo | `afb0a7245664` | 152 | 0.820 | 0.965 | 0.886 | 109 | 24 | 4 | 19 |
 | url-exfiltration | url-exfiltration/in-repo | in-repo | `c8015e4e93e2` | 88 | 0.914 | 0.914 | 0.914 | 32 | 3 | 3 | 6 |
 
 See [BENCHMARKS.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/BENCHMARKS.md) for the per-type scores and the worst misses
@@ -363,10 +377,10 @@ carries the old figures beside the new ones.
 
 Numbers measured on a corpus we wrote are reported separately from numbers
 measured on a corpus we did not, and the two are never merged. There is no
-third-party corpus for `confusables`, `encoded-content`,
-`injection-structural`, `rules`, `script-constraint`, `secrets` or
+third-party corpus for `confusables`, `encoded-content`, `injection-structural`,
+`rules`, `script-constraint`, `secrets`, `template-integrity` or
 `url-exfiltration`. No compatibly licensed one was found for any of them, so all
-seven are measured on our own corpora only and are self-graded.
+eight are measured on our own corpora only and are self-graded.
 
 The third-party PII corpus is derived from
 [nvidia/Nemotron-PII](https://huggingface.co/datasets/nvidia/Nemotron-PII),

@@ -32,6 +32,13 @@ apart in the p99, which is the variance this page publishes a p99 to show rather
 than to hide; the alternative was rewriting every other check's numbers from
 whichever run happened to be last, and a busier laptop would then read as a
 regression in a check nobody had touched.
+defaults. `url-exfiltration` and `template-integrity` are two. Rows from two
+runs of the same script on
+one machine are a few percent apart in the p50 and further apart in the p99,
+which is the variance this page publishes a p99 to show rather than to hide; the
+alternative was rewriting every other check's numbers from whichever run
+happened to be last, and a busier laptop would then read as a regression in a
+check nobody had touched.
 
 ## The machine and the interpreter
 
@@ -154,6 +161,12 @@ Milliseconds per call. `MB/s` is derived from the p50.
 | secrets | 65 536 | 61 | 0.290 | 0.326 | 0.335 | 217.2 |
 | secrets | 262 144 | 244 | 1.141 | 1.232 | 1.276 | 221.2 |
 | secrets | 1 048 576 | 979 | 4.697 | 4.990 | 5.199 | 214.9 |
+| template-integrity | 1 024 | 0 | 0.033 | 0.034 | 0.034 | 29.7 |
+| template-integrity | 4 096 | 0 | 0.121 | 0.129 | 0.135 | 32.6 |
+| template-integrity | 16 384 | 0 | 0.465 | 0.480 | 0.518 | 33.9 |
+| template-integrity | 65 536 | 0 | 1.866 | 1.949 | 2.037 | 33.8 |
+| template-integrity | 262 144 | 0 | 7.493 | 8.280 | 8.544 | 33.7 |
+| template-integrity | 1 048 576 | 0 | 29.724 | 31.835 | 32.471 | 34.0 |
 | url-exfiltration | 1 024 | 0 | 0.112 | 0.117 | 0.156 | 9.2 |
 | url-exfiltration | 4 096 | 0 | 0.439 | 0.470 | 0.486 | 9.4 |
 | url-exfiltration | 16 384 | 0 | 1.733 | 1.811 | 1.839 | 9.5 |
@@ -237,6 +250,49 @@ of it, so 4.0 is exactly linear.
   shortcut to be had: the confusables table maps eight ASCII code points,
   including `m` to `rn` and `1`, `I` and `|` to `l`, so an all-ASCII string is
   not its own skeleton.
+- **`template-integrity`** is linear on both of its paths, and the rows above
+  measure only the one most content takes. Ratios run 3.84 to 4.02 from 4 KB
+  upward and the rate holds at 33 to 34 megabytes per second, which makes it the
+  fastest of the scanning checks after `secrets`; the first step reads 3.67
+  because at 33 microseconds a call the fixed cost still dominates. **The
+  findings column is zero at every size, and that is what these rows measure**:
+  the seeded input carries no marker, so the number is the folding pass and the
+  three scans over it and none of the offset map. Content that FIRES pays for the
+  map as well, which is four Python-level passes building one integer per view
+  character, and it costs 31x. The same one-megabyte input with a single
+  `<|im_start|>` appended to it, timed the same way, comes to 923 ms at p50
+  against 29.6 ms without it. That path is linear too: at 30 timed calls per size
+  rather than 200, because a run of 200 at that cost takes three minutes, the
+  ratios across the top three sizes are 3.97, 4.02 and 4.18. The map is built
+  once per call and only after a signal has already fired, so content that
+  matches nothing never pays for it, and a large document an attacker has seeded
+  with one marker is exactly the input that does. Reproduce both with:
+
+  ```
+  ./.venv/bin/python - <<'EOF'
+  import sys, time
+  sys.path.insert(0, "scripts")
+  from measure_throughput import content_of, percentile
+  from jamjet_guardrails import Context
+  from jamjet_guardrails.detectors import build
+
+  guardrail = build("template-integrity")
+  context = Context(direction="input", origin="user")
+  for label, content in (
+      ("no marker", content_of(1_048_576)),
+      ("one marker", content_of(1_048_576 - 12) + "<|im_start|>"),
+  ):
+      for _ in range(5):
+          guardrail.check(content, context)
+      samples = []
+      for _ in range(200):
+          start = time.perf_counter_ns()
+          guardrail.check(content, context)
+          samples.append((time.perf_counter_ns() - start) / 1e6)
+      samples.sort()
+      print(label, round(percentile(samples, 0.50), 3))
+  EOF
+  ```
 - **`secrets`** is linear from 16 KB upward, at ratios of 3.97, 3.93 and 4.12.
   Below that it is dominated by fixed overhead rather than by the content: the
   first step reads as 2.62x and the second as 3.48x, climbing towards 4.0 as the

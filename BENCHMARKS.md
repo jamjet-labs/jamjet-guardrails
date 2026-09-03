@@ -13,6 +13,7 @@ every score. How to read them is under the table.
 | rules | rules/in-repo | in-repo | `8fe119ddb734` | 42 | 1.000 | 1.000 | 1.000 | 29 | 0 | 0 | 0 |
 | script-constraint | script-constraint/in-repo | in-repo | `92fddb0f04be` | 85 | 1.000 | 1.000 | 1.000 | 50 | 0 | 0 | 0 |
 | secrets | secrets/in-repo | in-repo | `337e35f03cad` | 160 | 0.881 | 0.873 | 0.877 | 96 | 13 | 14 | 8 |
+| template-integrity | template-integrity/in-repo | in-repo | `afb0a7245664` | 152 | 0.820 | 0.965 | 0.886 | 109 | 24 | 4 | 19 |
 | url-exfiltration | url-exfiltration/in-repo | in-repo | `c8015e4e93e2` | 88 | 0.914 | 0.914 | 0.914 | 32 | 3 | 3 | 6 |
 
 ## How to read this
@@ -144,6 +145,14 @@ above clamped it.
 | PRIVATE_KEY | 0.786 | 1.000 | 11 | 3 | 0 |
 | SLACK_TOKEN | 0.923 | 0.750 | 12 | 1 | 4 |
 
+## Per type: template-integrity on template-integrity/in-repo (in-repo, `afb0a7245664`)
+
+| Type | Precision | Recall | TP | FP | FN |
+|---|---:|---:|---:|---:|---:|
+| CHAT_TEMPLATE_MARKER | 0.876 | 0.966 | 85 | 12 | 3 |
+| FAKE_SYSTEM_TAG | 0.615 | 1.000 | 16 | 10 | 0 |
+| ROLE_PREFIX_LINE | 0.800 | 0.889 | 8 | 2 | 1 |
+
 ## Per type: url-exfiltration on url-exfiltration/in-repo (in-repo, `c8015e4e93e2`)
 
 | Type | Precision | Recall | TP | FP | FN |
@@ -233,6 +242,18 @@ No misses on this corpus.
 | `sec-0109` | decision_mismatch | redact | allow |
 
 ...and 30 more, in `benchmarks.json`.
+
+## Worst misses: template-integrity on template-integrity/in-repo (in-repo, `afb0a7245664`)
+
+| Case | Kind | Expected | Predicted |
+|---|---|---|---|
+| `tpl-0099` | decision_mismatch | deny | allow |
+| `tpl-0100` | decision_mismatch | deny | allow |
+| `tpl-0101` | decision_mismatch | deny | allow |
+| `tpl-0102` | decision_mismatch | deny | allow |
+| `tpl-0138` | decision_mismatch | allow | deny |
+
+...and 42 more, in `benchmarks.json`.
 
 ## Worst misses: url-exfiltration on url-exfiltration/in-repo (in-repo, `c8015e4e93e2`)
 
