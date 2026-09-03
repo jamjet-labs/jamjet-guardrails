@@ -7,9 +7,40 @@ findings behind it, and a record of which check made it over exactly what text.
 
 No dependencies. No network calls. No model downloads. Python 3.10 and above.
 
+```mermaid
+flowchart LR
+  U["user input"] --> IN
+  R["retrieved page<br/>tool output"] --> IN
+  IN{"input checks"}
+  IN -->|"allow or redact"| M["your model"]
+  IN -->|"deny"| S1(["stops here"])
+  M --> OUT{"output checks"}
+  OUT -->|"allow or redact"| A["your app<br/>your logs"]
+  OUT -->|"deny"| S2(["stops here"])
+```
+
+It runs on both sides. A check can rewrite as well as block, so a reply that
+leaks one address still reaches your user with the address removed rather than
+being thrown away. Every check runs in both directions, and you choose which
+ones run where.
+
 ```
 pip install jamjet-guardrails
 ```
+
+## What it catches
+
+| Name | Catches | Looks like |
+|---|---|---|
+| `injection-structural` | instructions hidden in the encoding rather than the words | invisible tag characters, unbalanced bidirectional controls, zero-width runs |
+| `pii` | personal data, redacted to typed placeholders | email addresses, card numbers, US SSNs, phone numbers |
+| `secrets` | credentials, matched on their issuer prefix | `sk-`, `AKIA`, `ghp_`, `xoxb-` prefixes and PEM private key headers |
+| `rules` | whatever you define | your ticket ids, internal hostnames, banned codenames, size limits |
+
+Every check runs on input and on output, returns `allow`, `redact` or `deny`,
+and reports the exact span it matched so a redaction can be applied and
+audited. The rest of this page is what each one costs you in false positives
+and false negatives, measured rather than claimed.
 
 ## Quickstart
 
