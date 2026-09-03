@@ -90,3 +90,55 @@ jobs:
           sed -n '/^| Check |/,/^$/p' README.md | sed '/^$/d' > "$RUNNER_TEMP/readme.md"
           test -s "$RUNNER_TEMP/generated.md"
           diff -u "$RUNNER_TEMP/generated.md" "$RUNNER_TEMP/readme.md"
+
+  # One job per adapter, and NOT another leg of the matrix above. The adapters
+  # are separate distributions with their own dependencies, their own release
+  # tags and their own configuration files, and each pulls in a framework the
+  # core does not know about. Folding them into `check` would install those
+  # frameworks alongside the package whose whole claim is that it needs none.
+  #
+  # 3.12 only, and it is not a shortcut: `nemoguardrails` and `guardrails-ai`
+  # both declare `>=3.10,<3.14`, so neither adapter can be installed on the 3.14
+  # leg above, and each package's classifiers say so too.
+  #
+  # `ruff`, `mypy` and `pytest` all run from inside the package directory, so
+  # each picks up that package's OWN configuration: ruff resolves the closest
+  # pyproject.toml, and a bare `mypy` reads its `files` and its one
+  # `ignore_missing_imports` override for its own framework. A path argument on
+  # the mypy command line would override that list, which is the trap the `check`
+  # job above already documents.
+  nemo-adapter:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/jamjet-guardrails-nemo
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      # The core installed from THIS checkout, editable, so the adapter is
+      # tested against the code in the pull request rather than against the last
+      # release on PyPI. A dependency resolver would happily satisfy
+      # `jamjet-guardrails>=0.3.0` from the index and hide a break.
+      - run: pip install -e ../.. -e ".[dev]"
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: mypy
+      - run: pytest -q
+
+  validators-adapter:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/jamjet-guardrails-validators
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install -e ../.. -e ".[dev]"
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: mypy
+      - run: pytest -q

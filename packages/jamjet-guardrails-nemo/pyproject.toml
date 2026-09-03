@@ -1,0 +1,99 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "jamjet-guardrails-nemo"
+version = "0.1.0"
+description = "NeMo Guardrails input and output rails backed by jamjet-guardrails."
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10,<3.14"
+authors = [{ name = "Sunil Prakash" }]
+# The core is a runtime dependency HERE and nowhere else. `jamjet-guardrails`
+# itself declares `dependencies = []` and the repository's own
+# tests/test_packaging.py holds that against the built metadata; an adapter is
+# the place a framework dependency is allowed to exist, which is the whole
+# reason these live in their own distributions rather than as extras on the
+# core.
+#
+# Floor and next-major ceiling on both. The floor on the core is 0.3.0 because
+# that is the release whose `GuardrailChain` rebuilds every verdict it records,
+# which is what lets the audit record below quote a detector's provenance
+# without quoting a detector's claim. The ceiling is the next major on both
+# sides, per the repository's distribution design.
+#
+# nemoguardrails is pre-1.0, so its next major is 1.0.0 and a MINOR of it can
+# still break: 0.24.0 is the version this adapter was written and measured
+# against, and the README records what was measured. A ceiling of `<1` is a
+# promise that this package does not follow a major rewrite silently, not a
+# promise that every 0.x minor is safe.
+dependencies = ["jamjet-guardrails>=0.3.0,<1.0.0", "nemoguardrails>=0.24.0,<1.0.0"]
+keywords = ["nemoguardrails", "guardrails", "llm-security", "prompt-injection", "pii"]
+# No 3.14 classifier and a `<3.14` ceiling above, because nemoguardrails itself
+# declares `>=3.10,<3.14`. Claiming a version the framework refuses to install
+# on is a claim pip would disprove at install time.
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Security",
+  "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/jamjet-labs/jamjet-guardrails"
+Repository = "https://github.com/jamjet-labs/jamjet-guardrails"
+Issues = "https://github.com/jamjet-labs/jamjet-guardrails/issues"
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.11"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/jamjet_guardrails_nemo"]
+# The `.co` files are the shipped half of the contract: `flows_path()` returns
+# the directory holding them and the README's install step copies them into a
+# rails config folder. A wheel without them leaves `flows_path()` pointing at a
+# directory that does not exist, and the failure surfaces as a Colang parse
+# error in the user's config rather than as a missing file here.
+artifacts = ["src/jamjet_guardrails_nemo/flows/*.co", "src/jamjet_guardrails_nemo/py.typed"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+include = ["*.py", "*.pyi", "**/pyproject.toml"]
+
+[tool.mypy]
+strict = true
+files = ["src", "tests"]
+# 3.12, not the declared 3.10 floor, and the reason is a third party's stub
+# rather than a preference. `_pytest.python_api` does `from numpy import
+# ndarray` under TYPE_CHECKING; numpy is installed here because nemoguardrails
+# depends on it; and numpy's own stubs use `type` statements, which are 3.12
+# syntax. Under `python_version = "3.10"` mypy fails while PARSING that stub and
+# stops, having checked nothing in this package. Per-module `follow_imports =
+# "skip"` and `ignore_errors` were both measured and neither helps: a syntax
+# error is raised before per-module settings apply.
+#
+# What that costs is the thing the core package's own config buys, so it is
+# named rather than glossed: stdlib used above 3.10 is not caught here. Ruff
+# infers its target version from `requires-python` above and still refuses 3.11+
+# SYNTAX, and the adapter's CI job runs on 3.12, which is the version this line
+# now matches.
+python_version = "3.12"
+
+# nemoguardrails ships no py.typed marker, so every symbol imported from it is
+# `Any` and mypy cannot resolve the module at all under strict. This override
+# is scoped to that one framework and nothing else: the point of a package-local
+# mypy config is that the adapter's OWN code stays fully checked, and widening
+# this list is how that stops being true.
+[[tool.mypy.overrides]]
+module = ["nemoguardrails", "nemoguardrails.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

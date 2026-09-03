@@ -17,9 +17,16 @@
 name: Release
 on:
   push:
-    tags: ["v*"]
+    # Three distributions, three tag prefixes, one workflow. `v*` is the core;
+    # the adapters carry their own names so a release of one cannot move the
+    # version of another. Each job below is gated on its own prefix, and the
+    # gates must stay mutually exclusive: `nemo-v0.1.0` does not start with `v`,
+    # so the core job's `if` is what keeps a core publish from firing on an
+    # adapter tag now that this workflow answers to more than one.
+    tags: ["v*", "nemo-v*", "validators-v*"]
 jobs:
   publish:
+    if: startsWith(github.ref_name, 'v')
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -102,3 +109,112 @@ jobs:
           print(f"{wheel} carries {len(names)} files, all inside the package")
           PY
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+
+  # The two adapters. Same shape as the core job and deliberately so: a test
+  # run before anything is built, a tag-versus-pyproject comparison, exactly one
+  # wheel and one sdist, an assertion about what is INSIDE the wheel, and only
+  # then a publish.
+  #
+  # `environment: pypi` on all three. Trusted publishing is configured per
+  # PROJECT on PyPI, so each distribution needs its own publisher entry there
+  # naming this repository, this workflow and this environment; the environment
+  # itself is one gate over the three, which is one thing to configure rather
+  # than three.
+  #
+  # `packages-dir` is passed explicitly because `defaults.run.working-directory`
+  # applies to `run` steps and NOT to `uses` steps: without it the publish action
+  # looks in `dist/` at the workspace root, finds nothing, and either uploads
+  # nothing or fails after the tag has already been pushed.
+  publish-nemo:
+    if: startsWith(github.ref_name, 'nemo-v')
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+      contents: read
+    defaults:
+      run:
+        working-directory: packages/jamjet-guardrails-nemo
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          # 3.12: the tag check uses tomllib (3.11+), and it is the version
+          # ci.yml runs this adapter's tests on. The wheel is py3-none-any.
+          python-version: "3.12"
+      - run: pip install -e ../.. -e ".[dev]"
+      - run: pytest -q
+      - name: Tag must match the packaged version
+        run: |
+          TAG="${GITHUB_REF_NAME#nemo-v}"
+          VER=$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          test "$TAG" = "$VER" || { echo "tag $TAG != pyproject version $VER"; exit 1; }
+      - run: pip install build
+      - run: python -m build
+      - name: Exactly one wheel and one sdist
+        run: |
+          test "$(ls dist/*.whl | wc -l)" -eq 1
+          test "$(ls dist/*.tar.gz | wc -l)" -eq 1
+      # The `.co` files are half the install step: `flows_path()` returns the
+      # directory holding them and the README's first command copies them into a
+      # rails config folder. A wheel without them leaves that command copying
+      # nothing, and the user meets the failure as a Colang parse error in their
+      # own config rather than as a missing file here.
+      - name: The wheel must carry both flows and the typing marker
+        run: |
+          python - <<'PY'
+          import glob, sys, zipfile
+          wheel = glob.glob("dist/*.whl")[0]
+          names = zipfile.ZipFile(wheel).namelist()
+          flows = [n for n in names if n.endswith(".co")]
+          if len(flows) != 2:
+              sys.exit(f"{wheel} carries {flows}; expected the two shipped Colang flows")
+          if "jamjet_guardrails_nemo/py.typed" not in names:
+              sys.exit(f"{wheel} ships no py.typed; the Typing :: Typed classifier would be false")
+          print(f"{wheel} carries {flows} and py.typed")
+          PY
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          packages-dir: packages/jamjet-guardrails-nemo/dist
+
+  publish-validators:
+    if: startsWith(github.ref_name, 'validators-v')
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+      contents: read
+    defaults:
+      run:
+        working-directory: packages/jamjet-guardrails-validators
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install -e ../.. -e ".[dev]"
+      - run: pytest -q
+      - name: Tag must match the packaged version
+        run: |
+          TAG="${GITHUB_REF_NAME#validators-v}"
+          VER=$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          test "$TAG" = "$VER" || { echo "tag $TAG != pyproject version $VER"; exit 1; }
+      - run: pip install build
+      - run: python -m build
+      - name: Exactly one wheel and one sdist
+        run: |
+          test "$(ls dist/*.whl | wc -l)" -eq 1
+          test "$(ls dist/*.tar.gz | wc -l)" -eq 1
+      - name: The wheel must carry the typing marker
+        run: |
+          python - <<'PY'
+          import glob, sys, zipfile
+          wheel = glob.glob("dist/*.whl")[0]
+          names = zipfile.ZipFile(wheel).namelist()
+          if "jamjet_guardrails_validators/py.typed" not in names:
+              sys.exit(f"{wheel} ships no py.typed; the Typing :: Typed classifier would be false")
+          print(f"{wheel} carries jamjet_guardrails_validators/py.typed")
+          PY
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          packages-dir: packages/jamjet-guardrails-validators/dist

@@ -1,0 +1,12 @@
+# The output rail. Colang 1.0. Same shape as the input flow, over $bot_message.
+#
+# A deny here stops the reply reaching the user. The chain's merged content is
+# NOT written back on a deny: `GuardrailChain`'s own docstring says that string
+# is for the audit record and is not safe to send.
+
+define flow jamjet guardrails check output
+  $allowed = execute jamjet_guardrails_check_output
+
+  if not $allowed
+    bot refuse to respond
+    stop
