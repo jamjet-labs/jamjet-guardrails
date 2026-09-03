@@ -8,13 +8,16 @@ a real rails config; these hold the behaviour where it is written.
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any
 
 import pytest
 from jamjet_guardrails import (
+    ChainResult,
     Context,
     Direction,
     GuardrailChain,
+    GuardrailChainError,
     Kind,
     Verdict,
     build,
@@ -118,33 +121,38 @@ def test_a_guardrail_that_raises_is_a_deny_with_the_failure_recorded() -> None:
 
 
 def test_an_exception_out_of_run_is_a_deny_with_a_record() -> None:
-    """`run` abandons the whole run in one case, and the caller must deny.
+    """The library's instruction is that ANY exception out of `run` is a deny.
 
-    The one case is a redact the chain cannot locate. The library's own
-    instruction is that any exception out of `run` is a deny and that catching
-    it and carrying on converts the library to fail-open, so the action catches
-    it, returns false, and writes the digest of what was inspected plus the
-    exception's TYPE.
+    CHANGED. This test used to reach that path with a redact the chain could not
+    locate, which was the one shape a detector could still use to abandon a run.
+    It is not any more: the core turned it into a synthesised deny so that one
+    misbehaving detector cannot cost a run its audit record, and this test caught
+    the change by seeing a verdict where it expected none. That is the right
+    outcome and it leaves this test without a detector-shaped way in.
+
+    So the exception comes from the CHAIN, which is what the action's `except`
+    clause is actually written for: `GuardrailChain` is a caller-supplied object
+    here, `JamJetRails` takes whatever chain it is handed, and an action that let
+    an exception escape would hand NeMo a traceback instead of a refusal. The
+    action catches it, returns false, and writes the digest of what was
+    inspected plus the exception's TYPE and never its message.
     """
 
-    class Unlocatable:
-        name: str = "unlocatable"
-        version: str = "0.1.0"
-        kind: Kind = "constraint"
-        directions: frozenset[Direction] = frozenset({"input", "output"})
+    class Detonating(GuardrailChain):
+        """A chain that raises, standing in for any way `run` can fail.
 
-        def check(self, content: str, context: Context) -> Verdict:
-            from jamjet_guardrails import Finding, Provenance
+        A subclass rather than a double, so the action is handed the type it
+        declares and the test cannot pass because the action accepted something
+        looser than its own annotation.
+        """
 
-            return Verdict(
-                "redact",
-                "REDACTED",
-                [Finding(type="TOK")],
-                Provenance(kind="constraint", detector="unlocatable", version="0.1.0"),
-                saw(content),
-            )
+        def __init__(self) -> None:
+            super().__init__([])
 
-    rails = JamJetRails({"output": GuardrailChain([Unlocatable()])})
+        def run(self, content: str, context: Context) -> ChainResult:
+            raise GuardrailChainError("the chain could not complete this run")
+
+    rails = JamJetRails({"output": Detonating()})
     result = _call(rails, "output", {"bot_message": "anything"})
     assert result.return_value is False
     record = parse_audit_record(result.context_updates[AUDIT_KEY])
@@ -152,6 +160,10 @@ def test_an_exception_out_of_run_is_a_deny_with_a_record() -> None:
     assert record["verdicts"] == []
     assert record["error"] == "GuardrailChainError"
     assert record["saw"] == saw("anything")
+    # The exception's message is a string the chain chose after seeing the
+    # content, so it stays out of the record for the reason the core's
+    # `_bounded` gives.
+    assert "could not complete" not in json.dumps(record)
 
 
 @pytest.mark.parametrize("context", [{}, {"user_message": None}, {"user_message": 12}])
