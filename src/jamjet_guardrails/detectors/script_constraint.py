@@ -335,7 +335,7 @@ class ScriptConstraintGuardrail:
         top-level import would drag 45 KiB of tables into every
         `import jamjet_guardrails`, including every one that never builds this
         check.
-        `tests/test_unicode.py::test_importing_the_package_loads_neither_unicode_table`
+        `tests/test_unicode.py::test_importing_the_package_loads_no_unicode_table`
         holds that.
         """
         from jamjet_guardrails._unicode import script_set

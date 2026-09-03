@@ -1,4 +1,4 @@
-"""The counts `corpora/NOTICE.md` prints about the vendored Unicode files.
+"""The counts the published files print about the vendored Unicode data.
 
 A number in prose that COUNTS a thing in this repository is a claim, and this
 repository holds about thirty of them to a derivation. This one was not held,
@@ -17,6 +17,16 @@ attribution attached to it.
 Both are derived from the directory listing. Nothing here is a list of
 filenames: a fifth file was added once and a sixth will be added when the pin
 moves, and neither should need anybody to remember this file exists.
+
+AND THE SAME COUNTS SIT IN `pyproject.toml`, WHICH GOT NONE OF THIS. The commit
+that derived the notice's count added the derivation for that file alone, while
+the SPDX decomposition block three files over went on saying "the four files
+published by Unicode, Inc." and "the two modules generated from it" with five
+files and three modules on disk. That block ships in the sdist and states its
+own purpose as naming WHAT EACH TERM COVERS, "because an expression nobody can
+decompose is a longer way of saying nothing". A guard written for the file its
+author had open, one file short of the file with the same defect, is the shape
+this repository produces more than any other.
 """
 
 from __future__ import annotations
@@ -26,6 +36,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 NOTICE = ROOT / "corpora" / "NOTICE.md"
+PYPROJECT = ROOT / "pyproject.toml"
+GENERATED = ROOT / "src" / "jamjet_guardrails" / "_unicode"
 DATA = ROOT / "unicode-data" / "16.0.0"
 
 #: The count words this notice actually uses, in the range a directory of
@@ -107,4 +119,71 @@ def test_every_redistributed_unicode_file_is_in_the_provenance_table() -> None:
     assert phantom == [], (
         f"corpora/NOTICE.md carries a provenance row for {phantom}, which is not "
         "committed under unicode-data/16.0.0/"
+    )
+
+
+def _generated_modules() -> list[str]:
+    """The modules `scripts/generate_unicode_tables.py` writes, sorted.
+
+    `__init__.py` is the package's own front door and is hand-written, so it is
+    not one of them: it is excluded by reading each module's first line for the
+    marker the generator stamps, rather than by naming it here. A fourth
+    generated module would be counted with no edit to this helper.
+    """
+    return sorted(
+        path.name
+        for path in GENERATED.glob("*.py")
+        if "GENERATED; do not edit" in path.read_text(encoding="utf-8")[:400]
+    )
+
+
+def test_there_are_generated_modules_to_count() -> None:
+    """The vacuity guard for the two tests below."""
+    assert len(_generated_modules()) >= 2, f"found {_generated_modules()}"
+
+
+def test_the_licence_block_counts_the_files_it_redistributes() -> None:
+    """`pyproject.toml` says how many Unicode files it carries, in two places.
+
+    Both said four while five were committed. The block's stated purpose is to
+    decompose the SPDX expression, so a term that undercounts what it covers is
+    the one failure this block exists to prevent, and the file it sits in is
+    what a licence scanner and a distribution reviewer read.
+    """
+    # Comment continuations rejoined first. The two sentences wrap differently
+    # and the second carries a `#` in the middle of the phrase, so a pattern
+    # written against one of them silently covers one site and reads as covering
+    # both -- which is how the block came to have two copies of this count.
+    text = re.sub(r"\n#[ \t]*", " ", PYPROJECT.read_text(encoding="utf-8"))
+    expected = _NUMBER_WORDS[len(_committed_files())]
+    sentences = re.findall(r"the (\w+) (?:files published by Unicode|published files)", text)
+    assert len(sentences) >= 2, (
+        f"pyproject.toml states this count in two places and {len(sentences)} were found; "
+        "the sentences this guard reads have moved or gone"
+    )
+    wrong = [word for word in sentences if word.lower() != expected]
+    assert wrong == [], (
+        f"pyproject.toml says {wrong} Unicode files and there are "
+        f"{len(_committed_files())}, which is {expected!r}"
+    )
+
+
+def test_the_licence_block_counts_the_modules_generated_from_them() -> None:
+    """The same claim one level down, and it drifted the same way.
+
+    The block said "unicode-data/16.0.0/ and the two modules generated from it"
+    while three ship: `scripts.py`, `confusables.py` and `identifiers.py`. Those
+    modules are what `Unicode-3.0` covers in the WHEEL, which is the artifact
+    most consumers receive, so undercounting them understates what the term is
+    there for.
+    """
+    text = PYPROJECT.read_text(encoding="utf-8")
+    expected = _NUMBER_WORDS[len(_generated_modules())]
+    sentence = re.search(r"the (\w+) modules\n#\s*generated from it", text)
+    assert sentence is not None, (
+        "pyproject.toml no longer counts the modules generated from the Unicode data"
+    )
+    assert sentence.group(1).lower() == expected, (
+        f"pyproject.toml says {sentence.group(1)!r} generated modules and there are "
+        f"{len(_generated_modules())}, which is {expected!r}: {_generated_modules()}"
     )

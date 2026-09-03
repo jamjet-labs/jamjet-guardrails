@@ -302,7 +302,7 @@ this document requires in `ChainResult.content` at all -- `EMAIL` in
 `[REDACTED:EMAIL]` is a finding's `type`, read straight out of the finding
 that redacted it. What is fixed is its LENGTH, not its content: a `type`
 longer than **200 characters** is a failed check, refused like any other
-over-long caller string (`_ERROR_TYPE_LIMIT` in this implementation, shared
+over-long caller string (`_CALLER_STRING_LIMIT` in this implementation, shared
 with the bound its own error messages already used), because unbounded it
 stops being a label: a `redact` whose finding's type IS the content it
 redacted reproduces that content, verbatim, inside a string this document
@@ -825,12 +825,25 @@ running beside it in a chain.
     limits:
       max_chars: 2000
     on_match: redact
+    fold_confusables: true
 
 A conforming implementation scores `corpora/rules/in-repo.jsonl` with these
 options. `on_match` is `redact` rather than the registered default `deny`
 because a deny never reaches the rewrite, so the spans would be published
 without ever being applied and the corpus would grade nothing that matters
 here.
+
+`fold_confusables` was added to the fixture and not to this block, and the
+omission is the exact failure this section exists to prevent. The commit that
+turned the option on also added `rules-0041`, `deck for prоject bluebіrd` with
+a Cyrillic o and a Ukrainian i, and only that option catches it. A port built
+to exactly what was printed scored 0.966 recall with one wrong decision against
+the 1.000 / 1.000 / 0 published in `README.md` and `BENCHMARKS.md`, and it
+disagreed with the reference implementation on a case it was never given the
+option to pass. The guard that stood here iterated four key names by hand, so a
+fifth key was invisible to it forever;
+`tests/test_conformance_doc.py::test_the_conformance_document_prints_the_fixture_the_row_was_measured_under`
+now derives the key set from the fixture itself.
 
 **The published row exercises only one of the three limit kinds.** The
 fixture sets `max_chars` and neither `max_bytes` nor `max_lines`, so the
@@ -1049,13 +1062,40 @@ allowed denies it under every constraint anybody would write.
 
 Two rules sit on top of that, and both are contract:
 
-- **`Common` and `Inherited` always pass.** Punctuation, digits, currency,
+- **`Common` and `Inherited` always pass.** A code point whose RESOLVED set is
+  `Common` or `Inherited` passes under every constraint. Most punctuation,
+  digits, currency, mathematical symbols, whitespace and emoji resolve to
+  `Common`, and ZWJ, ZWNJ and the variation selectors resolve to `Inherited`.
+  This is the whole false-positive defence: a `{"Latin"}` constraint that denied
+  a comma would be switched off in its first week. Measured on this corpus:
+  dropping the rule denies 33 of its 42 `allow` cases, held by
+  `tests/test_script_constraint.py::test_the_document_publishes_the_number_of_allow_cases_the_wildcards_carry`.
+
+  **The general category is not the rule, and reading it as one loses
+  detections.** Resolution is Script_Extensions where they exist, so a
+  punctuation mark, a combining mark or a modifier letter that carries a
+  non-empty Script_Extensions does NOT resolve to `Common` or `Inherited` and is
+  subject to the constraint like any letter. Five corpus cases are exactly that,
+  each one code point, each labelled `deny` and each firing under the published
+  fixture: the Devanagari danda `U+0964` (`sc-0008`), the Arabic comma `U+060C`
+  (`sc-0081`), the Vedic tone karshana `U+1CD0` (`sc-0082`, a combining mark),
+  the Arabic tatweel `U+0640` (`sc-0083`) and the Greek numeral sign `U+0374`
+  (`sc-0084`). The combining acute `U+0301` is the same fact seen from the
+  passing side: it has Latin among its extensions, so it passes under a
+  constraint naming Latin and fires under one that does not.
+
+  This bullet used to gloss the rule as "punctuation, digits, currency,
   mathematical symbols, whitespace, emoji, combining marks, ZWJ, ZWNJ and
   variation selectors resolve to one of the two, so they pass under every
-  constraint. This is the whole false-positive defence: a `{"Latin"}` constraint
-  that denied a comma would be switched off in its first week. Measured on this
-  corpus: dropping the rule denies 33 of its 42 `allow` cases, held by
-  `tests/test_script_constraint.py::test_the_document_publishes_the_number_of_allow_cases_the_wildcards_carry`.
+  constraint", and that gloss is the half a port implements, because it names
+  characters rather than property values. A port that implemented it allowed all
+  five of those cases and scored worse than one that implemented neither rule,
+  against a corpus this document says decides conformance. The section
+  contradicted itself about the danda, the Arabic comma and the tatweel twenty
+  lines further down and nothing noticed, because the measured figure this
+  bullet publishes is the true headline and the false gloss was unread.
+  `tests/test_conformance_doc.py::test_every_single_code_point_denial_a_reader_would_call_punctuation_is_named`
+  reads the list out of the corpus.
 - **`Unknown` never passes.** A code point the implementation's tables do not
   assign is a finding. That is fail-closed and it is disclosed below.
 
@@ -1209,9 +1249,30 @@ majority script and all of whose code points have Identifier_Status=Allowed.
 `WHOLE_SCRIPT_CONFUSABLE` needs a single-script non-Latin label every code point
 of which folds that way into Latin.
 
+**A prototype has to be a word, and two degenerate cases are refused rather than
+satisfied vacuously.** A code point folding to the empty string is not evidence,
+and neither is one whose prototype is nothing but wildcards: a character folding
+to a bare digit or a bare space imitates no word in any script. Read without
+those two conditions the clause above FIRES on the second case, because "whose
+non-wildcard code points all lie in the majority script" is satisfied by a
+prototype that has no non-wildcard code points at all. 67 code points are in
+that class at 16.0.0. Cyrillic З folds to `3`, Cyrillic б to `6`, Latin capital
+tone two `U+01A7` to `2`, and a port implementing the clause literally denies
+`PaЗpal login page`, which this implementation allows.
+
+**The corpus cannot arbitrate this one, which is why it is written here rather
+than left to the labels.** Rescored with both conditions removed,
+`corpora/confusables/in-repo.jsonl` gives the same precision, the same recall
+and the same set of failing case ids as the shipped run. A port that implements
+the sentence and a port that implements the code are graded identically by the
+procedure this document defines, and find the difference in production.
+`tests/test_confusables.py::test_a_prototype_of_nothing_but_wildcards_is_not_evidence`
+holds the second condition.
+
 The majority script is the one most of the token's code points are in, counted
 per code point and script since a code point carrying Script_Extensions is in
-several; on a tie, a script the first code point is in.
+several; on a tie, a script the first code point is in, and where no tied script
+is in the first code point's set, the lexicographically first of the tied ones.
 
 **THE IDENTIFIER-PROFILE CONDITION IS THE ONE A PORT IS MOST LIKELY TO LEAVE
 OUT, AND IT IS THE ONE THAT DENIES A LANGUAGE.** Measured on Unicode 16.0.0, 140
@@ -1295,15 +1356,6 @@ findings are about a string the content did not visibly contain: the span points
 and the signals were read from what that run decoded to. Its corpus is
 `corpora/encoded-content/in-repo.jsonl`, and a corpus directory name is the name the guardrail is
 built under, by the rule at the end of this document.
-## The template-integrity constraint
-
-`template-integrity` reads content that claims to be a turn, a role or a template of the
-conversation. A chat model does not see a conversation; it sees one string in which the turn
-boundaries are ordinary characters that the serving stack wrote. Content arriving with those same
-characters in it is asking to be read as a turn the operator never sent, and nothing about the words
-has to be adversarial for that to work. Its corpus is `corpora/template-integrity/in-repo.jsonl`, and
-a corpus directory name is the name the guardrail is built under, by the rule at the end of this
-document.
 
 Its `kind` is `constraint`, so no finding it produces carries a `confidence`.
 
@@ -1404,7 +1456,27 @@ marker one encoding layer down is not among them, and no corpus case labels one.
 
 These five misses are the corpus's bar and not a licence. A port that denies any of them matches the
 label where this implementation does not; what a port is held to is the `allow` side.
-asymmetry the `injection-structural` section states applies here unchanged.
+
+**This section and the one below it were spliced.** The
+`## The template-integrity constraint` heading and its opening paragraph stood
+between `encoded-content`'s introduction and `encoded-content`'s own
+subsections, so eleven subsections about `ENCODED_CREDENTIAL`,
+`ENCODED_INSTRUCTION` and `ENCODED_MARKUP` sat under a heading naming a
+different check, and the sentence that closed this section was left here as its
+own tail with no subject. Both halves read correctly alone, which is why review
+of each PR saw nothing.
+
+## The template-integrity constraint
+
+`template-integrity` reads content that claims to be a turn, a role or a template of the
+conversation. A chat model does not see a conversation; it sees one string in which the turn
+boundaries are ordinary characters that the serving stack wrote. Content arriving with those same
+characters in it is asking to be read as a turn the operator never sent, and nothing about the words
+has to be adversarial for that to work. Its corpus is `corpora/template-integrity/in-repo.jsonl`, and
+a corpus directory name is the name the guardrail is built under, by the rule at the end of this
+document.
+
+Its `kind` is `constraint`, so no finding it produces carries a `confidence`.
 
 ### Three finding types
 
@@ -1688,8 +1760,20 @@ choice for every one of them:
   across the CI matrix. The table
   format, the generator and the pin are this implementation's means. A port
   reaching the same verdicts on the corpora conforms with any Unicode data
-  source at any version, and each corpus records the version its labels were
-  written against.
+  source at any version. Every corpus in this repository was labelled against
+  the pinned tables, and `corpora/NOTICE.md` records that version and the digest
+  of each file the tables were generated from.
+
+  **The version is recorded once, for all of them, and not per corpus.** This
+  bullet used to close "and each corpus records the version its labels were
+  written against", which is a record the corpus schema above forbids: every
+  field is required and no other field is accepted, so a loader handed a row
+  carrying one raises rather than ignoring it. No corpus contained such a field
+  and none could. The grant of Unicode-version freedom is only usable if a
+  porter can find the version the labels were written against, so it is stated
+  where a version can actually live, and
+  `tests/test_conformance_doc.py::test_the_unicode_version_this_document_names_is_the_one_the_tables_are_pinned_to`
+  derives it from the pinned directory.
 - **Where the chat-template markers come from, and which ones there are.**
   `template-integrity` matches a table generated from the tokenizer configuration of eight model
   repositories at pinned revisions, and `corpora/NOTICE.md` records each one. Which repositories
@@ -1721,16 +1805,39 @@ choice for every one of them:
 - **Everything about performance**, threading, and how a port lays its modules
   out.
 
-What is not free is everything above [Third-party corpora](#third-party-corpora):
-the fields and their domains, the `Verdict` invariants, the combination order,
-the single-pass rewriting rule, the `saw` digest, the corpus schema and its
-version rule, the `injection-structural` types, spans, direction and exemptions,
-the `url-exfiltration` types, spans, directions and its output-only type, and the
-scores on the corpora.
-version rule, the `injection-structural` and `confusables` types, spans,
-directions and exemptions, and the scores on the corpora.
-the `url-exfiltration` types, spans, directions and its output-only type, the
-`encoded-content` types, spans, directions and its one-level rule, and the scores
-on the corpora.
-`template-integrity` types, spans and directions and the rule that its span covers the characters
-the fold deleted inside a match, and the scores on the corpora.
+What is not free is everything above [Third-party corpora](#third-party-corpora).
+Across every check: the fields and their domains, the `Verdict` invariants, the
+combination order, the single-pass rewriting rule, the `saw` digest, the corpus
+schema and its version rule, and the scores on the corpora. Per check, the
+finding types, the spans and the directions its own section states, plus what
+that section marks as contract in its own words:
+
+- **`confusables`**: both conditions of each of the two rules, the token rule
+  that makes default-ignorable code points transparent, and the exemptions.
+- **`encoded-content`**: the one-level rule, and that there are no exemptions.
+- **`injection-structural`**: the direction and the exemptions.
+- **`rules`**: matching is search rather than anchoring; one finding per
+  occurrence, except a match wholly contained in one already reported;
+  case-insensitive banned substrings reported at their SOURCE span; and the
+  size-limit rule. Its type names are the caller's and are not contract.
+- **`script-constraint`**: the `Common`/`Inherited` rule, the `Unknown` rule and
+  the maximal-run span rule.
+- **`secrets`**: that a span covers the credential and not the run it sits in.
+- **`template-integrity`**: the folded matching view, and the rule that a span
+  covers the characters the fold deleted inside a match.
+- **`url-exfiltration`**: its output-only type, that a URL is read both as
+  written and as a consumer resolves it, and that there are no exemptions.
+
+`pii` has no section of its own and is covered by the general sections, which
+the sentence carrying that waiver says in as many words.
+
+**This paragraph was four spliced tails and it is the reason for the list.**
+Three branches each rewrote its closing sentence and each merge appended the
+new tail instead of replacing the old one, so the document's own answer to
+"what am I obliged to match?" ended as a run of sentence fragments that
+disagreed about whether `url-exfiltration`, `confusables`, `encoded-content` or
+`template-integrity` was contract, and none of the four named
+`script-constraint` at all, whose section marks two rules "both are contract".
+A prose list of checks is a count of the registry written in words;
+`tests/test_conformance_doc.py::test_the_closing_paragraph_names_every_check_with_a_section`
+derives it from the headings above it.

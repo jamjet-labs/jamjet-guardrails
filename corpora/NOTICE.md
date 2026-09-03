@@ -25,6 +25,7 @@ so in-repo and third-party numbers can never be merged into one score.
 
 | Corpus | `source` field | Licence |
 |---|---|---|
+| `corpora/confusables/in-repo.jsonl` | `in-repo` | `Apache-2.0` |
 | `corpora/encoded-content/in-repo.jsonl` | `in-repo` | `Apache-2.0` |
 | `corpora/injection-structural/in-repo.jsonl` | `in-repo` | `Apache-2.0` |
 | `corpora/pii/in-repo.jsonl` | `in-repo` | `Apache-2.0` |
@@ -747,8 +748,8 @@ that date.
 
 **`corpora/injection-structural/in-repo.jsonl` labels its own failures as
 failures, and its published numbers describe a check that trades recall for
-precision at a bound that was raised deliberately.** 0.971 precision, 0.870
-recall, 8 wrong decisions over 146 cases. Eight cases fail, every one of them on
+precision at a bound that was raised deliberately.** 0.972 precision, 0.873
+recall, 8 wrong decisions over 154 cases. Eight cases fail, every one of them on
 purpose, and there are no other failures. Fifteen cases are listed below: the
 eight that fail, plus the three-case balanced-override set and the four
 imbalanced-control cases -- a stray PDF, a stray PDI, and the two halves of a

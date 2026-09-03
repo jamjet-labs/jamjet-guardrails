@@ -963,3 +963,68 @@ def test_every_test_name_cited_in_prose_exists() -> None:
         cited = set(_TEST_NAME.findall(path.read_text(encoding="utf-8")))
         missing = sorted(cited - defined)
         assert missing == [], f"{path.name} cites {missing}, which no test module defines"
+
+
+def test_every_corpus_on_disk_has_a_row_in_the_notice_provenance_table() -> None:
+    """The table a licence scanner reads first, derived from the directory.
+
+    `corpora/confusables/in-repo.jsonl` was missing from it. The check that
+    shipped it did edit this file, adding a prose section, and did not add the
+    row; the PR immediately before it did add its own.
+
+    Two tests looked like they covered this and neither did.
+    `tests/test_completeness.py` requires the literal path to appear SOMEWHERE
+    in the file, which the `###` prose heading satisfies. The licence guard in
+    this module requires one line naming a source together with a licence, and
+    `in-repo` and `Apache-2.0` already co-occur on eight other rows, so it
+    passes on somebody else's row. Both are met by the file as it stood.
+
+    Rows, and both directions. A row for a corpus that no longer exists is the
+    same defect running the other way: it attaches provenance to nothing and a
+    reader cannot tell that from a file they failed to find.
+    """
+    text = NOTICE.read_text(encoding="utf-8")
+    rows = set(re.findall(r"^\|\s*`(corpora/[^`]+\.jsonl)`\s*\|", text, re.MULTILINE))
+    on_disk = {str(path.relative_to(ROOT)) for path in sorted(CORPORA.glob("*/*.jsonl"))}
+    assert on_disk, "no corpora found; this guard would prove nothing"
+    assert rows == on_disk, (
+        f"corpora with no provenance row: {sorted(on_disk - rows)}; "
+        f"rows for corpora that do not exist: {sorted(rows - on_disk)}"
+    )
+
+
+def test_the_notice_publishes_the_injection_row_the_measurement_gives() -> None:
+    """Four numbers in one sentence, all four measured rather than remembered.
+
+    The paragraph that teaches a reader how to read this project's numbers
+    opened with "0.971 precision, 0.870 recall, 8 wrong decisions over 146
+    cases". The corpus held 154 and the row was 0.972 / 0.873. It had been
+    stale since before 0.2.0, and `CHANGELOG.md` recorded the move at the time,
+    so three artifacts CI regenerates disagreed with the one document this
+    project designates as the authority on how to read them.
+
+    The other counts inside the same paragraph were all still right, which is
+    what left a reader no signal that the three leading figures were not.
+
+    Nothing gated it: the checked figures are the ones the conformance guards
+    recompute, and this row was not among them. It is now, scored here rather
+    than read from `benchmarks.json`, so a stale committed artifact cannot
+    satisfy it.
+    """
+    corpus = load_corpus(CORPORA / "injection-structural" / "in-repo.jsonl", "injection-structural")
+    guardrail = build("injection-structural", **options_for("injection-structural"))
+    evaluation = evaluate(guardrail, corpus)
+    metrics = evaluation.overall
+    wrong = len(
+        {failure.case_id for failure in evaluation.failures if failure.kind == "decision_mismatch"}
+    )
+    sentence = (
+        f"{metrics.precision:.3f} precision, {metrics.recall:.3f}\n"
+        f"recall, {wrong} wrong decisions over {len(corpus.cases)} cases."
+    )
+    text = NOTICE.read_text(encoding="utf-8")
+    assert sentence in text, (
+        "corpora/NOTICE.md does not publish the injection-structural row the measurement "
+        f"gives, which is {metrics.precision:.3f} precision, {metrics.recall:.3f} recall, "
+        f"{wrong} wrong decisions over {len(corpus.cases)} cases"
+    )

@@ -121,12 +121,22 @@ SECRET_TYPES = frozenset(
 #
 # KNOWN MISSES, recorded because a miss nobody wrote down is a recall number
 # nobody can explain. `github_pat_` fine-grained personal access tokens, which
-# are GitHub's modern default, and `xapp-` Slack app-level tokens are BOTH
-# complete misses: neither shape is in this table, and no pattern here comes
-# close enough to catch one by accident. That is the brief's list of types, not
-# an oversight in the patterns, and it is left alone deliberately rather than
-# widened here. Task 15 must not publish a recall number that leaves them
-# invisible. There is a test naming both, so they cannot become silent.
+# are GitHub's modern default, `xapp-` Slack app-level tokens and `xoxe-` Slack
+# refresh tokens are ALL complete misses: no such shape is in this table, and no
+# pattern here comes close enough to catch one by accident. That is the brief's
+# list of types, not an oversight in the patterns, and it is left alone
+# deliberately rather than widened here. The published recall number must not
+# leave them invisible.
+#
+# THIS COMMENT SAID TWO, AND NAMED THE MECHANISM THAT LET THE THIRD IN. It read
+# "There is a test naming both, so they cannot become silent", and that test
+# asserts each NAMED prefix is still a miss and never that every miss is named.
+# The corpus grew from 39 cases to 160, brought `xoxe-` with it, and the README
+# and this comment both went on saying two while the conformance document and
+# the notice were updated. A guard that enumerates what it guards cannot see an
+# addition. `tests/test_readme.py::test_every_credential_the_check_misses_outright_is_named_in_the_readme`
+# runs the other way: it derives the misses from the corpus by scoring it, so a
+# family arriving under a new prefix fails until the prose names it.
 #
 # THREE BODIES ARE BOUNDED FOR COST, and the condition that forces it is worth
 # stating exactly, because it is not "unbounded is bad". Trying every start

@@ -10,6 +10,7 @@ a number that changes quietly is a number nobody can rely on.
 
 ## [Unreleased]
 
+
 ### Added
 
 - Both adapter READMEs now say that the framework they install reaches the
@@ -307,19 +308,43 @@ a number that changes quietly is a number nobody can rely on.
   carries the new rows and says which rows that run re-measured and which it
   left alone. The option is off by default and a caller who leaves it off pays
   none of it.
-- The distribution declares `Apache-2.0 AND CC-BY-4.0 AND Unicode-3.0`. The
-  generated tables are derived from data files published by Unicode, Inc. under
-  the Unicode License v3 and ship in the wheel, and the raw files ship in the
-  sdist; the licence requires its notice to travel with copies or in associated
-  documentation. `corpora/NOTICE.md` carries the notice, the five digests and
-  the reason the data is vendored, and the README's licence section says so in
-  one sentence.
+- The distribution's declaration gains `Unicode-3.0`. The generated tables are
+  derived from data files published by Unicode, Inc. under the Unicode License
+  v3 and ship in the wheel, and the raw files ship in the sdist; the licence
+  requires its notice to travel with copies or in associated documentation.
+  `corpora/NOTICE.md` carries the notice, the five digests and the reason the
+  data is vendored, and the README's licence section says so in one sentence.
+  The full expression is the one in the bullet above; this entry stated it as
+  `Apache-2.0 AND CC-BY-4.0 AND Unicode-3.0`, which was the whole of it when
+  this bullet was written and had stopped being so by the time the section
+  closed. Three bullets under one unreleased heading read as three simultaneous
+  statements of one fact rather than as history, so only the last of them may
+  state the whole.
 - `docs/conformance.md` adds two entries to "What is deliberately unspecified":
   where Unicode property data comes from and at what version, and the fold
   machinery. A port reaching the same verdicts on the corpora conforms with any
   Unicode data source at any version. What stays specified is the span itself,
   which indexes the content the chain was given whatever view the match was
   found in.
+- **`secrets`' published row moves from 0.957 precision and 0.880 recall over
+  39 cases to 0.881 and 0.873 over 160**, wrong decisions 4 to 8, and the corpus
+  digest to `337e35f03cad`. The corpus grew from 39 cases to 160; the added
+  cases are span arithmetic on real credentials and three shapes the pattern
+  table has none of, and they are labelled with what should happen, so they cost
+  precision and recall rather than scoring as successes.
+
+  **This move shipped with no entry at all, and two published documents said it
+  had one.** The rule at the top of this file is that a release moving a
+  published figure says so with the old value and the new one;
+  `corpora/NOTICE.md` says "the drop is the point and the old figure is recorded
+  beside it in `CHANGELOG.md`" and `README.md` says this file "carries the old
+  figures beside the new ones". The commit that moved the row edited this file
+  only to insert a blank line, and the whole Unreleased section contained no
+  occurrence of the word `secrets`. The `rules` move on the same branch WAS
+  recorded correctly, which is what makes it a per-PR blind spot rather than an
+  unknown rule: each reviewer checked the figure in front of them and nobody
+  read this file against both.
+
 - **`url-exfiltration`'s published row moves from 0.914 precision and 0.914
   recall over 88 cases to 0.923 and 0.923 over 94**, F1 0.914 to 0.923, TP 32 to
   36, with false positives, false negatives and wrong decisions unchanged at 3,
@@ -344,6 +369,24 @@ a number that changes quietly is a number nobody can rely on.
   peaks at 0.9211 against 0.9231. The rejected number was the overfit.
 
 ### Fixed
+
+- Every published claim a whole-branch review found wrong is corrected, and
+  where the claim is a count or a figure it is now DERIVED rather than
+  rewritten. The porting contract printed a `rules` fixture that was no longer
+  the fixture its published row was measured under, because `fold_confusables`
+  was added to one and not the other; `corpora/NOTICE.md` still published a
+  pre-0.2.0 `injection-structural` row; `docs/performance.md` carried the
+  `rules` latency twice, old and new, in one unlabelled table; and two normative
+  paragraphs at the end of `docs/conformance.md` were merge splices, one
+  omitting a check and one duplicated rather than edited. Most of these came
+  from keep-both merge resolutions during a long parallel session: two branches
+  each edited a paragraph, both survived, and the document said one thing twice
+  with two different numbers. Nineteen guards now derive what was previously
+  written down.
+- Both adapter distributions declare Apache-2.0 and now ship the licence text
+  they declare.
+- Two module docstrings cited a test by a name it does not have.
+
 
 - The test suite runs from an unpacked source distribution. `pyproject.toml`
   states the sdist's purpose three times, including "the sdist ships the tests,
@@ -605,61 +648,12 @@ a number that changes quietly is a number nobody can rely on.
   fails closed. **No published number moves.** Every pattern in every bundled
   check and in the `rules` fixture is unable to match the empty string at any
   position, so none of them can produce a zero-width match at all.
-- The distribution declares `Apache-2.0 AND CC-BY-4.0 AND Unicode-3.0`. The
-  generated tables are derived from data files published by Unicode, Inc. under
-  the Unicode License v3 and ship in the wheel, and the raw files ship in the
-  sdist; the licence requires its notice to travel with copies or in associated
-  documentation. `corpora/NOTICE.md` carries the notice, the four digests and
-  the reason the data is vendored, and the README's licence section says so in
-  one sentence.
-- `docs/conformance.md` adds two entries to "What is deliberately unspecified":
-  where Unicode property data comes from and at what version, and the fold
-  machinery. A port reaching the same verdicts on the corpora conforms with any
-  Unicode data source at any version. What stays specified is the span itself,
-  which indexes the content the chain was given whatever view the match was
-  found in.
 
-
-- A `redact` the chain cannot locate, meaning no findings or a finding carrying
-  no span, is now a synthesised `deny` instead of a `GuardrailChainError` out of
-  `run`. It was the last shape in which one misbehaving detector cost the whole
-  run its audit record, including the verdicts of every guardrail that had
-  already run. Both shapes are reachable from an ordinary `Guardrail`
-  implementation, because a `Verdict` may carry a finding with no span and
-  nothing required a `redact` to carry findings at all, which makes them
-  detector contract violations rather than assertions about this library. The
-  content is not forwarded either way. `GuardrailChain._spans_of` keeps the same
-  refusals for a direct caller, where they are now genuinely unreachable through
-  `run`.
-- `training/ship_bar.json` records the structural corpus's own version digest
-  beside its path. The recorded floor is defined as decision-level recall
-  measured on the corpus at that path, so unrelated work that legitimately grows
-  that corpus moves the floor; with only a path recorded, nothing could tell a
-  re-derivation from a silent edit. A test now re-derives the digest and fails
-  until a move is disclosed in `structural_floor_rederived`.
-- The bar's digest is split in two. The semantic registration, which is what the
-  bar actually is, is digested on its own and has never moved; the whole file's
-  digest moves with a disclosed re-derivation of the structural side.
-  `clears_the_bar`, the file's prose statement of the same pass rule its values
-  state, was on neither side of that split until an adversarial review found it,
-  so the rule could be relaxed from `>` to `>=` in the sentence describing it
-  with every digest still green. A test now refuses any key on neither side, so
-  a field added later is a decision about which side it belongs to rather than a
-  field nobody digests.
-
-
-- Every GitHub Action in every workflow is pinned to a full commit SHA with a
-  comment naming the release it resolves to, in place of the floating tags
-  (`actions/checkout@v7` and the rest) the workflows used before. A tag is a
-  movable pointer, and these jobs read the repository, hold a job token and,
-  in `release.yml`, stand beside the OIDC identity PyPI trusts.
-- `tests/test_workflows.py` keeps them pinned. It reads every workflow file git
-  tracks rather than a list of names, parses each with PyYAML, and fails on any
-  `uses:` that is not a 40-hex commit SHA carrying a version comment.
 
 - `docs/performance.md` gains `url-exfiltration`: 112 ms median for one megabyte
-  of the seeded input, 9.4 megabytes per second, ratios of 3.90 to 4.04 per 4x of
-  input, which is the fastest of the four scanning checks. Its rows come from
+  of the seeded input and 9.4 megabytes per second when this bullet was written,
+  re-measured to 130 ms and 7.8 MB/s later in the same section for the reason
+  the bullet above gives. Its rows come from
   their own run of `scripts/measure_throughput.py` on the machine that page names
   rather than from a regeneration of the whole table, and the page says so: two
   runs on one laptop differ by a few percent in the p50 and more in the p99, so

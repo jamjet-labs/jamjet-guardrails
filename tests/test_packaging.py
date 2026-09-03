@@ -801,3 +801,109 @@ def test_every_inspected_unmarked_body_is_still_in_the_tree() -> None:
     corpus = "\n".join(text for name, text in _tracked_text() if name != "tests/test_packaging.py")
     stale = sorted(body for body in _INSPECTED_UNMARKED if body not in corpus)
     assert stale == [], f"_INSPECTED_UNMARKED names bodies no longer in the tree: {stale}"
+
+
+def test_the_wheel_carries_a_notice_for_every_licence_it_declares(built: tuple[Path, Path]) -> None:
+    """The wheel declared seven licence terms and shipped the text of one.
+
+    `pyproject.toml` sets out this project's own legal theory: a generated table
+    "is the same data re-encoded", the licence "grants the right to modify and
+    redistribute on exactly the condition that its notice travels", and a
+    project that ships a derived table under a licence field that does not name
+    its source "has made this file's own argument and not applied it to itself".
+    That theory was applied to Unicode and to CC-BY and not to the four terms
+    `template-data/` adds.
+
+    `detectors/_template_markers.py` is IN THE WHEEL and its markers are the
+    delimiter strings read out of the Gemma 2, Llama 2 and Llama 3 tokenizer
+    configurations. The Meta Llama 3 Community License requires its notice in a
+    distributed NOTICE file and the Gemma terms require the use restrictions to
+    reach downstream recipients; `dist-info/licenses/` held LICENSE alone and
+    `corpora/NOTICE.md`, which carries all four notices, was sdist-only. What
+    `pip install` delivered asserted four licences applied and named no way to
+    read any of them.
+
+    Derived from the marker table's own `Source` records, like the guard on the
+    declared expression, so a source added under a fifth licence fails here
+    until its notice reaches the wheel too.
+    """
+    from jamjet_guardrails.detectors._template_markers import SOURCES
+
+    _, wheel = built
+    with zipfile.ZipFile(wheel) as archive:
+        names = archive.namelist()
+        carried = {
+            name.rsplit("/", 1)[-1]: archive.read(name).decode("utf-8", "replace")
+            for name in names
+            if "/licenses/" in name
+        }
+    assert "LICENSE" in carried, f"the wheel carries no LICENSE; it has {sorted(carried)}"
+    assert "NOTICE.md" in carried, (
+        "the wheel carries no NOTICE.md, so an installer reading its own dist-info finds "
+        "no notice for the licences its METADATA declares"
+    )
+
+    notice = carried["NOTICE.md"]
+    vendor = sorted({source.licence for source in SOURCES if source.licence != "Apache-2.0"})
+    assert vendor, "no vendor licences in the marker table; this guard would prove nothing"
+    missing = [licence for licence in vendor if licence not in notice]
+    assert missing == [], (
+        f"the notice in the wheel names no terms for {missing}, which the marker table says "
+        "this package's shipped material is derived from"
+    )
+
+
+ADAPTERS = ("jamjet-guardrails-nemo", "jamjet-guardrails-validators")
+
+
+@pytest.mark.parametrize("adapter", ADAPTERS)
+def test_every_adapter_distribution_ships_the_licence_it_declares(
+    adapter: str, tmp_path: Path
+) -> None:
+    """Both adapters declared Apache-2.0 and shipped no copy of the text.
+
+    Under PEP 639 hatchling populates `License-File` and `dist-info/licenses/`
+    only from licence files found in the PROJECT root, which for these two
+    targets is their own directory and not the repository root. The core gets it
+    right by accident of layout: `LICENSE` sits beside its pyproject.toml.
+
+    Nothing saw it. The release workflow's adapter jobs assert the two `.co`
+    flows and `py.typed` are inside the wheel and stop there, this module never
+    looked under `packages/`, and neither adapter suite mentions a licence.
+    Publishing either tag would have put a distribution on PyPI declaring
+    Apache-2.0 while breaching its section 4(a), and `pip download` would have
+    returned no licence text for a redistributor to carry forward.
+
+    Parametrised over a named pair rather than a glob because a directory under
+    `packages/` that is not a distribution would make the glob silently right.
+    Both directions of the archive are read: the wheel, which is what most
+    installs get, and the sdist, which is what a distro packager rebuilds from.
+    """
+    project = ROOT / "packages" / adapter
+    assert (project / "pyproject.toml").is_file(), f"{adapter} is not a distribution"
+    done = subprocess.run(
+        [sys.executable, "-m", "hatchling", "build", "-d", str(tmp_path)],
+        cwd=project,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert done.returncode == 0, f"{adapter} build failed:\n{done.stdout}\n{done.stderr}"
+
+    wheels = list(tmp_path.glob("*.whl"))
+    sdists = list(tmp_path.glob("*.tar.gz"))
+    assert len(wheels) == 1 and len(sdists) == 1, f"built {wheels} and {sdists}"
+
+    with zipfile.ZipFile(wheels[0]) as archive:
+        licences = [n for n in archive.namelist() if "/licenses/" in n]
+        metadata_name = next(n for n in archive.namelist() if n.endswith("METADATA"))
+        headers = archive.read(metadata_name).decode()
+    assert licences, f"{adapter}'s wheel has no dist-info/licenses/ entry"
+    assert "License-File:" in headers, (
+        f"{adapter}'s wheel METADATA declares a licence expression and no License-File"
+    )
+
+    with tarfile.open(sdists[0]) as archive:
+        assert any(name.endswith("/LICENSE") for name in archive.getnames()), (
+            f"{adapter}'s sdist carries no LICENSE"
+        )
