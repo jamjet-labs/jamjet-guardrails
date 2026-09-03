@@ -29,11 +29,12 @@ so in-repo and third-party numbers can never be merged into one score.
 | `corpora/pii/in-repo.jsonl` | `in-repo` | `Apache-2.0` |
 | `corpora/rules/in-repo.jsonl` | `in-repo` | `Apache-2.0` |
 | `corpora/secrets/in-repo.jsonl` | `in-repo` | `Apache-2.0` |
+| `corpora/url-exfiltration/in-repo.jsonl` | `in-repo` | `Apache-2.0` |
 | `corpora/pii/third-party.jsonl` | `nvidia/Nemotron-PII@b70ffaf` | `CC-BY-4.0` |
 
 ## First-party corpora
 
-The four `in-repo` files were written for this repository and are covered by
+The `in-repo` files were written for this repository and are covered by
 its own Apache-2.0 licence. Every value in them is invented or is a published test
 value: `AKIAIOSFODNN7EXAMPLE` is AWS's own documentation example, `4111 1111
 1111 1111` is the universally published test PAN, and `example.com` and
@@ -214,6 +215,99 @@ is what stops one being relabelled onto the detector's own output.
 **There is no third-party corpus for this check.** The screen and what it found
 are under [What is deliberately absent, and
 why](#what-is-deliberately-absent-and-why).
+
+### `corpora/url-exfiltration/in-repo.jsonl`
+
+Written for this repository and covered by its Apache-2.0 licence. 88 cases, 35
+positives and 53 negatives, in both directions.
+
+Every attacker value in it is invented and every attacker host uses a label RFC
+2606 reserves for documentation: `attacker.example`, `evil.example`,
+`exfil.example`, `collector.example`, `redir.example`. The payloads are three
+invented sentences about an invented conversation. No real person, no real
+account and no real credential is in the file.
+
+**The negatives could not be invented, and are not.** A precision figure for this
+check is a statement about ordinary web content, so the negatives are the URL
+shapes ordinary web content is made of: this repository's own README and
+conformance links, image CDN parameters (`w`, `q`, `fm`, `fit`, width, height,
+format, quality, signature, `hmac`, `exp`), Cloudinary transformation path
+segments, two shields.io badges, search URLs on three engines, two OAuth
+authorization links whose `redirect_uri` is a percent-encoded absolute URL,
+YouTube watch and share links, UTM tracking parameters, a real 1x1 base64 PNG, a
+real base64 JPEG, a real base64 GIF, two benign SVG data URIs, `mailto:` and
+`tel:`, a signed CDN asset path, a UUID, a git SHA, an MD5 avatar hash and a
+Mapbox-shaped access token. The hosts of those are the real ones, because a
+negative that is not the shape people really write is a negative that proves
+nothing.
+
+**The disclosed misses.** 0.914 precision, 0.914 recall, 6 wrong decisions over
+88 cases. All six are below, and there are no other failures.
+
+Three cost precision:
+
+- `url-0083` and `url-0084` are a share intent and a prefilled GitHub issue,
+  carrying 206 and 263 characters of ordinary prose in a query string. Both are
+  labelled `allow` and both are denied. `LINK_QUERY_PAYLOAD` cannot separate
+  them from a payload, because there is nothing to separate: the two populations
+  overlap in length and in content.
+- `url-0076` is a charting API called with a `title` parameter, 78 characters of
+  prose in an image URL, labelled `allow` and denied. The argument for the image
+  signal is that an image request does not need to say anything. A charting
+  endpoint is where that argument stops being true.
+
+Three cost recall, and each is a residual named in `docs/conformance.md` as
+well:
+
+- `url-0078` carries the payload as a hex DNS label and `url-0079` as a
+  hyphenated sentence in a subdomain. **DNS-label exfiltration is not detected**,
+  and neither is prose in a hostname. Hostname labels that decode to text are too
+  close to ordinary hostnames to defend a number.
+- `url-0080` is base64 of percent-encoded prose. **A doubly encoded payload
+  passes**, because decoded text is never fed back to the decoder.
+
+**Two more residuals carry no failing case, because they are allowed by design
+and the corpus says so.** A `redirect_uri` whose inner absolute URL is plainly
+percent-encoded does not fire `NESTED_REDIRECT`: `url-0046`, `url-0047` and
+`url-0081` are labelled `allow` and are allowed, and closing that would deny
+every OAuth link there is. And a search link longer than the 136-character floor
+would fire: `url-0088` is a 135-character search query that passes by one
+character, which is what a floor fitted to a corpus looks like from the inside.
+
+**The floors were swept, and one sweep result was rejected.** Each of the four
+decode floors and both prose floors was swept from 1 to 259 in steps of one over
+this corpus, one at a time with everything else at its shipped setting. The two
+prose floors are the smallest value reaching the best F1: 30 for an image query
+(29 costs precision, 65 costs recall) and 136 for a link query (135 costs
+precision, 177 costs recall). The four decode floors are NOT the sweep's argmax
+and the module says why: their curves are flat from 1 up to a ceiling, so the
+sweep bounds them and does not choose them. The rejected result is the percent
+floor, where F1 rises from 0.9143 to 0.9275 anywhere between 107 and 147 by
+refusing to read a 106-character `title` parameter in one case and shutting again
+one past a 147-character run in another. A window bounded at both ends by two
+strings in one corpus is a value fitted to that corpus, so 6 ships instead.
+
+**Rot13 ships, and here is the measurement it shipped on.** Every alphabetic run
+is a rot13 candidate, so the test is two-sided: the original run must fail the
+prose test and the rotated run must pass it. Removing rot13 with nothing else
+changed moves this corpus from 0.9143 / 0.9143 / 6 wrong to 0.9091 precision,
+0.8571 recall and 8 wrong. Two positives are lost, `url-0071` and `url-0072`, and
+the false-positive count does not move: 3 either way, over 53 negatives that are
+almost entirely ordinary English prose and therefore rot13 candidates every one.
+
+**The function-word list behind the prose test is a substitute, and it is named
+as one.** It was to be derived from the external evaluation corpus in
+`training/`, which loads out of `data/` and is gitignored, so a clone does not
+have it. It is derived instead from `training/generated/rows.jsonl`, which is
+tracked: the forty commonest words of its 112,473 tokens. Six of the forty are
+content words of that corpus's own subject matter, and they are kept rather than
+removed by hand, because "the forty commonest, minus the ones I did not like" is
+an enumeration.
+
+**There is no third-party corpus for this check.** No compatibly-licensed
+labelled corpus of URL exfiltration was found, so these numbers are measured on
+our own file only and are self-graded in the same way the injection-structural,
+rules and secrets numbers are.
 
 ## How to read the numbers these corpora produce
 

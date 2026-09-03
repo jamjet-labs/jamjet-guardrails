@@ -44,6 +44,7 @@ pip install jamjet-guardrails
 | `injection-structural` | instructions hidden in the encoding rather than the words | invisible tag characters, unbalanced bidirectional controls, zero-width runs |
 | `pii` | personal data, redacted to typed placeholders | email addresses, card numbers, US SSNs, phone numbers |
 | `secrets` | credentials, matched on their issuer prefix | `sk-`, `AKIA`, `ghp_`, `xoxb-` prefixes and PEM private key headers |
+| `url-exfiltration` | URLs that carry data out rather than fetch something in | a markdown image whose query string is your conversation, a `data:` URI that says it is a picture, a `javascript:` scheme |
 | `rules` | whatever you define | your ticket ids, internal hostnames, banned codenames, size limits |
 
 Every check runs on input and on output, returns `allow`, `redact` or `deny`,
@@ -125,6 +126,7 @@ Branch on the decision first.
 | `pii` | constraint | input, output | `CREDIT_CARD`, `EMAIL`, `PHONE_NUMBER`, `US_SSN` |
 | `rules` | constraint | input, output | `INTERNAL_HOST`, `LENGTH_LIMIT`, `PROJECT_CODENAME`, `TICKET_ID` |
 | `secrets` | constraint | input, output | `ANTHROPIC_KEY`, `AWS_ACCESS_KEY`, `GITHUB_TOKEN`, `JWT`, `OPENAI_KEY`, `PRIVATE_KEY`, `SLACK_TOKEN` |
+| `url-exfiltration` | constraint | input, output | `DATA_URI_PAYLOAD`, `LINK_QUERY_PAYLOAD`, `MARKDOWN_IMAGE_EXFIL`, `NESTED_REDIRECT`, `SCRIPT_SCHEME` |
 
 **`injection-structural`** is the one worth reading about. It looks at
 instruction smuggling in the encoding rather than in the words: Unicode tag
@@ -152,6 +154,16 @@ what makes its precision defensible and what keeps it off your git SHAs and
 UUIDs. Two shapes are named here rather than left for you to find:
 `github_pat_` fine-grained tokens and `xapp-` Slack app-level tokens are not
 among the prefixes matched, so both pass through untouched.
+
+**`url-exfiltration`** looks at what a URL carries rather than at where it
+points. A markdown image is fetched by the client without anyone clicking it,
+so a query string that decodes to a sentence is a channel out; a `data:` URI
+that declares itself a PNG and holds text is lying about itself; a
+`javascript:` scheme survives being written `java&#115;cript:` because that is
+how a browser reads it. There is no list of trusted hosts anywhere in it, and
+that is deliberate: a list of hosts you trust is a list of hosts to route
+through. What it does not catch is published beside what it does, in
+[corpora/NOTICE.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/corpora/NOTICE.md).
 
 **`rules`** is the check whose types you choose. It takes your own regular
 expressions, banned substrings and size limits.
@@ -259,6 +271,7 @@ failures is a number you cannot check.
 | pii | pii/third-party | nvidia/Nemotron-PII@b70ffaf | `c25ef538d677` | 300 | 0.960 | 0.997 | 0.978 | 340 | 14 | 1 | 6 |
 | rules | rules/in-repo | in-repo | `f1b809114b13` | 40 | 1.000 | 1.000 | 1.000 | 28 | 0 | 0 | 0 |
 | secrets | secrets/in-repo | in-repo | `337e35f03cad` | 160 | 0.881 | 0.873 | 0.877 | 96 | 13 | 14 | 8 |
+| url-exfiltration | url-exfiltration/in-repo | in-repo | `c8015e4e93e2` | 88 | 0.914 | 0.914 | 0.914 | 32 | 3 | 3 | 6 |
 
 See [BENCHMARKS.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/BENCHMARKS.md) for the per-type scores and the worst misses
 behind these numbers, and [corpora/NOTICE.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/corpora/NOTICE.md) for what each
@@ -309,9 +322,9 @@ carries the old figures beside the new ones.
 
 Numbers measured on a corpus we wrote are reported separately from numbers
 measured on a corpus we did not, and the two are never merged. There is no
-third-party corpus for `injection-structural`, `rules` or `secrets`. No
-compatibly licensed one was found for any of them, so all three are measured on
-our own corpora only and are self-graded.
+third-party corpus for `injection-structural`, `rules`, `secrets` or
+`url-exfiltration`. No compatibly licensed one was found for any of them, so
+all four are measured on our own corpora only and are self-graded.
 
 The third-party PII corpus is derived from
 [nvidia/Nemotron-PII](https://huggingface.co/datasets/nvidia/Nemotron-PII),

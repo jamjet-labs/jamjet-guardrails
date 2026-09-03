@@ -10,6 +10,7 @@ every score. How to read them is under the table.
 | pii | pii/third-party | nvidia/Nemotron-PII@b70ffaf | `c25ef538d677` | 300 | 0.960 | 0.997 | 0.978 | 340 | 14 | 1 | 6 |
 | rules | rules/in-repo | in-repo | `f1b809114b13` | 40 | 1.000 | 1.000 | 1.000 | 28 | 0 | 0 | 0 |
 | secrets | secrets/in-repo | in-repo | `337e35f03cad` | 160 | 0.881 | 0.873 | 0.877 | 96 | 13 | 14 | 8 |
+| url-exfiltration | url-exfiltration/in-repo | in-repo | `c8015e4e93e2` | 88 | 0.914 | 0.914 | 0.914 | 32 | 3 | 3 | 6 |
 
 ## How to read this
 
@@ -119,6 +120,16 @@ above clamped it.
 | PRIVATE_KEY | 0.786 | 1.000 | 11 | 3 | 0 |
 | SLACK_TOKEN | 0.923 | 0.750 | 12 | 1 | 4 |
 
+## Per type: url-exfiltration on url-exfiltration/in-repo (in-repo, `c8015e4e93e2`)
+
+| Type | Precision | Recall | TP | FP | FN |
+|---|---:|---:|---:|---:|---:|
+| DATA_URI_PAYLOAD | 1.000 | 1.000 | 7 | 0 | 0 |
+| LINK_QUERY_PAYLOAD | 0.714 | 1.000 | 5 | 2 | 0 |
+| MARKDOWN_IMAGE_EXFIL | 0.900 | 0.750 | 9 | 1 | 3 |
+| NESTED_REDIRECT | 1.000 | 1.000 | 5 | 0 | 0 |
+| SCRIPT_SCHEME | 1.000 | 1.000 | 6 | 0 | 0 |
+
 ## Worst misses: injection-structural on injection-structural/in-repo (in-repo, `b704703f431d`)
 
 | Case | Kind | Expected | Predicted |
@@ -170,3 +181,15 @@ No misses on this corpus.
 | `sec-0109` | decision_mismatch | redact | allow |
 
 ...and 30 more, in `benchmarks.json`.
+
+## Worst misses: url-exfiltration on url-exfiltration/in-repo (in-repo, `c8015e4e93e2`)
+
+| Case | Kind | Expected | Predicted |
+|---|---|---|---|
+| `url-0076` | decision_mismatch | allow | deny |
+| `url-0083` | decision_mismatch | allow | deny |
+| `url-0084` | decision_mismatch | allow | deny |
+| `url-0078` | decision_mismatch | deny | allow |
+| `url-0079` | decision_mismatch | deny | allow |
+
+...and 7 more, in `benchmarks.json`.

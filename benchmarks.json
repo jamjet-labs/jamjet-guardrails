@@ -1063,6 +1063,132 @@
           "predicted": "PRIVATE_KEY@(36, 66)"
         }
       ]
+    },
+    {
+      "detector": "url-exfiltration",
+      "detector_version": "0.1.0",
+      "corpus_name": "url-exfiltration/in-repo",
+      "corpus_source": "in-repo",
+      "corpus_version": "c8015e4e93e2",
+      "cases": 88,
+      "precision": 0.9143,
+      "recall": 0.9143,
+      "f1": 0.9143,
+      "true_positives": 32,
+      "false_positives": 3,
+      "false_negatives": 3,
+      "decision_mismatches": 6,
+      "per_type": {
+        "DATA_URI_PAYLOAD": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "true_positives": 7,
+          "false_positives": 0,
+          "false_negatives": 0
+        },
+        "LINK_QUERY_PAYLOAD": {
+          "precision": 0.7143,
+          "recall": 1.0,
+          "true_positives": 5,
+          "false_positives": 2,
+          "false_negatives": 0
+        },
+        "MARKDOWN_IMAGE_EXFIL": {
+          "precision": 0.9,
+          "recall": 0.75,
+          "true_positives": 9,
+          "false_positives": 1,
+          "false_negatives": 3
+        },
+        "NESTED_REDIRECT": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "true_positives": 5,
+          "false_positives": 0,
+          "false_negatives": 0
+        },
+        "SCRIPT_SCHEME": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "true_positives": 6,
+          "false_positives": 0,
+          "false_negatives": 0
+        }
+      },
+      "failures": [
+        {
+          "case_id": "url-0076",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "deny"
+        },
+        {
+          "case_id": "url-0083",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "deny"
+        },
+        {
+          "case_id": "url-0084",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "deny"
+        },
+        {
+          "case_id": "url-0078",
+          "kind": "decision_mismatch",
+          "expected": "deny",
+          "predicted": "allow"
+        },
+        {
+          "case_id": "url-0079",
+          "kind": "decision_mismatch",
+          "expected": "deny",
+          "predicted": "allow"
+        },
+        {
+          "case_id": "url-0080",
+          "kind": "decision_mismatch",
+          "expected": "deny",
+          "predicted": "allow"
+        },
+        {
+          "case_id": "url-0078",
+          "kind": "false_negative",
+          "expected": "MARKDOWN_IMAGE_EXFIL@(8, 106)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "url-0079",
+          "kind": "false_negative",
+          "expected": "MARKDOWN_IMAGE_EXFIL@(8, 84)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "url-0080",
+          "kind": "false_negative",
+          "expected": "MARKDOWN_IMAGE_EXFIL@(8, 244)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "url-0076",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "MARKDOWN_IMAGE_EXFIL@(0, 176)"
+        },
+        {
+          "case_id": "url-0083",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "LINK_QUERY_PAYLOAD@(19, 392)"
+        },
+        {
+          "case_id": "url-0084",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "LINK_QUERY_PAYLOAD@(14, 497)"
+        }
+      ]
     }
   ]
 }

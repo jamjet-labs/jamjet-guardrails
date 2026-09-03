@@ -34,7 +34,13 @@ OUT = Context(direction="output", origin="model")
 
 
 def test_every_bundled_detector_is_registered() -> None:
-    assert set(AVAILABLE) == {"injection-structural", "pii", "rules", "secrets"}
+    assert set(AVAILABLE) == {
+        "injection-structural",
+        "pii",
+        "rules",
+        "secrets",
+        "url-exfiltration",
+    }
 
 
 def test_build_returns_a_working_guardrail() -> None:

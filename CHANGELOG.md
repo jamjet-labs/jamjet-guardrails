@@ -10,7 +10,6 @@ a number that changes quietly is a number nobody can rely on.
 
 ## [Unreleased]
 
-
 ### Added
 
 - `docs/performance.md` publishes p50, p95 and p99 per check over deterministic
@@ -191,6 +190,84 @@ a number that changes quietly is a number nobody can rely on.
   fails closed. **No published number moves.** Every pattern in every bundled
   check and in the `rules` fixture is unable to match the empty string at any
   position, so none of them can produce a zero-width match at all.
+- The distribution declares `Apache-2.0 AND CC-BY-4.0 AND Unicode-3.0`. The
+  generated tables are derived from data files published by Unicode, Inc. under
+  the Unicode License v3 and ship in the wheel, and the raw files ship in the
+  sdist; the licence requires its notice to travel with copies or in associated
+  documentation. `corpora/NOTICE.md` carries the notice, the four digests and
+  the reason the data is vendored, and the README's licence section says so in
+  one sentence.
+- `docs/conformance.md` adds two entries to "What is deliberately unspecified":
+  where Unicode property data comes from and at what version, and the fold
+  machinery. A port reaching the same verdicts on the corpora conforms with any
+  Unicode data source at any version. What stays specified is the span itself,
+  which indexes the content the chain was given whatever view the match was
+  found in.
+
+
+- A `redact` the chain cannot locate, meaning no findings or a finding carrying
+  no span, is now a synthesised `deny` instead of a `GuardrailChainError` out of
+  `run`. It was the last shape in which one misbehaving detector cost the whole
+  run its audit record, including the verdicts of every guardrail that had
+  already run. Both shapes are reachable from an ordinary `Guardrail`
+  implementation, because a `Verdict` may carry a finding with no span and
+  nothing required a `redact` to carry findings at all, which makes them
+  detector contract violations rather than assertions about this library. The
+  content is not forwarded either way. `GuardrailChain._spans_of` keeps the same
+  refusals for a direct caller, where they are now genuinely unreachable through
+  `run`.
+- `training/ship_bar.json` records the structural corpus's own version digest
+  beside its path. The recorded floor is defined as decision-level recall
+  measured on the corpus at that path, so unrelated work that legitimately grows
+  that corpus moves the floor; with only a path recorded, nothing could tell a
+  re-derivation from a silent edit. A test now re-derives the digest and fails
+  until a move is disclosed in `structural_floor_rederived`.
+- The bar's digest is split in two. The semantic registration, which is what the
+  bar actually is, is digested on its own and has never moved; the whole file's
+  digest moves with a disclosed re-derivation of the structural side.
+  `clears_the_bar`, the file's prose statement of the same pass rule its values
+  state, was on neither side of that split until an adversarial review found it,
+  so the rule could be relaxed from `>` to `>=` in the sentence describing it
+  with every digest still green. A test now refuses any key on neither side, so
+  a field added later is a decision about which side it belongs to rather than a
+  field nobody digests.
+
+
+- Every GitHub Action in every workflow is pinned to a full commit SHA with a
+  comment naming the release it resolves to, in place of the floating tags
+  (`actions/checkout@v7` and the rest) the workflows used before. A tag is a
+  movable pointer, and these jobs read the repository, hold a job token and,
+  in `release.yml`, stand beside the OIDC identity PyPI trusts.
+- `tests/test_workflows.py` keeps them pinned. It reads every workflow file git
+  tracks rather than a list of names, parses each with PyYAML, and fails on any
+  `uses:` that is not a 40-hex commit SHA carrying a version comment.
+
+- `docs/performance.md` gains `url-exfiltration`: 112 ms median for one megabyte
+  of the seeded input, 9.4 megabytes per second, ratios of 3.90 to 4.04 per 4x of
+  input, which is the fastest of the four scanning checks. Its rows come from
+  their own run of `scripts/measure_throughput.py` on the machine that page names
+  rather than from a regeneration of the whole table, and the page says so: two
+  runs on one laptop differ by a few percent in the p50 and more in the p99, so
+  rewriting every other check's numbers would have read as a regression in
+  checks nobody had touched.
+
+### Disclosed
+
+- **DNS-label exfiltration is not detected**, and neither is prose in a hostname.
+  Only path segments and query components are decoded and tested. `url-0078` and
+  `url-0079` are labelled `deny`, are allowed, and cost recall rather than
+  sitting in prose.
+- **A doubly encoded payload passes.** One level of decoding only, and decoded
+  text is never fed back to the decoder. `url-0080` is the measured example.
+- **A nested redirect whose inner URL is plainly percent-encoded does not fire.**
+  That is by design: percent-encoding is what the query syntax already provides,
+  and firing on it denies every OAuth authorization link there is.
+- **A link query longer than 136 characters fires whether or not it is a
+  payload.** The floor was set by sweep and it does not separate the two
+  populations, because they overlap: a share intent and a prefilled issue body in
+  the corpus carry 206 and 263 characters of ordinary prose and are denied.
+- **Rot13 ships**, on a two-sided test and a measured ablation: removing it costs
+  two true positives and returns no precision.
 
 ## [0.3.0]
 
