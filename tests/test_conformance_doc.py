@@ -22,13 +22,13 @@ from __future__ import annotations
 
 import dataclasses
 import re
-import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, get_args
 
 import pytest
 
+from _tracked import tracked as shipped
 from jamjet_guardrails import (
     ChainResult,
     Context,
@@ -143,13 +143,7 @@ def test_no_design_spec_travels_with_the_code() -> None:
     supposed to live. What must not happen is one being committed, since
     hatchling builds the sdist from what git tracks.
     """
-    tracked = subprocess.run(
-        ["git", "ls-files", "docs/specs"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.split()
+    tracked = shipped("docs/specs")
     assert tracked == [], f"design specs are tracked and would ship in the sdist: {tracked}"
 
 
@@ -166,9 +160,7 @@ def test_no_document_that_ships_describes_work_that_does_not_exist() -> None:
     Tracked Markdown is the domain because that is what hatchling puts in the
     sdist, so a document is in scope exactly when a reader can receive it.
     """
-    tracked = subprocess.run(
-        ["git", "ls-files", "*.md"], cwd=ROOT, capture_output=True, text=True, check=True
-    ).stdout.split()
+    tracked = shipped("*.md")
     assert tracked, "no tracked Markdown found; this check would prove nothing"
     promised = {
         name: found

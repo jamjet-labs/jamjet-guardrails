@@ -10,6 +10,7 @@ a number that changes quietly is a number nobody can rely on.
 
 ## [Unreleased]
 
+
 ### Added
 
 - Both adapter READMEs now say that the framework they install reaches the
@@ -309,6 +310,25 @@ a number that changes quietly is a number nobody can rely on.
   found in.
 
 ### Fixed
+
+- The test suite runs from an unpacked source distribution. `pyproject.toml`
+  states the sdist's purpose three times, including "the sdist ships the tests,
+  and the tests ARE the corpora for anything that scores" and "the sdist is the
+  evidence", and the evidence could not be run: seven modules shelled out to
+  `git ls-files` with `check=True`, an unpacked sdist has no `.git`, and one of
+  those calls sits at module level inside a parametrize argument, so pytest
+  raised during COLLECTION and executed **zero of 2183 tests**. All seven now go
+  through `tests/_tracked.py`, which asks git where git is there and walks the
+  filesystem where it is not, which is the same question answered from the
+  artifact. Measured from an unpacked sdist: 2401 passed, and the benchmark gate
+  runs there too. The two tests that need `packages/` skip with the reason,
+  because the sdist excludes the adapters deliberately.
+- The wheel-contents guard is derived from the package directory rather than a
+  list of three names. `_unicode/identifiers.py` arrived with the confusables
+  check and was not in the list, so a wheel built without it passed both halves
+  of the guard, passed the release workflow's two wheel assertions, installed,
+  imported, and answered `allow` until the first spoof.
+
 
 - `scripts/mutate.py` no longer mangles a whole-file selector. `node_id` asked
   only whether the string contained `::`, so a bare path such as

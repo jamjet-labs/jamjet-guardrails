@@ -36,12 +36,13 @@ and the header comment at the top of each workflow says how to do it.
 from __future__ import annotations
 
 import re
-import subprocess
 from pathlib import Path
 from typing import Any
 
 import pytest
 import yaml
+
+from _tracked import tracked as shipped
 
 ROOT = Path(__file__).resolve().parent.parent
 WORKFLOWS = ROOT / ".github" / "workflows"
@@ -89,13 +90,7 @@ def _tracked_workflows() -> list[Path]:
     somebody fixes by deleting a guard. The earlier version of this docstring
     claimed to return workflow files and returned every tracked path here.
     """
-    tracked = subprocess.run(
-        ["git", "ls-files", ".github/workflows"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.split()
+    tracked = shipped(".github/workflows")
     return [ROOT / name for name in tracked if name.endswith((".yml", ".yaml"))]
 
 

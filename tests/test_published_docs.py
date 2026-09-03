@@ -13,8 +13,9 @@ add it.
 from __future__ import annotations
 
 import re
-import subprocess
 from pathlib import Path
+
+from _tracked import tracked as shipped
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -55,13 +56,7 @@ def _published_markdown() -> list[Path]:
     Read from git, not from a glob: what ships in the sdist is what git tracks,
     so this is the same set a reader can see.
     """
-    tracked = subprocess.run(
-        ["git", "ls-files", "*.md"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.split()
+    tracked = shipped("*.md")
     return [ROOT / name for name in tracked]
 
 
