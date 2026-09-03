@@ -9,6 +9,8 @@ findings behind it, and a record of which check made it over exactly what text.
 
 No dependencies. No network calls. No model downloads. Python 3.10 and above.
 
+[What this is and what it measures](https://jamjet.dev/guardrails/)
+
 ```mermaid
 flowchart TD
   U[user input] --> IN
