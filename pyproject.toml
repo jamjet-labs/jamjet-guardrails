@@ -43,12 +43,40 @@ readme = "README.md"
 # reveals it". A project that says that and then ships a CC-BY corpus under a
 # bare `Apache-2.0` has made the argument and not applied it to itself.
 #
-# The alternative was to drop `corpora/` and `unicode-data/` from the sdist.
-# Rejected twice over: the sdist ships the tests, and the tests ARE the corpora
-# for anything that scores; and the raw Unicode files are the evidence a reader
-# regenerates the vendored tables from, which is the only way to check that
-# what the package matches on is what Unicode published.
-license = "Apache-2.0 AND CC-BY-4.0 AND Unicode-3.0"
+# The alternative was to drop `corpora/`, `unicode-data/` and `template-data/`
+# from the sdist. Rejected three times over: the sdist ships the tests, and the
+# tests ARE the corpora for anything that scores; the raw Unicode files are the
+# evidence a reader regenerates the vendored tables from, which is the only way
+# to check that what the package matches on is what Unicode published; and
+# `template-data/` is the same argument for the chat-template marker table.
+#
+# WHAT EACH TERM COVERS, because an expression nobody can decompose is a longer
+# way of saying nothing:
+#
+#   Apache-2.0                      the code, and every first-party corpus
+#   CC-BY-4.0                       corpora/pii/third-party.jsonl, derived from
+#                                   nvidia/Nemotron-PII
+#   Unicode-3.0                     unicode-data/16.0.0/ and the two modules
+#                                   generated from it, which are that data
+#                                   re-encoded and therefore a derivative work
+#   MIT                             template-data/ from Phi-3, DeepSeek V3,
+#                                   GPT-2 and the W3C element index
+#   LicenseRef-Llama-2-Community    template-data/llama-2-chat/
+#   LicenseRef-Meta-Llama-3-Community  template-data/llama-3-instruct/
+#   LicenseRef-Gemma-Terms          template-data/gemma-2-instruct/
+#
+# The three `LicenseRef-` identifiers are SPDX's own mechanism for a licence
+# that has no SPDX short identifier, which these three do not: they are vendor
+# community licences with use restrictions rather than OSI-approved terms. The
+# alternative was to drop them silently into "and others", which is the shape
+# this project rejects in `docs/conformance.md` when somebody else does it.
+#
+# What travels under them is tokenizer CONFIGURATION: JSON settings, special
+# token names and a Jinja template, a few kilobytes each. No weights and no
+# model output. All four families permit that with notice, and
+# `corpora/NOTICE.md` carries the notices, the acceptable-use URLs and the
+# gated-mirror provenance for each.
+license = "Apache-2.0 AND CC-BY-4.0 AND Unicode-3.0 AND MIT AND LicenseRef-Llama-2-Community AND LicenseRef-Meta-Llama-3-Community AND LicenseRef-Gemma-Terms"
 requires-python = ">=3.10"
 dependencies = []
 authors = [{ name = "Sunil Prakash" }]

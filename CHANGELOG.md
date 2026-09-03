@@ -10,6 +10,7 @@ a number that changes quietly is a number nobody can rely on.
 
 ## [Unreleased]
 
+
 ### Added
 
 - New check `confusables`, a constraint in both directions denying by default
@@ -145,6 +146,19 @@ a number that changes quietly is a number nobody can rely on.
   containment beside the miss.
 
 ### Changed
+
+- The distribution's SPDX expression names the licences `template-data/` adds:
+  `MIT`, and `LicenseRef-Llama-2-Community`, `LicenseRef-Meta-Llama-3-Community`
+  and `LicenseRef-Gemma-Terms` for the three vendor community licences that have
+  no SPDX short identifier. That material has been in the source distribution
+  since the marker table landed and the licence field named none of it. The two
+  guards that already existed could not see it, for the same reason: one reads
+  the corpora, where every row carries its own `license`, and the other reads
+  the built archives for Unicode data. A third guard now derives the domain from
+  the marker table's own `Source` records, so a source added under a fifth
+  licence fails until the expression names it, and a licence string the mapping
+  does not recognise fails rather than being skipped.
+
 
 - A `redact` the chain cannot locate, meaning no findings or a finding carrying
   no span, is now a synthesised `deny` instead of a `GuardrailChainError` out of

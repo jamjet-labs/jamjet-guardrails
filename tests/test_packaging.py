@@ -295,6 +295,58 @@ def test_the_declared_licence_covers_every_licence_the_corpora_carry() -> None:
     )
 
 
+def test_the_declared_licence_covers_every_licence_template_data_carries() -> None:
+    """The third half, and the one that was missing while the material shipped.
+
+    `template-data/` redistributes tokenizer configuration read out of eight
+    model repositories, four licence families between them, and the licence
+    field named none of them for as long as the files were in the sdist. The
+    guard above could not see it, for the same reason it could not see the
+    Unicode data: this is not a corpus, it carries no `license` row and no
+    loader refuses it. So the suite was green over exactly the gap this file
+    exists to close, which is the defect `tests/test_published_docs.py` was
+    written about, arriving in a third place.
+
+    DERIVED from the marker table's own `Source` records rather than from a
+    list here. A source added to `scripts/generate_template_markers.py` under a
+    fifth licence fails this until the expression names it, and no one has to
+    remember.
+
+    Two of the four families have no SPDX short identifier, because they are
+    vendor community licences with use restrictions rather than OSI-approved
+    terms. SPDX's own mechanism for that is a `LicenseRef-` identifier, and the
+    mapping from the source's own licence string to that identifier is the one
+    thing this test cannot derive: it is a judgement about which published
+    licence a name refers to. It is written out here, and a licence string this
+    mapping does not know fails rather than being skipped, because a source
+    whose licence nobody classified is exactly the one worth stopping for.
+    """
+    from importlib.metadata import metadata
+
+    from jamjet_guardrails.detectors._template_markers import HTML_ELEMENT_SOURCE, SOURCES
+
+    spdx = {
+        "MIT": "MIT",
+        "Apache-2.0": "Apache-2.0",
+        "LLAMA 2 Community License": "LicenseRef-Llama-2-Community",
+        "Meta Llama 3 Community License": "LicenseRef-Meta-Llama-3-Community",
+        "Gemma Terms of Use": "LicenseRef-Gemma-Terms",
+    }
+    declared = metadata("jamjet-guardrails")["License-Expression"]
+    sources = [*SOURCES, HTML_ELEMENT_SOURCE]
+    assert sources, "no template sources found; this guard would prove nothing"
+
+    unclassified = sorted({s.licence for s in sources if s.licence not in spdx})
+    assert unclassified == [], (
+        f"template-data carries licences this test cannot map to an SPDX identifier: "
+        f"{unclassified}. Classify them here rather than letting them ship unnamed"
+    )
+    missing = sorted({spdx[s.licence] for s in sources if spdx[s.licence] not in declared})
+    assert missing == [], (
+        f"the distribution declares {declared!r} and ships template-data licensed {missing}"
+    )
+
+
 # ==========================================================================
 # What is INSIDE the built archives, which nothing above this line can see.
 # ==========================================================================
