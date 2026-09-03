@@ -1786,6 +1786,7 @@ _DECISION_KEYWORD: dict[str, str] = {
     "injection-structural": "on_match",
     "pii": "on_match",
     "rules": "on_match",
+    "script-constraint": "on_match",
     "secrets": "on_match",
     "url-exfiltration": "on_detect",
 }

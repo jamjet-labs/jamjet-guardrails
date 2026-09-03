@@ -9,10 +9,9 @@ every score. How to read them is under the table.
 | pii | pii/in-repo | in-repo | `06fb3b601aba` | 81 | 0.631 | 0.872 | 0.732 | 41 | 24 | 6 | 24 |
 | pii | pii/third-party | nvidia/Nemotron-PII@b70ffaf | `c25ef538d677` | 300 | 0.960 | 0.997 | 0.978 | 340 | 14 | 1 | 6 |
 | rules | rules/in-repo | in-repo | `f1b809114b13` | 40 | 1.000 | 1.000 | 1.000 | 28 | 0 | 0 | 0 |
+| script-constraint | script-constraint/in-repo | in-repo | `92fddb0f04be` | 85 | 1.000 | 1.000 | 1.000 | 50 | 0 | 0 | 0 |
 | secrets | secrets/in-repo | in-repo | `337e35f03cad` | 160 | 0.881 | 0.873 | 0.877 | 96 | 13 | 14 | 8 |
 | url-exfiltration | url-exfiltration/in-repo | in-repo | `c8015e4e93e2` | 88 | 0.914 | 0.914 | 0.914 | 32 | 3 | 3 | 6 |
-| script-constraint | script-constraint/in-repo | in-repo | `92fddb0f04be` | 85 | 1.000 | 1.000 | 1.000 | 50 | 0 | 0 | 0 |
-| secrets | secrets/in-repo | in-repo | `e9e0ed70dc37` | 39 | 0.957 | 0.880 | 0.917 | 22 | 1 | 3 | 4 |
 
 ## How to read this
 
@@ -110,14 +109,13 @@ above clamped it.
 | PROJECT_CODENAME | 1.000 | 1.000 | 7 | 0 | 0 |
 | TICKET_ID | 1.000 | 1.000 | 8 | 0 | 0 |
 
-## Per type: secrets on secrets/in-repo (in-repo, `337e35f03cad`)
 ## Per type: script-constraint on script-constraint/in-repo (in-repo, `92fddb0f04be`)
 
 | Type | Precision | Recall | TP | FP | FN |
 |---|---:|---:|---:|---:|---:|
 | DISALLOWED_SCRIPT | 1.000 | 1.000 | 50 | 0 | 0 |
 
-## Per type: secrets on secrets/in-repo (in-repo, `e9e0ed70dc37`)
+## Per type: secrets on secrets/in-repo (in-repo, `337e35f03cad`)
 
 | Type | Precision | Recall | TP | FP | FN |
 |---|---:|---:|---:|---:|---:|
@@ -179,12 +177,11 @@ above clamped it.
 
 No misses on this corpus.
 
-## Worst misses: secrets on secrets/in-repo (in-repo, `337e35f03cad`)
 ## Worst misses: script-constraint on script-constraint/in-repo (in-repo, `92fddb0f04be`)
 
 No misses on this corpus.
 
-## Worst misses: secrets on secrets/in-repo (in-repo, `e9e0ed70dc37`)
+## Worst misses: secrets on secrets/in-repo (in-repo, `337e35f03cad`)
 
 | Case | Kind | Expected | Predicted |
 |---|---|---|---|

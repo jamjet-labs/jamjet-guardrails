@@ -29,11 +29,6 @@
     "precision": 0.88,
     "recall": 0.872
   },
-  "secrets/in-repo/e9e0ed70dc37": {
-    "decision_mismatches": 4,
-    "precision": 0.956,
-    "recall": 0.88
-  },
   "url-exfiltration/in-repo/c8015e4e93e2": {
     "decision_mismatches": 6,
     "precision": 0.914,

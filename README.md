@@ -285,10 +285,9 @@ failures is a number you cannot check.
 | pii | pii/in-repo | in-repo | `06fb3b601aba` | 81 | 0.631 | 0.872 | 0.732 | 41 | 24 | 6 | 24 |
 | pii | pii/third-party | nvidia/Nemotron-PII@b70ffaf | `c25ef538d677` | 300 | 0.960 | 0.997 | 0.978 | 340 | 14 | 1 | 6 |
 | rules | rules/in-repo | in-repo | `f1b809114b13` | 40 | 1.000 | 1.000 | 1.000 | 28 | 0 | 0 | 0 |
+| script-constraint | script-constraint/in-repo | in-repo | `92fddb0f04be` | 85 | 1.000 | 1.000 | 1.000 | 50 | 0 | 0 | 0 |
 | secrets | secrets/in-repo | in-repo | `337e35f03cad` | 160 | 0.881 | 0.873 | 0.877 | 96 | 13 | 14 | 8 |
 | url-exfiltration | url-exfiltration/in-repo | in-repo | `c8015e4e93e2` | 88 | 0.914 | 0.914 | 0.914 | 32 | 3 | 3 | 6 |
-| script-constraint | script-constraint/in-repo | in-repo | `92fddb0f04be` | 85 | 1.000 | 1.000 | 1.000 | 50 | 0 | 0 | 0 |
-| secrets | secrets/in-repo | in-repo | `e9e0ed70dc37` | 39 | 0.957 | 0.880 | 0.917 | 22 | 1 | 3 | 4 |
 
 See [BENCHMARKS.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/BENCHMARKS.md) for the per-type scores and the worst misses
 behind these numbers, and [corpora/NOTICE.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/corpora/NOTICE.md) for what each
@@ -339,12 +338,9 @@ carries the old figures beside the new ones.
 
 Numbers measured on a corpus we wrote are reported separately from numbers
 measured on a corpus we did not, and the two are never merged. There is no
-third-party corpus for `injection-structural`, `rules`, `secrets` or
-`url-exfiltration`. No compatibly licensed one was found for any of them, so
-all four are measured on our own corpora only and are self-graded.
-third-party corpus for `injection-structural`, `rules`, `script-constraint` or
-`secrets`. No compatibly licensed one was found for any of them, so all four are
-measured on our own corpora only and are self-graded.
+third-party corpus for `injection-structural`, `rules`, `script-constraint`,
+`secrets` or `url-exfiltration`. No compatibly licensed one was found for any of
+them, so all five are measured on our own corpora only and are self-graded.
 
 The third-party PII corpus is derived from
 [nvidia/Nemotron-PII](https://huggingface.co/datasets/nvidia/Nemotron-PII),
