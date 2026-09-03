@@ -274,33 +274,6 @@ def test_the_counts_the_notice_publishes_are_the_ones_the_table_holds() -> None:
         )
 
 
-def test_nothing_that_ships_imports_the_table_yet() -> None:
-    """The module says so, so something has to hold it.
-
-    `template-integrity` is not registered: it has no corpus, no published row,
-    no conformance section, and `tests/test_completeness.py` demands all three
-    of every name in `AVAILABLE`. Until the check lands, an import of this table
-    from anywhere under `src/` means a shipped module reads a table that no
-    published number covers.
-
-    When the check does land, this test fails, and the fix is one line in the
-    generator's docstring plus deleting this test. That is the intended
-    lifetime: the claim in the docstring is what is being held, not the absence.
-    """
-    from jamjet_guardrails.detectors import AVAILABLE
-
-    assert "template-integrity" not in AVAILABLE, (
-        "template-integrity is registered; delete this test and the docstring claim "
-        "in scripts/generate_template_markers.py that nothing imports the table"
-    )
-    importers = [
-        str(path.relative_to(ROOT))
-        for path in sorted((ROOT / "src").rglob("*.py"))
-        if path != MODULE and "_template_markers" in path.read_text(encoding="utf-8")
-    ]
-    assert importers == [], f"these shipped modules already read the table: {importers}"
-
-
 # --------------------------------------------------------------------------
 # Everything above reads committed files and needs nothing. The one below
 # re-fetches every pinned revision, which is what turns the recorded digests

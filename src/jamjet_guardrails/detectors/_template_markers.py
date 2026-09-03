@@ -52,8 +52,9 @@ folded view described in the phase 3 design, and folds the table entries the
 same way at load; folding them here would bake one interpreter's Unicode
 version into a generated file and lose the string a source actually declares.
 
-Nothing imports this yet. The `template-integrity` check lands separately, and
-until it does this table is private, unregistered and carries no corpus.
+`detectors/template_integrity.py` is the only module that reads this table.
+It folds every entry at load, matches over the folded view, and publishes its
+own precision and recall on `corpora/template-integrity/in-repo.jsonl`.
 
 Markers: 59. Model repositories read: 8.
 """

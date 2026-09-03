@@ -63,6 +63,7 @@ REQUIRED_SECTIONS = [
     "## The script-constraint constraint",
     "## The confusables constraint",
     "## The encoded-content constraint",
+    "## The template-integrity constraint",
     "## Third-party corpora",
     "## What is deliberately unspecified",
 ]
