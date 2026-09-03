@@ -13,6 +13,13 @@ is that a published figure is a use, so those two are attributed at the end of
 this document under [Third-party material behind published
 measurements](#third-party-material-behind-published-measurements).
 
+The same widening happened a second time for a different reason. [Vendored
+Unicode data](#vendored-unicode-data) is not a corpus and no number is measured
+on it, but it is the one third-party thing this repository REDISTRIBUTES, and
+redistribution is the strongest form of use there is. A file that recorded
+provenance for what we measure on and not for what we ship would have the rule
+exactly backwards.
+
 Each corpus is one file, one source: the loader refuses a file that mixes them,
 so in-repo and third-party numbers can never be merged into one score.
 
@@ -336,6 +343,98 @@ CC BY 4.0 asks for attribution wherever the material is used, which includes
 wherever its numbers are published. `BENCHMARKS.md` names the dataset in the
 Source column of every row measured on it and points here; the README does the
 same beside the figures it quotes.
+
+## Vendored Unicode data
+
+This is the one third-party thing in this repository that is REDISTRIBUTED
+rather than fetched, measured against or merely named, so it is the one with a
+condition attached to the act of committing it. The four files under
+`unicode-data/16.0.0/` are published by Unicode, Inc., are committed verbatim,
+and travel inside the source distribution.
+
+| File | Bytes | SHA-256 |
+|---|---:|---|
+| [`Scripts.txt`](https://www.unicode.org/Public/16.0.0/ucd/Scripts.txt) | 189,588 | `9e88f0a677df47311106340be8ede2ecdacd9c1c931831218d2be6d5508e0039` |
+| [`ScriptExtensions.txt`](https://www.unicode.org/Public/16.0.0/ucd/ScriptExtensions.txt) | 20,576 | `049117ce26b9769fe2749b06eef51a50a89faef4a97764dd2d81daa715980700` |
+| [`PropertyValueAliases.txt`](https://www.unicode.org/Public/16.0.0/ucd/PropertyValueAliases.txt) | 80,773 | `440fd3e5460b9bfe31da67b6f923992e1989d31fe2ed91e091c4b8f8e2620bf9` |
+| [`confusables.txt`](https://www.unicode.org/Public/security/16.0.0/confusables.txt) | 722,509 | `95bd0aad6dced5ebc63436f459c06ab21a8d107cd842fb57f5c3a1e91bca8611` |
+
+**No changes were made to any of them.** `scripts/generate_unicode_tables.py`
+reads them and writes `src/jamjet_guardrails/_unicode/scripts.py` and
+`src/jamjet_guardrails/_unicode/confusables.py`, which are DERIVED from them:
+the same property values re-encoded as Python literals, with ranges that carry
+one script joined where the published file splits them by general category.
+Those two modules ship in the wheel, so the wheel carries derived Unicode data
+even though it carries none of the files above. That is why the distribution's
+licence expression names `Unicode-3.0` and not only the two licences the
+corpora carry.
+
+Both directions are checked rather than asserted.
+`tests/test_unicode.py::test_the_generated_modules_are_byte_identical_to_a_regeneration`
+rebuilds both modules from the committed files and requires the bytes to match,
+and
+`tests/test_unicode.py::test_each_generated_module_records_the_digest_of_every_file_it_read`
+holds the digests above against the files on disk. A third test, skipped unless
+`JAMJET_GUARDRAILS_NETWORK=1` is set and never set in CI, re-downloads all four
+and compares them with what unicode.org publishes today.
+
+**Why they are vendored at all.** `unicodedata` exposes no Script property and
+no confusables table on any interpreter from 3.10 to 3.14, and the Unicode
+version behind it runs from 13.0 to 16.0 across this project's CI matrix. A
+check deriving script from `unicodedata.name()` prefixes would reach different
+verdicts on different legs of one test suite, and a corpus label written on one
+leg would be wrong on another. The pinned tables answer the same on every leg.
+`docs/conformance.md` says that the table format is this implementation's means
+and not the contract: a port matching verdicts on the corpora conforms with any
+Unicode data source at any version.
+
+### Unicode License v3
+
+The licence requires this notice to appear with copies of the Data Files or in
+associated documentation. It is reproduced here verbatim, from
+<https://www.unicode.org/license.txt>. The data files themselves carry the
+notice line "© 2024 Unicode®, Inc." and point at
+<https://www.unicode.org/terms_of_use.html>.
+
+> UNICODE LICENSE V3
+>
+> COPYRIGHT AND PERMISSION NOTICE
+>
+> Copyright © 1991-2026 Unicode, Inc.
+>
+> NOTICE TO USER: Carefully read the following legal agreement. BY
+> DOWNLOADING, INSTALLING, COPYING OR OTHERWISE USING DATA FILES, AND/OR
+> SOFTWARE, YOU UNEQUIVOCALLY ACCEPT, AND AGREE TO BE BOUND BY, ALL OF THE
+> TERMS AND CONDITIONS OF THIS AGREEMENT. IF YOU DO NOT AGREE, DO NOT
+> DOWNLOAD, INSTALL, COPY, DISTRIBUTE OR USE THE DATA FILES OR SOFTWARE.
+>
+> Permission is hereby granted, free of charge, to any person obtaining a
+> copy of data files and any associated documentation (the "Data Files") or
+> software and any associated documentation (the "Software") to deal in the
+> Data Files or Software without restriction, including without limitation
+> the rights to use, copy, modify, merge, publish, distribute, and/or sell
+> copies of the Data Files or Software, and to permit persons to whom the
+> Data Files or Software are furnished to do so, provided that either (a)
+> this copyright and permission notice appear with all copies of the Data
+> Files or Software, or (b) this copyright and permission notice appear in
+> associated Documentation.
+>
+> THE DATA FILES AND SOFTWARE ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+> KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+> MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF
+> THIRD PARTY RIGHTS.
+>
+> IN NO EVENT SHALL THE COPYRIGHT HOLDER OR HOLDERS INCLUDED IN THIS NOTICE
+> BE LIABLE FOR ANY CLAIM, OR ANY SPECIAL INDIRECT OR CONSEQUENTIAL DAMAGES,
+> OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
+> WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+> ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THE DATA
+> FILES OR SOFTWARE.
+>
+> Except as contained in this notice, the name of a copyright holder shall
+> not be used in advertising or otherwise to promote the sale, use or other
+> dealings in these Data Files or Software without prior written
+> authorization of the copyright holder.
 
 ## Third-party material behind published measurements
 

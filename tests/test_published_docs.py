@@ -26,9 +26,15 @@ ROOT = Path(__file__).resolve().parent.parent
 # `src/datagen/`. A heuristic about URLs on the same line does NOT work, which I
 # found by writing one: the repository that owns the path is named on the line
 # above it.
+#
+# `unicode-data` was added when `corpora/NOTICE.md` began citing the four
+# pinned Unicode files, and adding it is the whole lesson this module's
+# docstring states: a directory this pattern does not name is a directory whose
+# citations nothing checks, and every path in the new section would have been
+# unverified while the guard sat right here looking thorough.
 _CITED = re.compile(
-    r"`((?:benchmarks|corpora|tests|scripts|src/jamjet_guardrails|docs|\.github)/[^`]*"
-    r"|[A-Z]+\.md)`"
+    r"`((?:benchmarks|corpora|tests|scripts|src/jamjet_guardrails|docs|unicode-data|\.github)/"
+    r"[^`]*|[A-Z]+\.md)`"
 )
 
 

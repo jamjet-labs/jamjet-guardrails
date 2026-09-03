@@ -1,8 +1,14 @@
 import json
 import re
+import subprocess
+import sys
+import tarfile
+import zipfile
 from importlib.metadata import metadata, requires, version
 from importlib.resources import files
 from pathlib import Path
+
+import pytest
 
 import jamjet_guardrails
 
@@ -221,6 +227,178 @@ def test_the_declared_licence_covers_every_licence_the_corpora_carry() -> None:
     missing = [licence for licence in shipped if licence not in declared]
     assert missing == [], (
         f"the distribution declares {declared!r} but ships corpora licensed {missing}"
+    )
+
+
+# ==========================================================================
+# What is INSIDE the built archives, which nothing above this line can see.
+# ==========================================================================
+#
+# Every other packaging guard in this file reads the installed METADATA, and
+# `tests/test_benchmarks.py` says plainly that it reads `pyproject.toml` and
+# that "nothing here can see inside an artifact". That was true and it was a
+# hole: the wheel target's `packages` list is a configuration, and what ships
+# is an archive. The two agree until a `.gitignore` rule, a `force-include` or
+# a hatchling default moves under them, and none of those edits touches the
+# line a configuration test reads.
+#
+# So these two build the real thing. `hatchling` is in the dev extra for this
+# and is already the build backend, so nothing new is being trusted; what is
+# new is that the test suite opens the archive.
+#
+# All three were watched to FAIL, `__pycache__` cleared between runs, against
+# `exclude = ["unicode-data"]` on the sdist target, a `force-include` of the
+# raw files into the wheel, and `Unicode-3.0` removed from the licence
+# expression.
+
+
+@pytest.fixture(scope="session")
+def built(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]:
+    """The sdist and the wheel, built once for the session.
+
+    A subprocess rather than hatchling's Python API, because the API builds
+    relative to the process's working directory and a test that chdir'd into
+    the repository would leak that into every test after it.
+    """
+    out = tmp_path_factory.mktemp("dist")
+    done = subprocess.run(
+        [sys.executable, "-m", "hatchling", "build", "-d", str(out)],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert done.returncode == 0, f"hatchling build failed:\n{done.stdout}\n{done.stderr}"
+    sdists = list(out.glob("*.tar.gz"))
+    wheels = list(out.glob("*.whl"))
+    assert len(sdists) == 1 and len(wheels) == 1, f"built {sdists} and {wheels}"
+    return sdists[0], wheels[0]
+
+
+def test_the_built_sdist_carries_the_pinned_unicode_data(built: tuple[Path, Path]) -> None:
+    """The sdist is the evidence, and evidence that ships nowhere is none.
+
+    The two generated modules under `_unicode/` are a derivation, and a
+    derivation nobody can rerun is a table a reader has to take on trust. The
+    four published files are what
+    `tests/test_unicode.py::test_the_generated_modules_are_byte_identical_to_a_regeneration`
+    reruns it from, so they travel with the source distribution or that test
+    can only ever be run from a git checkout.
+
+    Also asserts the tests and the corpora are still there, because the failure
+    this would otherwise miss is an `include` list added to the sdist target
+    that names `unicode-data/` and drops everything else: the raw files would
+    be present and the sdist would have lost its other reason to exist.
+    """
+    sdist, _ = built
+    with tarfile.open(sdist) as archive:
+        names = {name.split("/", 1)[1] for name in archive.getnames() if "/" in name}
+    missing = [
+        f"unicode-data/16.0.0/{name}"
+        for name in (
+            "PropertyValueAliases.txt",
+            "ScriptExtensions.txt",
+            "Scripts.txt",
+            "confusables.txt",
+        )
+        if f"unicode-data/16.0.0/{name}" not in names
+    ]
+    assert missing == [], f"the sdist does not carry {missing}"
+    for expected in (
+        "scripts/generate_unicode_tables.py",
+        "tests/test_unicode.py",
+        "corpora/NOTICE.md",
+    ):
+        assert expected in names, f"the sdist no longer carries {expected}"
+
+
+def test_the_built_wheel_carries_no_raw_unicode_data(built: tuple[Path, Path]) -> None:
+    """1.4 MB of text no installed code reads must not reach an installer.
+
+    The generator runs from a checkout and the tables it produced are already
+    inside the package, so nothing under `unicode-data/` is ever opened at
+    runtime. The wheel target's `packages` list is what keeps it out; this is
+    what checks that it did.
+
+    The positive half is not decoration. "No raw Unicode data in the wheel" is
+    also true of a wheel that lost the generated tables, and that wheel
+    installs cleanly and fails at the first skeleton.
+    """
+    _, wheel = built
+    with zipfile.ZipFile(wheel) as archive:
+        names = archive.namelist()
+    # Two rules, and the second is the wider one. Nothing anywhere may name
+    # `unicode-data`, and inside the package itself the only things allowed are
+    # modules and the PEP 561 marker, so any DATA file added to the package
+    # directory fails here and not only the four this task is about. The
+    # `.dist-info/` tree is left out because it is the installer's own
+    # bookkeeping (`entry_points.txt` lives there) and is not this package's to
+    # constrain.
+    stowaways = sorted(
+        name
+        for name in names
+        if "unicode-data" in name
+        or (
+            name.startswith("jamjet_guardrails/")
+            and not name.endswith(".py")
+            and name != "jamjet_guardrails/py.typed"
+        )
+    )
+    assert stowaways == [], f"the wheel carries {stowaways}"
+    for expected in (
+        "jamjet_guardrails/_unicode/__init__.py",
+        "jamjet_guardrails/_unicode/scripts.py",
+        "jamjet_guardrails/_unicode/confusables.py",
+    ):
+        assert expected in names, f"the wheel does not carry {expected}"
+
+
+def test_the_declared_licence_names_unicode_while_unicode_data_ships(
+    built: tuple[Path, Path],
+) -> None:
+    """The other half of the licence guard, derived from the artifacts.
+
+    `test_the_declared_licence_covers_every_licence_the_corpora_carry` reads
+    the corpora, and the Unicode data is not a corpus: it carries no `license`
+    field and no loader refuses it, so that guard cannot see it at all. What
+    makes this one derived rather than a restatement is that it reads the BUILT
+    archives for the material and the BUILT metadata for the claim. Drop
+    `unicode-data/` from the sdist and delete the generated tables from the
+    wheel and it stops demanding `Unicode-3.0`; ship either and it does.
+
+    The generated modules are in the domain, not only the raw files. They are
+    the same property values re-encoded, which is a derivative work of the data
+    files, and they are the half that reaches an installer.
+
+    The claim is read out of the WHEEL's own METADATA rather than through
+    `importlib.metadata`, and that is not the house habit for a reason. An
+    editable install writes its metadata once, so every other licence and
+    classifier guard in this file is checked against whatever was installed
+    last and needs the reinstall test above to stay honest. Here both sides
+    come from the same build, so the test says the same thing on a machine that
+    has not reinstalled since the licence changed.
+    """
+    sdist, wheel = built
+    with tarfile.open(sdist) as archive:
+        in_sdist = any("unicode-data/" in name for name in archive.getnames())
+    with zipfile.ZipFile(wheel) as zipped:
+        in_wheel = any("_unicode/" in name for name in zipped.namelist())
+        wheel_metadata = next(
+            zipped.read(name).decode("utf-8")
+            for name in zipped.namelist()
+            if name.endswith(".dist-info/METADATA")
+        )
+    assert in_sdist or in_wheel, (
+        "neither artifact carries Unicode data or anything derived from it; "
+        "this guard would prove nothing"
+    )
+    found = re.search(r"^License-Expression: (.+)$", wheel_metadata, re.MULTILINE)
+    assert found is not None, "the built wheel declares no License-Expression"
+    declared = found.group(1)
+    assert "Unicode-3.0" in declared, (
+        f"the distribution declares {declared!r} while shipping data published by "
+        "Unicode, Inc. under the Unicode License v3 (raw in the sdist: "
+        f"{in_sdist}, derived in the wheel: {in_wheel})"
     )
 
 
