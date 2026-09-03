@@ -12,6 +12,34 @@ a number that changes quietly is a number nobody can rely on.
 
 ### Added
 
+- New check `confusables`, a constraint in both directions denying by default
+  and configurable per direction through `on_detect`. Two finding types:
+  `MIXED_SCRIPT_CONFUSABLE`, a token that fails the UTS #39 Highly Restrictive
+  test and whose every code point outside its majority script folds into that
+  script, and `WHOLE_SCRIPT_CONFUSABLE`, a single-script non-Latin URL host
+  label, email domain label or `@handle` whose every code point folds into
+  Latin. Published row: **0.936 precision and 0.863 recall over 109 cases** on
+  `corpora/confusables/in-repo.jsonl`, 50 of them positives and 59 negatives.
+  Seven disclosed misses and three disclosed false positives, ten wrong
+  decisions in all, are named by case id in `corpora/NOTICE.md`.
+- `fold_confusables` on `jamjet_guardrails.authoring.PatternGuardrail`, off by
+  default. It matches banned substrings over the UTS #39 skeleton of both the
+  content and the substring, so one substituted Cyrillic letter no longer dodges
+  a banned word, and the spans still point at the source run through the offset
+  map. It is refused where a guardrail declares no banned substrings, because
+  there it would read as protection and buy none. Patterns are deliberately not
+  folded: a regex is matched against the view it was written for.
+- A fifth pinned Unicode data file, `IdentifierStatus.txt`, and a third
+  generated module, `src/jamjet_guardrails/_unicode/identifiers.py`, reached
+  through `identifier_allowed`. It is the UTS #39 Identifier Profile, which the
+  restriction levels in section 5.2 are themselves defined over, and it is what
+  decides whether a confusable prototype is evidence. Measured on 16.0.0, 140 of
+  the 296 Cyrillic letters fold to a string written wholly in Latin and only 104
+  of those fold to one written wholly in the profile: without it the new check
+  denies `iPhoneом` in Russian prose and every `.рф` domain there is. The file's
+  digest is in `corpora/NOTICE.md` and the module is held byte for byte to a
+  regeneration, like the other two.
+
 - The `script-constraint` check, detector version 0.1.0, constraint kind, both
   directions, `on_match` defaulting to `deny`. One required option,
   `allowed_scripts`, a collection of long Unicode script names, and one finding
@@ -50,26 +78,27 @@ a number that changes quietly is a number nobody can rely on.
   `security-and-quality` suite. It builds nothing and installs nothing, because
   `ci.yml` already lints, typechecks, tests and gates the benchmarks on five
   interpreters and a scan that repeats that work is a scan nobody reads.
-- Vendored Unicode tables, pinned at 16.0.0. The four published files
-  `Scripts.txt`, `ScriptExtensions.txt`, `PropertyValueAliases.txt` and
-  `confusables.txt` are committed under `unicode-data/16.0.0/`, and
-  `scripts/generate_unicode_tables.py` writes
-  `src/jamjet_guardrails/_unicode/scripts.py` and
-  `src/jamjet_guardrails/_unicode/confusables.py` from them. Nothing user-facing
-  reads either module yet; the checks that will are `confusables`,
-  `script-constraint` and the `fold_confusables` option on the rules engine.
-  `unicodedata` carries no Script property and no confusables table on any
-  supported interpreter, and its Unicode version runs from 13.0 to 16.0 across
-  the CI matrix, so a check deriving either from it would reach different
-  verdicts on different legs of one test suite.
-- Two private functions over those tables. `script_set` resolves one code
+- Vendored Unicode tables, pinned at 16.0.0. The five published files
+  `Scripts.txt`, `ScriptExtensions.txt`, `PropertyValueAliases.txt`,
+  `confusables.txt` and `IdentifierStatus.txt` are committed under
+  `unicode-data/16.0.0/`, and `scripts/generate_unicode_tables.py` writes
+  `src/jamjet_guardrails/_unicode/scripts.py`,
+  `src/jamjet_guardrails/_unicode/confusables.py` and
+  `src/jamjet_guardrails/_unicode/identifiers.py` from them. `confusables` and
+  the `fold_confusables` option on the rules engine read them; `script-constraint`
+  will. `unicodedata` carries no Script property, no confusables table and no
+  Identifier_Status on any supported interpreter, and its Unicode version runs
+  from 13.0 to 16.0 across the CI matrix, so a check deriving any of them from
+  it would reach different verdicts on different legs of one test suite.
+- Three private functions over those tables. `script_set` resolves one code
   point's scripts per UTS #39 section 5.1, returning long property names, with
   Script_Extensions taking precedence over Script, `Common` and `Inherited`
   returned as themselves, and an unassigned code point resolving to `Unknown`.
   `skeleton` builds the UTS #39 section 4 confusable skeleton together with the
   offset map back to the source, so a match found over a skeleton is reported
   as the span of the original characters that produced it, including where a
-  prototype expanded one character into eighteen.
+  prototype expanded one character into eighteen. `identifier_allowed` answers
+  whether one code point is in the UTS #39 Identifier Profile.
 - `_fold.compose`, which joins a view of the source and a view of that view
   into one map, and `_Folded.span` now takes the minimum and the maximum over
   the matched range. The skeleton's canonical ordering step permutes combining
@@ -79,11 +108,11 @@ a number that changes quietly is a number nobody can rely on.
   would have left a reordered mark standing inside content reported as
   rewritten. Every map built by `fold` is non-decreasing, so no existing span
   moved.
-- Three guards on the vendored data: both generated modules are rebuilt from
-  the committed files and compared byte for byte with no network; each module's
-  recorded SHA-256 digests are checked against those files; and a test skipped
-  unless `JAMJET_GUARDRAILS_NETWORK=1`, which is never set in CI, re-downloads
-  all four and compares them with what unicode.org publishes.
+- Three guards on the vendored data: all three generated modules are rebuilt
+  from the committed files and compared byte for byte with no network; each
+  module's recorded SHA-256 digests are checked against those files; and a test
+  skipped unless `JAMJET_GUARDRAILS_NETWORK=1`, which is never set in CI,
+  re-downloads all five and compares them with what unicode.org publishes.
 - `tests/test_packaging.py` now BUILDS the sdist and the wheel and reads their
   member lists, rather than reading the configuration that is supposed to
   produce them. `unicode-data/` is in the sdist and out of the wheel, and both
@@ -165,6 +194,34 @@ a number that changes quietly is a number nobody can rely on.
   unchanged.
 - `tests/test_published_docs.py` recognises `packages/` as a repository path, so
   a citation from either adapter's README is checked like any other.
+- **The `rules` published row moves, deliberately, because its fixture gained a
+  rule.** `jamjet_guardrails.eval.fixtures` now sets `fold_confusables=True` for
+  `rules`, and the corpus gained the confusable-dodged codename case that option
+  exists for, plus the near-miss negative beside it. The `rules` corpus version
+  moves from `f1b809114b13` to `8fe119ddb734` and the case count from 40 to 42.
+  Precision and recall are unchanged at 1.000 and 1.000, with zero wrong
+  decisions.
+  `corpora/baselines.json` carries the new key and no longer carries the old
+  one.
+- **The published `rules` latency moves with it, from 143 ms to 731 ms per
+  megabyte**, for the same reason: the fixture's `fold_confusables=True` builds
+  the UTS #39 skeleton of the whole content on every call. `docs/performance.md`
+  carries the new rows and says which rows that run re-measured and which it
+  left alone. The option is off by default and a caller who leaves it off pays
+  none of it.
+- The distribution declares `Apache-2.0 AND CC-BY-4.0 AND Unicode-3.0`. The
+  generated tables are derived from data files published by Unicode, Inc. under
+  the Unicode License v3 and ship in the wheel, and the raw files ship in the
+  sdist; the licence requires its notice to travel with copies or in associated
+  documentation. `corpora/NOTICE.md` carries the notice, the five digests and
+  the reason the data is vendored, and the README's licence section says so in
+  one sentence.
+- `docs/conformance.md` adds two entries to "What is deliberately unspecified":
+  where Unicode property data comes from and at what version, and the fold
+  machinery. A port reaching the same verdicts on the corpora conforms with any
+  Unicode data source at any version. What stays specified is the span itself,
+  which indexes the content the chain was given whatever view the match was
+  found in.
 
 ### Security
 

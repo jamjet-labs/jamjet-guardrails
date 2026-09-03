@@ -9,15 +9,22 @@ Its version is this module's, not the primitive's, because what a caller pins
 when they pin `rules` is the behaviour of this registration: the name on the
 verdict, the default decision, and which directions it declares.
 
-Cost, and the shape of it. Near-linear in the content length. 143 ms median for
+Cost, and the shape of it. Near-linear in the content length. 731 ms median for
 one megabyte of the seeded input recorded in `docs/performance.md`, on an Apple
 M3 Max under CPython 3.14.5, with the median rising 4.17x over the last 4x step
 of input rather than 4.0x. The drift is span merging over a finding count that
-grows faster than the input does, not the scan. Measured under the fixture in
-`jamjet_guardrails.eval.fixtures`, which is the configuration the published row
-uses; patterns a user writes carry their own cost and no claim here covers them.
-`scripts/measure_throughput.py` reruns it, and `docs/performance.md` states the
-machine, the input and the method.
+grows faster than the input does, not the scan.
+
+That figure is 5.1x what it was, and the cause is the fixture rather than the
+engine: it now sets `fold_confusables=True`, so every call builds the UTS #39
+skeleton of the whole content, which is two normalisation passes, a fold through
+the confusables table and an offset map composed through all three. The option
+is off by default and a caller who leaves it off pays none of it.
+
+Measured under the fixture in `jamjet_guardrails.eval.fixtures`, which is the
+configuration the published row uses; patterns a user writes carry their own
+cost and no claim here covers them. `scripts/measure_throughput.py` reruns it,
+and `docs/performance.md` states the machine, the input and the method.
 """
 
 from __future__ import annotations

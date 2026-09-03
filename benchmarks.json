@@ -1,6 +1,159 @@
 {
   "results": [
     {
+      "detector": "confusables",
+      "detector_version": "0.1.0",
+      "corpus_name": "confusables/in-repo",
+      "corpus_source": "in-repo",
+      "corpus_version": "9ba6ea272420",
+      "cases": 109,
+      "precision": 0.9362,
+      "recall": 0.8627,
+      "f1": 0.898,
+      "true_positives": 44,
+      "false_positives": 3,
+      "false_negatives": 7,
+      "decision_mismatches": 10,
+      "per_type": {
+        "MIXED_SCRIPT_CONFUSABLE": {
+          "precision": 0.9143,
+          "recall": 0.8649,
+          "true_positives": 32,
+          "false_positives": 3,
+          "false_negatives": 5
+        },
+        "WHOLE_SCRIPT_CONFUSABLE": {
+          "precision": 1.0,
+          "recall": 0.8571,
+          "true_positives": 12,
+          "false_positives": 0,
+          "false_negatives": 2
+        }
+      },
+      "failures": [
+        {
+          "case_id": "cnf-0044",
+          "kind": "decision_mismatch",
+          "expected": "deny",
+          "predicted": "allow"
+        },
+        {
+          "case_id": "cnf-0045",
+          "kind": "decision_mismatch",
+          "expected": "deny",
+          "predicted": "allow"
+        },
+        {
+          "case_id": "cnf-0046",
+          "kind": "decision_mismatch",
+          "expected": "deny",
+          "predicted": "allow"
+        },
+        {
+          "case_id": "cnf-0047",
+          "kind": "decision_mismatch",
+          "expected": "deny",
+          "predicted": "allow"
+        },
+        {
+          "case_id": "cnf-0048",
+          "kind": "decision_mismatch",
+          "expected": "deny",
+          "predicted": "allow"
+        },
+        {
+          "case_id": "cnf-0049",
+          "kind": "decision_mismatch",
+          "expected": "deny",
+          "predicted": "allow"
+        },
+        {
+          "case_id": "cnf-0050",
+          "kind": "decision_mismatch",
+          "expected": "deny",
+          "predicted": "allow"
+        },
+        {
+          "case_id": "cnf-0058",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "deny"
+        },
+        {
+          "case_id": "cnf-0061",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "deny"
+        },
+        {
+          "case_id": "cnf-0075",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "deny"
+        },
+        {
+          "case_id": "cnf-0044",
+          "kind": "false_negative",
+          "expected": "MIXED_SCRIPT_CONFUSABLE@(0, 2)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "cnf-0045",
+          "kind": "false_negative",
+          "expected": "WHOLE_SCRIPT_CONFUSABLE@(6, 12)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "cnf-0046",
+          "kind": "false_negative",
+          "expected": "WHOLE_SCRIPT_CONFUSABLE@(9, 15)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "cnf-0047",
+          "kind": "false_negative",
+          "expected": "MIXED_SCRIPT_CONFUSABLE@(5, 11)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "cnf-0048",
+          "kind": "false_negative",
+          "expected": "MIXED_SCRIPT_CONFUSABLE@(15, 24)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "cnf-0049",
+          "kind": "false_negative",
+          "expected": "MIXED_SCRIPT_CONFUSABLE@(4, 8)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "cnf-0050",
+          "kind": "false_negative",
+          "expected": "MIXED_SCRIPT_CONFUSABLE@(11, 17)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "cnf-0058",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "MIXED_SCRIPT_CONFUSABLE@(11, 19)"
+        },
+        {
+          "case_id": "cnf-0061",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "MIXED_SCRIPT_CONFUSABLE@(10, 18)"
+        },
+        {
+          "case_id": "cnf-0075",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "MIXED_SCRIPT_CONFUSABLE@(11, 13)"
+        }
+      ]
+    },
+    {
       "detector": "injection-structural",
       "detector_version": "0.2.0",
       "corpus_name": "injection-structural/in-repo",
@@ -745,12 +898,12 @@
       "detector_version": "0.1.0",
       "corpus_name": "rules/in-repo",
       "corpus_source": "in-repo",
-      "corpus_version": "f1b809114b13",
-      "cases": 40,
+      "corpus_version": "8fe119ddb734",
+      "cases": 42,
       "precision": 1.0,
       "recall": 1.0,
       "f1": 1.0,
-      "true_positives": 28,
+      "true_positives": 29,
       "false_positives": 0,
       "false_negatives": 0,
       "decision_mismatches": 0,
@@ -772,7 +925,7 @@
         "PROJECT_CODENAME": {
           "precision": 1.0,
           "recall": 1.0,
-          "true_positives": 7,
+          "true_positives": 8,
           "false_positives": 0,
           "false_negatives": 0
         },

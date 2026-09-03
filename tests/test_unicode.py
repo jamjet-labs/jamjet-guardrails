@@ -46,7 +46,12 @@ guards, with `__pycache__` cleared between runs. The mutations, in order:
   and maximum;
 - the second NFD pass dropped from `skeleton`;
 - the empty content refused instead of folded;
-- a raw file tampered with, against the network-gated test.
+- a raw file tampered with, against the network-gated test;
+- `identifier_allowed` made to return True for everything;
+- the identifier range end compared with `<` instead of `<=`;
+- one range value flipped in the committed `identifiers.py`;
+- the digest `identifiers.py` records corrupted;
+- the generator widened to accept a `Restricted` status row.
 
 One of those mutations survived at first and is why
 `test_the_second_normalisation_pass_is_not_redundant` is written the way it
@@ -74,8 +79,9 @@ import pytest
 # file is how a reader ends up believing they are two things. One import, at
 # the top, used by name below.
 from jamjet_guardrails import _unicode
-from jamjet_guardrails._unicode import UNKNOWN, script_set, skeleton
+from jamjet_guardrails._unicode import UNKNOWN, identifier_allowed, script_set, skeleton
 from jamjet_guardrails._unicode import confusables as confusables_table
+from jamjet_guardrails._unicode import identifiers as identifiers_table
 from jamjet_guardrails._unicode import scripts as scripts_table
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -114,13 +120,14 @@ def test_the_pinned_files_and_the_generator_are_committed() -> None:
     for name in ("PropertyValueAliases.txt", "ScriptExtensions.txt", "Scripts.txt"):
         assert (DATA / name).is_file(), f"{DATA / name} is missing"
     assert (DATA / "confusables.txt").is_file()
-    for name in ("__init__.py", "scripts.py", "confusables.py"):
+    assert (DATA / "IdentifierStatus.txt").is_file()
+    for name in ("__init__.py", "scripts.py", "confusables.py", "identifiers.py"):
         assert (GENERATED / name).is_file(), f"{GENERATED / name} is missing"
 
     tracked = subprocess.run(
         ["git", "ls-files", "unicode-data"], cwd=ROOT, capture_output=True, text=True, check=True
     ).stdout.split()
-    assert len(tracked) == 4, (
+    assert len(tracked) == 5, (
         f"unicode-data/ tracks {tracked}; the sdist ships what git tracks, so an "
         "untracked raw file is evidence nobody downstream receives"
     )
@@ -157,6 +164,7 @@ def test_the_generated_modules_are_byte_identical_to_a_regeneration() -> None:
     for name, rendered in (
         ("scripts.py", generator.render_scripts(DATA)),
         ("confusables.py", generator.render_confusables(DATA)),
+        ("identifiers.py", generator.render_identifiers(DATA)),
     ):
         committed = (GENERATED / name).read_bytes()
         assert rendered.encode("utf-8") == committed, (
@@ -188,6 +196,7 @@ def test_the_generator_touches_no_network_when_it_generates() -> None:
         "spec.loader.exec_module(module)\n"
         "module.render_scripts(module.DATA_DIR)\n"
         "module.render_confusables(module.DATA_DIR)\n"
+        "module.render_identifiers(module.DATA_DIR)\n"
         "print('offline')\n"
     )
     done = subprocess.run(
@@ -212,14 +221,15 @@ def test_each_generated_module_records_the_digest_of_every_file_it_read() -> Non
     replaced input has to be a deliberate edit of a hash a reviewer can see in
     the diff.
 
-    Taken over the BYTES. All four files carry a UTF-8 BOM and are read as
-    `utf-8-sig` by the generator; a digest over the decoded text would drop
-    the BOM and match a file that had been rewritten by an editor.
+    Taken over the BYTES. Four of the five files carry a UTF-8 BOM and all are
+    read as `utf-8-sig` by the generator; a digest over the decoded text would
+    drop the BOM and match a file that had been rewritten by an editor.
     """
     generator = _generator()
     recorded = {
         "scripts.py": (scripts_table.SOURCE_DIGESTS, generator.SCRIPTS_INPUTS),
         "confusables.py": (confusables_table.SOURCE_DIGESTS, generator.CONFUSABLES_INPUTS),
+        "identifiers.py": (identifiers_table.SOURCE_DIGESTS, generator.IDENTIFIERS_INPUTS),
     }
     for module_name, (digests, inputs) in recorded.items():
         assert set(digests) == set(inputs), (
@@ -234,15 +244,17 @@ def test_each_generated_module_records_the_digest_of_every_file_it_read() -> Non
             )
 
 
-def test_the_two_modules_agree_about_the_unicode_version_they_are_pinned_to() -> None:
+def test_the_three_modules_agree_about_the_unicode_version_they_are_pinned_to() -> None:
     """A table from 16.0.0 beside one from 15.1.0 is a spoof nothing would catch.
 
-    The scripts of a confusable's prototype are the whole of the mixed-script
-    rule in the `confusables` check, so the two tables are read together on
-    every token. Two revisions would answer coherently on almost every input
-    and incoherently on exactly the code points a revision changed.
+    The scripts of a confusable's prototype, and whether that prototype is in
+    the Identifier Profile, are together the whole of the mixed-script rule in
+    the `confusables` check, so all three tables are read on every token. Two
+    revisions would answer coherently on almost every input and incoherently on
+    exactly the code points a revision changed.
     """
     assert scripts_table.UNICODE_VERSION == confusables_table.UNICODE_VERSION
+    assert scripts_table.UNICODE_VERSION == identifiers_table.UNICODE_VERSION
     assert scripts_table.UNICODE_VERSION == DATA.name
 
 
@@ -304,6 +316,15 @@ def test_the_counts_each_generated_docstring_states_match_its_tables() -> None:
     assert count == len(confusables_table.PROTOTYPES)
     assert longest == max(len(value) for value in confusables_table.PROTOTYPES.values())
 
+    identifiers_doc = identifiers_table.__doc__ or ""
+    found = re.search(r"([\d,]+) Allowed ranges covering ([\d,]+) code points", identifiers_doc)
+    assert found is not None, (
+        f"identifiers.py no longer states its counts: {identifiers_doc[:200]!r}"
+    )
+    ranges_stated, covered_stated = (int(value.replace(",", "")) for value in found.groups())
+    assert ranges_stated == len(identifiers_table.ALLOWED_RANGES)
+    assert covered_stated == sum(end - start + 1 for start, end in identifiers_table.ALLOWED_RANGES)
+
 
 def test_the_module_sizes_the_package_docstring_records_are_the_real_ones() -> None:
     """The import-cost paragraph is a measurement, and half of it is checkable.
@@ -318,8 +339,8 @@ def test_the_module_sizes_the_package_docstring_records_are_the_real_ones() -> N
     reads the same way the sentence does.
     """
     stated = dict(re.findall(r"`(\w+\.py)` is (\d+) KiB", _unicode.__doc__ or ""))
-    assert set(stated) == {"scripts.py", "confusables.py"}, (
-        f"the cost paragraph names {sorted(stated)}, not both generated modules"
+    assert set(stated) == {"scripts.py", "confusables.py", "identifiers.py"}, (
+        f"the cost paragraph names {sorted(stated)}, not all three generated modules"
     )
     for name, kib in sorted(stated.items()):
         actual = round((GENERATED / name).stat().st_size / 1024)
@@ -331,10 +352,10 @@ def test_the_module_sizes_the_package_docstring_records_are_the_real_ones() -> N
 # ==========================================================================
 
 
-def test_importing_the_package_loads_neither_unicode_table() -> None:
-    """`import jamjet_guardrails` must stay cheap, and 222 KiB is not cheap.
+def test_importing_the_package_loads_no_unicode_table() -> None:
+    """`import jamjet_guardrails` must stay cheap, and 231 KiB is not cheap.
 
-    A fresh interpreter, because this test module has already imported both
+    A fresh interpreter, because this test module has already imported all three
     tables at the top and `sys.modules` in THIS process proves nothing. The
     child imports the package the way a consumer does and reports what that
     pulled in.
@@ -342,7 +363,7 @@ def test_importing_the_package_loads_neither_unicode_table() -> None:
     The rule the child enforces is what the checks have to keep doing: import
     `jamjet_guardrails._unicode` inside the method that needs it, never at the
     top of a detector module, because `detectors/__init__.py` is imported from
-    the package root and would drag both tables in behind it.
+    the package root and would drag every table in behind it.
     """
     code = (
         "import sys\n"
@@ -359,26 +380,29 @@ def test_importing_the_package_loads_neither_unicode_table() -> None:
     )
 
 
-def test_asking_for_a_script_does_not_load_the_confusables_table() -> None:
+def test_asking_for_a_script_loads_neither_of_the_other_two_tables() -> None:
     """The half of the laziness that is inside this package rather than above it.
 
-    `script-constraint` never asks for a skeleton, and `confusables.py` is the
-    expensive one: 176 KiB against 45. Importing it at the top of
+    `script-constraint` never asks for a skeleton and never asks whether a code
+    point is an identifier character, and `confusables.py` is the expensive one:
+    176 KiB against 45 and 10. Importing either at the top of
     `_unicode/__init__.py` would be invisible in every test, because every test
-    process ends up importing both anyway.
+    process ends up importing all three anyway.
     """
     code = (
         "import sys\n"
         "from jamjet_guardrails._unicode import script_set\n"
         "script_set('a')\n"
-        "print('jamjet_guardrails._unicode.confusables' in sys.modules)\n"
+        "print([n for n in ('confusables', 'identifiers')\n"
+        "       if f'jamjet_guardrails._unicode.{n}' in sys.modules])\n"
     )
     done = subprocess.run(
         [sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True, check=True
     )
-    assert done.stdout.strip() == "False", (
-        "resolving a script loaded the confusables table; skeleton() imports it, "
-        "and nothing above skeleton() should"
+    assert done.stdout.strip() == "[]", (
+        f"resolving a script loaded {done.stdout.strip()}; skeleton() imports the "
+        "confusables table and identifier_allowed() the profile, and nothing above "
+        "either of them should"
     )
 
 
@@ -524,6 +548,108 @@ def test_every_range_edge_resolves_the_way_the_raw_files_say() -> None:
         if script_set(chr(code)) != resolve(code)
     ]
     assert wrong == [], f"the tables disagree with the raw files at {wrong[:5]}"
+
+
+# ==========================================================================
+# identifier_allowed
+# ==========================================================================
+
+
+def test_the_identifier_profile_separates_two_prototypes_that_are_both_latin() -> None:
+    """The measurement the `confusables` check rests on, in one assertion.
+
+    Both Cyrillic letters below fold to Latin. Only one of them folds to a
+    character anything is written in, and treating the two alike is the
+    difference between a check that catches `p<CYRILLIC A>ypal` and a check that
+    denies `iPhone<CYRILLIC O><CYRILLIC EM>` in Russian prose.
+
+    Mutation-checked: with `identifier_allowed` returning True for everything,
+    this fails on U+028D.
+    """
+    assert skeleton("\u0430").text == "a"  # CYRILLIC SMALL LETTER A
+    assert identifier_allowed("a")
+
+    assert skeleton("\u043c").text == "\u028d"  # CYRILLIC SMALL LETTER EM
+    assert script_set("\u028d") == frozenset({"Latin"})
+    assert not identifier_allowed("\u028d")  # LATIN SMALL LETTER TURNED W
+
+
+def test_the_russian_cctld_letters_are_not_both_in_the_profile() -> None:
+    """`почта.рф` is the negative the whole-script rule is measured against.
+
+    Cyrillic er folds to `p` and Cyrillic ef to U+0278 LATIN SMALL LETTER PHI.
+    Both prototypes are Latin, so a rule that asked only about script would deny
+    every `.рф` domain there is. This is the pair that says otherwise.
+    """
+    assert skeleton("\u0440").text == "p"  # CYRILLIC SMALL LETTER ER
+    assert identifier_allowed("p")
+    assert skeleton("\u0444").text == "\u0278"  # CYRILLIC SMALL LETTER EF
+    assert script_set("\u0278") == frozenset({"Latin"})
+    assert not identifier_allowed("\u0278")
+
+
+def test_the_generator_refuses_an_identifier_status_it_does_not_understand() -> None:
+    """`IdentifierStatus.txt` lists Allowed rows only, and the absence of a row
+    IS the Restricted answer.
+
+    A revision that started writing `Restricted` rows explicitly would load them
+    as Allowed ranges and turn the whole table inside out: every restricted code
+    point would become an identifier character and the `confusables` check would
+    deny `.рф` again. Refusing the row is what discovers that day.
+
+    Mutation-checked: widening the generator's status test to accept
+    `Restricted` as well makes this fail, and it is the only test that moves.
+    """
+    generator = _generator()
+    assert generator.identifier_ranges("0061..007A ; Allowed\n") == [(0x61, 0x7A, True)]
+    with pytest.raises(ValueError, match="not 'Allowed'"):
+        generator.identifier_ranges("0061..007A ; Allowed\n0400..04FF ; Restricted\n")
+
+
+def test_a_code_point_outside_every_allowed_range_is_restricted() -> None:
+    """Absence is the answer, because the file's own @missing rule says so.
+
+    An unassigned code point and one assigned after this pin are both Restricted
+    here, which fails toward reporting no spoof rather than toward inventing one.
+    """
+    assert not identifier_allowed("\U0010fffe")  # unassigned
+    assert not identifier_allowed("\u0000")
+
+
+def test_identifier_allowed_refuses_a_string_that_is_not_one_code_point() -> None:
+    for value in ("", "ab", "a\u0301"):
+        with pytest.raises(ValueError, match="one code point"):
+            identifier_allowed(value)
+
+
+def test_every_identifier_range_edge_answers_the_way_the_raw_file_says() -> None:
+    """The sweep, against an oracle that searches the unmerged file linearly.
+
+    Five code points per range: one below the start, the start, the middle, the
+    end, and one above the end. A merge that ran one code point too far, a
+    bisection landing one slot low, or an `end` compared with `<` rather than
+    `<=` shows up there and nowhere else.
+    """
+    generator = _generator()
+    raw: list[tuple[int, int]] = []
+    for fields in generator._fields(
+        (DATA / "IdentifierStatus.txt").read_text(encoding="utf-8-sig")
+    ):
+        raw.append(generator._range(fields[0]))
+    assert len(raw) > 500, f"only {len(raw)} raw ranges; this sweep would prove little"
+
+    def allowed(code: int) -> bool:
+        return any(start <= code <= end for start, end in raw)
+
+    probes: set[int] = set()
+    for start, end in raw:
+        probes.update({start - 1, start, (start + end) // 2, end, end + 1})
+    probes = {code for code in probes if 0 <= code <= 0x10FFFF}
+
+    wrong = [
+        f"U+{code:04X}" for code in sorted(probes) if identifier_allowed(chr(code)) != allowed(code)
+    ]
+    assert wrong == [], f"the table disagrees with IdentifierStatus.txt at {wrong[:5]}"
 
 
 # ==========================================================================

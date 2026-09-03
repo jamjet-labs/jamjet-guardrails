@@ -5,10 +5,11 @@ every score. How to read them is under the table.
 
 | Check | Corpus | Source | Version | Cases | Precision | Recall | F1 | TP | FP | FN | Wrong decisions |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| confusables | confusables/in-repo | in-repo | `9ba6ea272420` | 109 | 0.936 | 0.863 | 0.898 | 44 | 3 | 7 | 10 |
 | injection-structural | injection-structural/in-repo | in-repo | `b704703f431d` | 154 | 0.972 | 0.873 | 0.920 | 103 | 3 | 15 | 8 |
 | pii | pii/in-repo | in-repo | `06fb3b601aba` | 81 | 0.631 | 0.872 | 0.732 | 41 | 24 | 6 | 24 |
 | pii | pii/third-party | nvidia/Nemotron-PII@b70ffaf | `c25ef538d677` | 300 | 0.960 | 0.997 | 0.978 | 340 | 14 | 1 | 6 |
-| rules | rules/in-repo | in-repo | `f1b809114b13` | 40 | 1.000 | 1.000 | 1.000 | 28 | 0 | 0 | 0 |
+| rules | rules/in-repo | in-repo | `8fe119ddb734` | 42 | 1.000 | 1.000 | 1.000 | 29 | 0 | 0 | 0 |
 | script-constraint | script-constraint/in-repo | in-repo | `92fddb0f04be` | 85 | 1.000 | 1.000 | 1.000 | 50 | 0 | 0 | 0 |
 | secrets | secrets/in-repo | in-repo | `337e35f03cad` | 160 | 0.881 | 0.873 | 0.877 | 96 | 13 | 14 | 8 |
 | url-exfiltration | url-exfiltration/in-repo | in-repo | `c8015e4e93e2` | 88 | 0.914 | 0.914 | 0.914 | 32 | 3 | 3 | 6 |
@@ -74,6 +75,13 @@ of false alarms, capped at 5 per corpus. Every miss is in
 `benchmarks.json`, and every score to four decimals there unless the sentence
 above clamped it.
 
+## Per type: confusables on confusables/in-repo (in-repo, `9ba6ea272420`)
+
+| Type | Precision | Recall | TP | FP | FN |
+|---|---:|---:|---:|---:|---:|
+| MIXED_SCRIPT_CONFUSABLE | 0.914 | 0.865 | 32 | 3 | 5 |
+| WHOLE_SCRIPT_CONFUSABLE | 1.000 | 0.857 | 12 | 0 | 2 |
+
 ## Per type: injection-structural on injection-structural/in-repo (in-repo, `b704703f431d`)
 
 | Type | Precision | Recall | TP | FP | FN |
@@ -100,13 +108,13 @@ above clamped it.
 | PHONE_NUMBER | 0.991 | 1.000 | 115 | 1 | 0 |
 | US_SSN | 0.750 | 0.960 | 24 | 8 | 1 |
 
-## Per type: rules on rules/in-repo (in-repo, `f1b809114b13`)
+## Per type: rules on rules/in-repo (in-repo, `8fe119ddb734`)
 
 | Type | Precision | Recall | TP | FP | FN |
 |---|---:|---:|---:|---:|---:|
 | INTERNAL_HOST | 1.000 | 1.000 | 9 | 0 | 0 |
 | LENGTH_LIMIT | 1.000 | 1.000 | 4 | 0 | 0 |
-| PROJECT_CODENAME | 1.000 | 1.000 | 7 | 0 | 0 |
+| PROJECT_CODENAME | 1.000 | 1.000 | 8 | 0 | 0 |
 | TICKET_ID | 1.000 | 1.000 | 8 | 0 | 0 |
 
 ## Per type: script-constraint on script-constraint/in-repo (in-repo, `92fddb0f04be`)
@@ -136,6 +144,18 @@ above clamped it.
 | MARKDOWN_IMAGE_EXFIL | 0.900 | 0.750 | 9 | 1 | 3 |
 | NESTED_REDIRECT | 1.000 | 1.000 | 5 | 0 | 0 |
 | SCRIPT_SCHEME | 1.000 | 1.000 | 6 | 0 | 0 |
+
+## Worst misses: confusables on confusables/in-repo (in-repo, `9ba6ea272420`)
+
+| Case | Kind | Expected | Predicted |
+|---|---|---|---|
+| `cnf-0044` | decision_mismatch | deny | allow |
+| `cnf-0045` | decision_mismatch | deny | allow |
+| `cnf-0046` | decision_mismatch | deny | allow |
+| `cnf-0047` | decision_mismatch | deny | allow |
+| `cnf-0048` | decision_mismatch | deny | allow |
+
+...and 15 more, in `benchmarks.json`.
 
 ## Worst misses: injection-structural on injection-structural/in-repo (in-repo, `b704703f431d`)
 
@@ -173,7 +193,7 @@ above clamped it.
 
 ...and 16 more, in `benchmarks.json`.
 
-## Worst misses: rules on rules/in-repo (in-repo, `f1b809114b13`)
+## Worst misses: rules on rules/in-repo (in-repo, `8fe119ddb734`)
 
 No misses on this corpus.
 

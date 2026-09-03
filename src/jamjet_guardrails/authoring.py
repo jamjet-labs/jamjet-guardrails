@@ -24,7 +24,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from jamjet_guardrails._fold import casefold_view, fold
+from jamjet_guardrails._fold import _Folded, casefold_view, compose, fold
 from jamjet_guardrails._spans import _rewrite, _scan
 from jamjet_guardrails.errors import GuardrailUnavailableError
 from jamjet_guardrails.protocol import saw
@@ -231,6 +231,7 @@ class PatternGuardrail:
         on_match: Decision | Mapping[Direction, Decision] = "deny",
         directions: frozenset[Direction] = frozenset({"input", "output"}),
         fold_case: bool = True,
+        fold_confusables: bool = False,
     ) -> None:
         # The ceiling `GuardrailChain` refuses above, held HERE too, so a check
         # built through the documented path fails at the mistake rather than at
@@ -302,9 +303,23 @@ class PatternGuardrail:
                         f"banned[{type_name!r}] carries an empty substring, which "
                         "matches everywhere"
                     )
-                folded.append((type_name, substring.casefold() if fold_case else substring))
+                needle = substring.casefold() if fold_case else substring
+                if fold_confusables:
+                    needle = _skeleton(needle).text
+                    if not needle:
+                        # Unreachable against the 16.0.0 table, whose generator
+                        # refuses a row mapping anything to nothing, and checked
+                        # anyway: an empty needle matches at every offset and
+                        # would report a zero-width span the chain refuses to
+                        # apply, which is a detection that redacts nothing.
+                        raise ValueError(
+                            f"banned[{type_name!r}] carries {substring!r}, whose "
+                            "confusable skeleton is empty, so it would match everywhere"
+                        )
+                folded.append((type_name, needle))
         self._banned = tuple(folded)
         self._fold_case = fold_case
+        self._fold_confusables = fold_confusables
 
         self._limits = limits
 
@@ -312,6 +327,21 @@ class PatternGuardrail:
             raise GuardrailUnavailableError(
                 f"{name!r} was configured with no patterns, no banned substrings and no "
                 "limits, so it would check nothing and allow any content at all"
+            )
+
+        # An option that selects nothing, refused for the reason every other
+        # refusal in this constructor exists: a caller who wrote it meant
+        # something by it. `fold_confusables` changes how BANNED SUBSTRINGS are
+        # matched and nothing else, so with no banned substrings it is a setting
+        # that reads as protection and buys none. Patterns are deliberately not
+        # folded: a regex is matched against the view it was written for, and
+        # running one over a skeleton would silently change what a character
+        # class matches.
+        if fold_confusables and not self._banned:
+            raise ValueError(
+                f"{name!r} sets fold_confusables and declares no banned substrings; the "
+                "option only changes how banned substrings are matched, so here it would "
+                "read as protection and buy none"
             )
 
         if not directions:
@@ -408,10 +438,20 @@ class PatternGuardrail:
         Every occurrence, including overlapping ones, matching what ``_scan``
         does for patterns: the next search starts one past the previous match's
         start rather than at its end.
+
+        Under ``fold_confusables`` the view is the UTS #39 skeleton of the
+        case-folded content and the needles were skeletonised at construction,
+        so BOTH SIDES are folded the same way and one substituted Cyrillic
+        letter no longer dodges a banned word. The offset map composes through
+        both folds, so the span still points at the source run: that is what
+        lets a redaction remove the substituted letter along with the rest of
+        the word rather than leaving it standing.
         """
         if not self._banned:
             return []
         view = casefold_view(content) if self._fold_case else fold(content, lambda ch: ch)
+        if self._fold_confusables:
+            view = compose(view, _skeleton(view.text))
         found: list[tuple[str, tuple[int, int]]] = []
         for type_name, substring in self._banned:
             start = view.text.find(substring)
@@ -465,6 +505,22 @@ class PatternGuardrail:
         # guardrail. A chain merges these spans with every other guardrail's
         # and rewrites once, through this same `_rewrite`.
         return Verdict("redact", _rewrite(content, found), findings, provenance, saw(content))
+
+
+def _skeleton(text: str) -> _Folded:
+    """The UTS #39 skeleton, imported where it is used and not at module import.
+
+    ``jamjet_guardrails._unicode`` carries 231 KiB of generated tables and this
+    module is reached from the package root, so a top-level import would make
+    ``import jamjet_guardrails`` pay for them whether or not any caller ever
+    sets ``fold_confusables``.
+    ``tests/test_unicode.py::test_importing_the_package_loads_no_unicode_table``
+    holds that, and it is the reason this one-line function exists rather than
+    two copies of the import.
+    """
+    from jamjet_guardrails._unicode import skeleton
+
+    return skeleton(text)
 
 
 def _require_type_name(type_name: str) -> None:

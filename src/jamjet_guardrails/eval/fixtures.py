@@ -30,6 +30,7 @@ FIXTURES: Mapping[str, Mapping[str, object]] = {
         "banned": {"PROJECT_CODENAME": ("project bluebird",)},
         "limits": Limits(max_chars=2000),
         "on_match": "redact",
+        "fold_confusables": True,
     },
     # Chosen so the row measures the two things that separate this check from a
     # naive one, on text where both occur naturally. Japanese needs all three

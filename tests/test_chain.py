@@ -1758,6 +1758,7 @@ def test_a_declared_direction_that_is_not_an_exact_str_cannot_force_a_run() -> N
 # rather than as a subset, so a check that gains or loses a decision has to be
 # noticed here.
 _DECISIONS_PRODUCED: dict[str, frozenset[Decision]] = {
+    "confusables": frozenset({"allow", "redact", "deny"}),
     "injection-structural": frozenset({"allow", "redact", "deny"}),
     "pii": frozenset({"allow", "redact"}),
     "rules": frozenset({"allow", "redact", "deny"}),
@@ -1766,8 +1767,16 @@ _DECISIONS_PRODUCED: dict[str, frozenset[Decision]] = {
     "url-exfiltration": frozenset({"allow", "redact", "deny"}),
 }
 
-# The `on_match` settings each check accepts, on top of its published default.
+# The decision settings each check accepts, on top of its published default,
+# and the keyword each one spells that option with. The two spellings are the
+# phase boundary rather than an accident: a check built out of patterns takes
+# `on_match`, because what it has is a match, and a check built out of a
+# structural signal takes `on_detect`. Held in a table rather than assumed,
+# because the control below builds every registered check and a wrong keyword
+# would surface as a TypeError from inside a constructor rather than as a
+# statement about which option a check has.
 _ON_MATCH: dict[str, tuple[Decision, ...]] = {
+    "confusables": ("redact", "deny"),
     "injection-structural": ("redact", "deny"),
     "pii": (),
     "rules": ("redact", "deny"),
@@ -1783,6 +1792,7 @@ _ON_MATCH: dict[str, tuple[Decision, ...]] = {
 # here as a missing key rather than as a TypeError from inside a parametrised
 # run naming a keyword nobody was looking at.
 _DECISION_KEYWORD: dict[str, str] = {
+    "confusables": "on_detect",
     "injection-structural": "on_match",
     "pii": "on_match",
     "rules": "on_match",
@@ -1805,6 +1815,7 @@ _SAMPLES = (
     # check has anything to say about it, so it adds one detection path
     # without moving any other row of the table above.
     "\u043e\u0442\u0447\u0451\u0442 \u0433\u043e\u0442\u043e\u0432",
+    "sign in at p\u0430ypal now",
     "",
 )
 
@@ -1873,6 +1884,9 @@ def test_a_bundled_redaction_still_rewrites_the_content_the_chain_returns(name: 
         # reachable through this option, and it is the redact path this test is
         # about. `url-exfiltration` denies by default on OUTPUT, which is the
         # direction this test runs in, so the same applies to it.
+        # `injection-structural` and `confusables` deny by default, so their
+        # redact path is only reachable through this option, and it is the
+        # redact path this test is about.
         options[_DECISION_KEYWORD[name]] = "redact"
     guardrail = build(name, **options)
     redacted = False
