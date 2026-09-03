@@ -10,15 +10,20 @@ findings behind it, and a record of which check made it over exactly what text.
 No dependencies. No network calls. No model downloads. Python 3.10 and above.
 
 ```mermaid
-flowchart LR
-  U["user input"] --> IN
-  R["retrieved page<br/>tool output"] --> IN
-  IN{"input checks"}
-  IN -->|"allow or redact"| M["your model"]
-  IN -->|"deny"| S1(["stops here"])
-  M --> OUT{"output checks"}
-  OUT -->|"allow or redact"| A["your app<br/>your logs"]
-  OUT -->|"deny"| S2(["stops here"])
+flowchart TD
+  U[user input] --> IN
+  R[retrieved page] --> IN
+  IN[input checks] -->|allow or redact| M[your model]
+  M --> OUT[output checks]
+  OUT -->|allow or redact| APP[your app and logs]
+  IN -.->|deny| X((blocked))
+  OUT -.->|deny| X
+  classDef check fill:#eab12a,stroke:#211b0e,stroke-width:2px,color:#211b0e
+  classDef io fill:#f4ecdb,stroke:#211b0e,stroke-width:1px,color:#211b0e
+  classDef stop fill:#6d4af0,stroke:#211b0e,stroke-width:2px,color:#f4ecdb
+  class IN,OUT check
+  class U,R,M,APP io
+  class X stop
 ```
 
 It runs on both sides. A check can rewrite as well as block, so a reply that
