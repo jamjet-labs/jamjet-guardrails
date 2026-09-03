@@ -87,9 +87,10 @@ def _f1_with_floor(alphabet: str, value: int) -> float:
 @pytest.mark.parametrize(
     ("alphabet", "floor", "plateau_top", "cost_above"),
     [
-        ("base64", 16, 32, 0.8986),
-        ("hex", 16, 42, 0.8986),
-        ("rot13", 24, 109, 0.8986),
+        ("base64", 16, 32, 0.9091),
+        ("hex", 16, 42, 0.9091),
+        ("rot13", 24, 109, 0.9091),
+        ("percent", 6, 104, 0.9091),
     ],
 )
 def test_every_floor_sits_inside_the_flat_region_the_sweep_measures(
@@ -108,34 +109,48 @@ def test_every_floor_sits_inside_the_flat_region_the_sweep_measures(
     base64 case, at the shipped-floor assertion.
     """
     assert FLOORS[alphabet] == floor, "the shipped floor and the recorded floor have parted"
-    baseline = 0.9143
+    baseline = 0.9231
     assert _f1_with_floor(alphabet, floor) == baseline
     assert _f1_with_floor(alphabet, plateau_top) == baseline
     assert _f1_with_floor(alphabet, plateau_top + 1) == cost_above
 
 
-def test_the_percent_floor_declines_a_better_f1_and_the_module_says_why() -> None:
-    """The one sweep result that was measured and rejected.
+def test_the_percent_window_that_beat_the_shipped_floor_no_longer_does() -> None:
+    """The one sweep result that was measured and rejected, re-taken.
 
-    From 107 to 147 the percent floor scores better than the shipped 6, and the
-    module refuses it: the gain is one false positive stopping being READ, the
-    lower bound is one corpus case's 106-character `title` parameter and the
-    upper bound is another's 147-character run, past which the score falls BELOW
-    the shipped one. A window bounded at both ends by two strings in one corpus
-    is a value fitted to that corpus.
+    On the 88-case corpus the percent floor scored 0.9275 anywhere from 107 to
+    147 against the shipped 6's 0.9143, and the module refused it: the gain was
+    one false positive stopping being READ, the lower bound was one corpus
+    case's 106-character `title` parameter and the upper bound another's
+    147-character run. A window bounded at both ends by two strings in one
+    corpus is a value fitted to that corpus.
 
-    Asserted rather than left in prose because the temptation is real and the
-    number is better: whoever next reads that paragraph and disagrees has to
+    Six cases were then added to close two fail-opens, two of them carrying
+    percent runs of 104 and 119 characters, and the window stopped winning:
+    it peaks at 0.9211 against the shipped floor's 0.9231. **The rejected
+    number was the overfit and the corpus caught up with it**, which is the
+    whole reason the refusal was written down rather than argued.
+
+    Asserted rather than left in prose because the temptation was real and the
+    number was better: whoever next reads that paragraph and disagrees has to
     edit a test, which is a reviewable act.
 
     Mutation watched: `FLOORS["percent"]` raised from 6 to 107. FAILS at the
     shipped-floor assertion.
     """
     assert FLOORS["percent"] == 6
-    assert _f1_with_floor("percent", 6) == 0.9143
-    assert _f1_with_floor("percent", 107) == 0.9275
-    assert _f1_with_floor("percent", 147) == 0.9275
-    assert _f1_with_floor("percent", 148) == 0.8788
+    shipped = _f1_with_floor("percent", 6)
+    assert shipped == 0.9231
+    assert _f1_with_floor("percent", 105) == 0.9091
+    assert _f1_with_floor("percent", 107) == 0.9211
+    assert _f1_with_floor("percent", 119) == 0.9211
+    assert _f1_with_floor("percent", 120) == 0.9067
+    assert _f1_with_floor("percent", 148) == 0.8611
+    for value in (105, 107, 119, 120, 148):
+        assert _f1_with_floor("percent", value) < shipped, (
+            f"percent floor {value} scores at or above the shipped 6; the window "
+            "the module rejects has reopened and the paragraph has to be re-argued"
+        )
 
 
 # ==========================================================================
@@ -420,10 +435,10 @@ def test_the_detector_that_consumes_this_module_still_scores_its_published_row()
     """
     corpus = load_corpus(CORPUS, name="url-exfiltration/in-repo")
     result = evaluate(build("url-exfiltration"), corpus)
-    assert round(result.overall.precision, 3) == 0.914
-    assert round(result.overall.recall, 3) == 0.914
+    assert round(result.overall.precision, 3) == 0.923
+    assert round(result.overall.recall, 3) == 0.923
     assert result.decision_mismatches == 6
-    assert result.cases == 88
+    assert result.cases == 94
 
 
 def test_the_module_names_no_encoding_it_cannot_decode() -> None:

@@ -221,8 +221,8 @@ why](#what-is-deliberately-absent-and-why).
 
 ### `corpora/url-exfiltration/in-repo.jsonl`
 
-Written for this repository and covered by its Apache-2.0 licence. 88 cases, 35
-positives and 53 negatives, in both directions.
+Written for this repository and covered by its Apache-2.0 licence. 94 cases, 39
+positives and 55 negatives, in both directions.
 
 Every attacker value in it is invented and every attacker host uses a label RFC
 2606 reserves for documentation: `attacker.example`, `evil.example`,
@@ -244,8 +244,36 @@ Mapbox-shaped access token. The hosts of those are the real ones, because a
 negative that is not the shape people really write is a negative that proves
 nothing.
 
-**The disclosed misses.** 0.914 precision, 0.914 recall, 6 wrong decisions over
-88 cases. All six are below, and there are no other failures.
+**Six cases were added after a whole-branch review found two fail-opens that
+the first 88 could not see.** Four are positives and two are negatives, and the
+negatives are the half that binds a port in both directions:
+
+- `url-0089`, `url-0090` and `url-0091` are the query that no path precedes.
+  `https://host?d=...` is a URL RFC 3986 permits and every browser resolves to
+  `https://host/?d=...`, and this implementation used to read its query only
+  after a `/`, so the whole query string went into the authority and was
+  discarded. Three of the five signals read nothing but the query, so deleting
+  one character from an attacker's URL turned a deny into an allow. Not one of
+  the original 88 cases put a `?` before the first `/`. `url-0091` is the
+  negative: a changelog link with three UTM parameters and no path, which is
+  the shape half the tracking links on the web have.
+- `url-0092`, `url-0093` and `url-0094` are the laundered URL. This check
+  resolves HTML entity references before it reads a scheme, because the
+  consumer's parser does, and it used to do that for the scheme ALONE: the
+  data-URI test and the query parse were handed the raw string one line later.
+  So `dat&#97;:text/html,<script>` was allowed where `data:text/html,<script>`
+  was denied, and `p.png&#63;d=<payload>` had no query here and a query in
+  every renderer. The corpus had exactly one entity-laundered case, `url-0019`,
+  and it pinned the normalisation for `SCRIPT_SCHEME` and for nothing else.
+  `url-0094` is the negative, and it is the commonest HTML there is: a link
+  whose query separators are written `&amp;`, which must stay allowed and must
+  not have its payload split into pieces by the resolution either.
+
+**The disclosed misses.** 0.923 precision, 0.923 recall, 6 wrong decisions over
+94 cases. All six are below, and there are no other failures. They are the same
+six the 88-case corpus disclosed: the six new cases are all answered correctly,
+which is why the row moved from 0.914 / 0.914 and the wrong-decision count did
+not move at all.
 
 Three cost precision:
 
@@ -282,20 +310,28 @@ decode floors and both prose floors was swept from 1 to 259 in steps of one over
 this corpus, one at a time with everything else at its shipped setting. The two
 prose floors are the smallest value reaching the best F1: 30 for an image query
 (29 costs precision, 65 costs recall) and 136 for a link query (135 costs
-precision, 177 costs recall). The four decode floors are NOT the sweep's argmax
-and the module says why: their curves are flat from 1 up to a ceiling, so the
-sweep bounds them and does not choose them. The rejected result is the percent
-floor, where F1 rises from 0.9143 to 0.9275 anywhere between 107 and 147 by
-refusing to read a 106-character `title` parameter in one case and shutting again
-one past a 147-character run in another. A window bounded at both ends by two
-strings in one corpus is a value fitted to that corpus, so 6 ships instead.
+precision, 177 costs recall). Both plateaus are where they were on the 88-case
+corpus. The four decode floors are NOT the sweep's argmax and the module says
+why: their curves are flat from 1 up to a ceiling, so the sweep bounds them and
+does not choose them.
+
+The rejected result is the percent floor, and the six new cases settled it.
+On the 88-case corpus F1 rose from 0.9143 to 0.9275 anywhere between 107 and
+147, by refusing to read a 106-character `title` parameter in one case and
+shutting again one past a 147-character run in another. A window bounded at both
+ends by two strings in one corpus is a value fitted to that corpus, so 6 shipped
+instead. Two of the new cases carry percent runs of 104 and 119 characters and
+both are positives, so on this corpus the window peaks at 0.9211 against the
+shipped floor's 0.9231 and no longer wins at all. The rejected number was the
+overfit, and the only reason that can be said is that the refusal was written
+down instead of argued.
 
 **Rot13 ships, and here is the measurement it shipped on.** Every alphabetic run
 is a rot13 candidate, so the test is two-sided: the original run must fail the
 prose test and the rotated run must pass it. Removing rot13 with nothing else
-changed moves this corpus from 0.9143 / 0.9143 / 6 wrong to 0.9091 precision,
-0.8571 recall and 8 wrong. Two positives are lost, `url-0071` and `url-0072`, and
-the false-positive count does not move: 3 either way, over 53 negatives that are
+changed moves this corpus from 0.9231 / 0.9231 / 6 wrong to 0.9189 precision,
+0.8718 recall and 8 wrong. Two positives are lost, `url-0071` and `url-0072`, and
+the false-positive count does not move: 3 either way, over 55 negatives that are
 almost entirely ordinary English prose and therefore rot13 candidates every one.
 
 **The function-word list behind the prose test is a substitute, and it is named

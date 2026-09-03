@@ -50,20 +50,25 @@ _CALLER_STRING_LIMIT = 200
 # deliberately NOT derived from `get_args(Direction)`, for the reason `_KINDS`
 # and `_DECISIONS` give below and `types.py` gives at its own copy.
 #
-# One value, declared in FIVE places in this package, and the count is written
-# here because the first draft of this comment said three and a maintainer
-# following it would have missed two:
+# One value, declared in SEVEN places in this package, and the count is written
+# here because the first draft of this comment said three, the second said five,
+# and a maintainer following either would have missed the rest:
 #
 #   chain._RUNNABLE_DIRECTIONS          this line
 #   detectors._RUNNABLE_DIRECTIONS      refuses a guardrail declaring none of it
 #   types._DIRECTIONS                   refuses a Context outside it
 #   authoring._RUNNABLE                 refuses a PatternGuardrail outside it
 #   eval.corpus._DIRECTIONS             refuses a corpus row outside it
+#   url_exfiltration._DEFAULT_ON_DETECT its KEYS; its `_RUNNABLE` derives from
+#                                       them, which is why that is not an eighth
+#   template_integrity._DEFAULT_ON_DETECT   its KEYS
 #
 # This module cannot import any of them, because `detectors/__init__.py` imports
 # this module and the rest import `types`. A re-declared value drifts and every
-# side reads correctly alone, so `tests/test_chain_identity.py` holds all five
-# to `get_args(Direction)` and to each other. The direction that fails OPEN is
+# side reads correctly alone, so `tests/test_chain_identity.py` holds all seven
+# to `get_args(Direction)` and to each other, and a second test there SCANS
+# `src/` for an eighth rather than trusting this list: the two checks that added
+# copies six and seven landed while this comment said five and nothing noticed. The direction that fails OPEN is
 # `types._DIRECTIONS` growing alone: a `Context` would then carry a direction no
 # guardrail declares, every guardrail would be skipped, and the run would report
 # allow over content nothing checked.

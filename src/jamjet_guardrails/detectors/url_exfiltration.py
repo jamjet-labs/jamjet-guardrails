@@ -46,6 +46,20 @@ discovery pass and none of the decoding; content full of URLs costs more, and
 that extra cost is bounded by how many URLs there are and how long they are
 rather than by the document around them. `scripts/measure_throughput.py` reruns
 it, and `docs/performance.md` states the machine, the input and the method.
+
+**That paragraph was false of the code under it and the row could not see it,
+because the row's input carries no URL.** Discovery was quadratic in two
+independent places: the containment test that stops a bare URL being reported
+twice was a linear scan of every construct already found, run once per bare
+URL, and the lazy ``[^>]*?`` inside the old single-regex form of the HTML
+attribute patterns rescanned to the end of the content from every ``<img`` or
+``<a`` that never reached its attribute. A megabyte of ``[a](b)`` and bare URLs
+took 38 seconds and a megabyte of ``<img `` took 37, against a published 112
+ms and a sentence in `docs/performance.md` written to foreclose exactly this
+shape. Both sites are bisects now, both curves are 4.0x per 4x, and the two
+inputs take 0.22 and 0.02 seconds. `tests/test_url_exfiltration.py` holds each
+with a budget loose enough for a loaded runner and far under what the
+quadratic form needed.
 """
 
 from __future__ import annotations
@@ -53,6 +67,7 @@ from __future__ import annotations
 import base64
 import binascii
 import re
+from bisect import bisect_left, bisect_right
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from html import unescape
@@ -83,14 +98,26 @@ URL_EXFILTRATION_TYPES = frozenset(
 
 _VERSION = "0.1.0"
 
-_RUNNABLE: frozenset[Direction] = frozenset({"input", "output"})
+# The default decision per direction, and the ONLY place in this module that
+# names the directions it runs in. `_RUNNABLE` is derived from these keys
+# rather than declared beside them, because the two were declared separately
+# and that is a re-declared value: `__init__` indexes this mapping with every
+# member of `_RUNNABLE`, so a `Direction` added to one and not the other threw
+# a bare `KeyError` out of a constructor whose whole contract is to refuse a
+# bad configuration with a `GuardrailUnavailableError`. Derived, that index is
+# total by construction and there is nothing left to disagree.
+#
+# `tests/test_chain_identity.py` holds these keys against `get_args(Direction)`
+# with every other copy in the package, and finds new copies by scanning the
+# source rather than by listing the ones somebody remembered.
+_DEFAULT_ON_DETECT: Mapping[Direction, Decision] = {"input": "redact", "output": "deny"}
+
+_RUNNABLE: frozenset[Direction] = frozenset(_DEFAULT_ON_DETECT)
 
 # The type that can only ever fire in one direction, held here rather than in
 # prose so the constructor can refuse a configuration that selects it alone in
 # the other one.
 _OUTPUT_ONLY = frozenset({"LINK_QUERY_PAYLOAD"})
-
-_DEFAULT_ON_DETECT: Mapping[Direction, Decision] = {"output": "deny", "input": "redact"}
 
 # How long a decoded component has to be before reading as prose is a finding.
 #
@@ -103,8 +130,12 @@ _DEFAULT_ON_DETECT: Mapping[Direction, Decision] = {"output": "deny", "input": "
 #
 # | Floor | Value | Plateau | One below | One above the plateau |
 # |---|---:|---|---|---|
-# | image | 30 | 30 to 64 | 29: P 0.8889, F1 0.9014 | 65: R 0.8857, F1 0.8986 |
-# | link | 136 | 136 to 176 | 135: P 0.8889, F1 0.9014 | 177: R 0.7714, F1 0.8308 |
+# | image | 30 | 30 to 64 | 29: P 0.9000, F1 0.9114 | 65: R 0.8974, F1 0.9091 |
+# | link | 136 | 136 to 176 | 135: P 0.9000, F1 0.9114 | 177: R 0.7949, F1 0.8493 |
+#
+# Re-taken over the 94-case corpus. Both plateaus are where they were on the
+# 88-case one and every figure beside them moved, which is what a floor fitted
+# to a corpus looks like when the corpus grows and the fit survives.
 #
 # The image floor is bounded from below by legitimate caption parameters: at 29
 # the 29-character `alt` text of `url-0086` fires, and `url-0085` and `url-0087`
@@ -148,8 +179,22 @@ _MD_INLINE = re.compile(
 _MD_REF_USE = re.compile(r"(!?)\[[^\]\n]*\]\[([^\]\n]*)\]")
 _MD_REF_DEF = re.compile(r"^[ ]{0,3}\[([^\]\n]+)\]:[ \t]*(<[^>\n]*>|\S+)", re.MULTILINE)
 
-_HTML_IMG = re.compile(r"<img\b[^>]*?\bsrc\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s>]+)", re.IGNORECASE)
-_HTML_A = re.compile(r"<a\b[^>]*?\bhref\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s>]+)", re.IGNORECASE)
+# An HTML attribute carrying a URL, found in two halves that are joined by
+# `_html_attributes` rather than by one regex.
+#
+# The one regex was `<img\b[^>]*?\bsrc\s*=\s*(...)`, and the lazy `[^>]*?` in
+# it is quadratic: it rescans forward from EVERY `<img` that never reaches a
+# `src=`, so `"<img " * 40000` took 37 seconds where the published row for a
+# whole megabyte is 112 ms. Each half alone is linear over the content, and
+# joining them is two bisects per attribute rather than a rescan per tag.
+_HTML_OPEN_IMG = re.compile(r"<img\b", re.IGNORECASE)
+_HTML_OPEN_A = re.compile(r"<a\b", re.IGNORECASE)
+_HTML_SRC = re.compile(r"\bsrc\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s>]+)", re.IGNORECASE)
+_HTML_HREF = re.compile(r"\bhref\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s>]+)", re.IGNORECASE)
+
+# Where a tag stops. `[^>]*` inside the old single regex said this and said it
+# per tag; found once for the whole content, it says the same thing once.
+_HTML_CLOSE = re.compile(r">")
 
 # Bare URLs, and the discovery limit this class represents is disclosed rather
 # than hidden. Any `scheme://` form is found, plus the four opaque schemes that
@@ -204,6 +249,17 @@ _ABSOLUTE_URL = re.compile(r"\A[A-Za-z][A-Za-z0-9+.\-]*://\S")
 
 _HTTP_SCHEME = re.compile(r"\Ahttps?:", re.IGNORECASE)
 
+# Where the authority ends: the first `/` OR `?`, whichever comes first.
+#
+# Not `/` alone. `https://host?q=...` carries no path, RFC 3986 permits it and
+# every browser resolves it to `https://host/?q=...`, so partitioning on `/`
+# put the whole query string inside the authority and the authority is then
+# discarded. Three of the five signals read nothing but the components, so
+# deleting one character from an attacker's URL took MARKDOWN_IMAGE_EXFIL,
+# LINK_QUERY_PAYLOAD and NESTED_REDIRECT out of the check at once, and no case
+# in the corpus put a `?` before the first `/`.
+_AUTHORITY_END = re.compile(r"[/?]")
+
 
 @dataclass(frozen=True, slots=True)
 class _Target:
@@ -222,13 +278,22 @@ class _Target:
     image: bool
 
 
-def _strip_delimiters(url: str) -> str:
-    """``<...>`` around a markdown destination, and quotes around an attribute."""
+def _strip_delimiters(url: str) -> tuple[str, int]:
+    """``<...>`` around a markdown destination, and quotes around an attribute.
+
+    Returns the URL and HOW FAR INTO the argument it begins, because a caller
+    that reports a span needs both and recomputing the second from the shape of
+    the first is what went wrong. The offset used to be derived beside the call
+    from the angle-bracket test alone, which is one of the TWO shapes stripped
+    here, so a reference definition whose URL was quoted reported a span that
+    covered the opening quote and stopped one character short of the URL's end.
+    One function knows the delimiters and it is this one.
+    """
     if len(url) >= 2 and url[0] == "<" and url[-1] == ">":
-        return url[1:-1]
+        return url[1:-1], 1
     if len(url) >= 2 and url[0] == url[-1] and url[0] in "\"'":
-        return url[1:-1]
-    return url
+        return url[1:-1], 1
+    return url, 0
 
 
 def _trim_bare(url: str) -> str:
@@ -246,6 +311,58 @@ def _trim_bare(url: str) -> str:
         while url and url[-1] in _TRAILING:
             url = url[:-1]
     return url
+
+
+def _html_attributes(
+    content: str,
+    opener: re.Pattern[str],
+    attribute: re.Pattern[str],
+    closes: list[int],
+) -> list[tuple[int, re.Match[str]]]:
+    """Every ``(tag start, attribute match)`` the one-regex form reported.
+
+    The same answers, linear instead of quadratic. The one regex asked, from
+    every tag opener, "is there a ``src=`` before the next ``>``", and rescanned
+    the rest of the document from every opener that had none. This asks each
+    ``src=`` "which opener owns me", which is the same question from the other
+    end and costs two bisects rather than a rescan.
+
+    The same ANSWERS, not merely similar ones, because these spans are what a
+    redaction covers. Three pieces of the regex are what the arithmetic keeps:
+
+    - the opener reported is the EARLIEST one the regex could have started at
+      and not the nearest one to the attribute, because a regex reports the
+      leftmost match and ``<img <img src=x>`` was one match starting at the
+      first ``<img``;
+    - an attribute whose owner begins before the end of the previous accepted
+      match is skipped, because ``finditer`` resumes at that end and never
+      reports overlapping matches;
+    - a ``>`` anywhere between the opener and the attribute ends the tag, which
+      is all ``[^>]*`` ever said, quoted attribute values included:
+      ``<img alt="a>b" src=x>`` reported nothing then and reports nothing now.
+    """
+    opens: list[int] = []
+    ends: list[int] = []
+    for match in opener.finditer(content):
+        opens.append(match.start())
+        ends.append(match.end())
+
+    reported: list[tuple[int, re.Match[str]]] = []
+    resume = 0
+    for attribute_match in attribute.finditer(content):
+        at = attribute_match.start()
+        seen = bisect_left(closes, at)
+        last_close = closes[seen - 1] if seen else -1
+        # An opener owns this attribute when nothing closed its tag in between,
+        # so its own end has to lie after the last `>` before the attribute.
+        # `ends` rises with `opens`, so the qualifying openers are a suffix and
+        # the earliest of them is one bisect.
+        index = max(bisect_right(ends, last_close), bisect_left(opens, resume))
+        if index >= len(opens) or ends[index] > at:
+            continue
+        reported.append((opens[index], attribute_match))
+        resume = attribute_match.end()
+    return reported
 
 
 def _targets(content: str) -> list[_Target]:
@@ -267,13 +384,17 @@ def _targets(content: str) -> list[_Target]:
             image_labels.add(match.group(2).strip().lower())
 
     for match in _MD_INLINE.finditer(content):
-        url = _strip_delimiters(match.group(2).strip())
+        url, _ = _strip_delimiters(match.group(2).strip())
         if url:
             found.append(_Target(match.span(), url, image=bool(match.group(1))))
         covered.append(match.span())
 
-    for pattern, is_image in ((_HTML_IMG, True), (_HTML_A, False)):
-        for match in pattern.finditer(content):
+    closes = [match.start() for match in _HTML_CLOSE.finditer(content)]
+    for opener, attribute, is_image in (
+        (_HTML_OPEN_IMG, _HTML_SRC, True),
+        (_HTML_OPEN_A, _HTML_HREF, False),
+    ):
+        for tag, match in _html_attributes(content, opener, attribute, closes):
             raw = match.group(1)
             start, end = match.span(1)
             if raw and raw[0] in "\"'":
@@ -281,18 +402,16 @@ def _targets(content: str) -> list[_Target]:
             url = content[start:end].strip()
             if url:
                 found.append(_Target((start, end), url, image=is_image))
-            covered.append(match.span())
+            covered.append((tag, match.end()))
 
     for match in _MD_REF_DEF.finditer(content):
-        raw = match.group(2)
-        url = _strip_delimiters(raw)
-        # The offset is derived from the delimiters, NOT from `url is not raw`.
-        # That identity test read correctly and rested on `_strip_delimiters`
-        # returning a new object, which is true of a slice and is not a promise
-        # the function makes: return the argument unchanged for an undelimited
-        # URL and the span silently shifts by one.
-        angled = len(raw) >= 2 and raw.startswith("<") and raw.endswith(">")
-        start = match.start(2) + (1 if angled else 0)
+        # The offset comes back FROM the function that stripped the delimiters,
+        # rather than being derived from `url is not raw` (an identity test that
+        # rests on a slice being a new object, which is not a promise the
+        # function makes) or re-derived here from one of the two shapes it
+        # strips (which reported a quoted URL's span one character to the left).
+        url, offset = _strip_delimiters(match.group(2))
+        start = match.start(2) + offset
         if url:
             found.append(
                 _Target(
@@ -303,9 +422,26 @@ def _targets(content: str) -> list[_Target]:
             )
         covered.append(match.span())
 
+    # `covered` is asked about once per bare URL, and asking it with a linear
+    # scan made this pass O(bare urls x constructs): a megabyte of
+    # `[a](b) http://x.example/ ` took 38 seconds against a published row of
+    # 112 ms for a megabyte. Sorting by start and carrying the running furthest
+    # end turns the question into one bisect, and it is the SAME question. An
+    # interval containing [start, end] exists exactly when, among the intervals
+    # that begin at or before `start`, one ends at or after `end`; the running
+    # maximum over that prefix is the only one that has to be tested.
+    covered.sort()
+    opens_at = [low for low, _ in covered]
+    furthest: list[int] = []
+    reach = -1
+    for _, high in covered:
+        reach = max(reach, high)
+        furthest.append(reach)
+
     for match in _BARE_URL.finditer(content):
         start, end = match.span()
-        if any(low <= start and end <= high for low, high in covered):
+        prefix = bisect_right(opens_at, start)
+        if prefix and end <= furthest[prefix - 1]:
             continue
         url = _trim_bare(match.group())
         if url:
@@ -326,6 +462,34 @@ def _normalised_scheme(url: str) -> str:
     return _STRIPPED.sub("", unescape(url))
 
 
+def _consumer_views(url: str) -> tuple[str, ...]:
+    """The URL as written, and as the consumer resolves its entity references.
+
+    BOTH, and every signal below runs over each of them, because neither view
+    contains the other and choosing one loses findings in the direction not
+    chosen.
+
+    Resolving is what the consumer does: an HTML parser resolves an attribute
+    before the URL parser is handed it, and CommonMark resolves a link
+    destination the same way, which is the reason ``_normalised_scheme`` gives
+    for unescaping before it reads a scheme. The raw string was all that
+    ``_data_uri_payload`` and ``_url_parts`` were ever given, one line below the
+    scheme test that unescapes, so ``dat&#97;:text/html,<script>`` was ALLOWED
+    where ``data:text/html,<script>`` was denied, and ``p.png&#63;d=<payload>``
+    had no query string here and a query string in every renderer.
+
+    Testing only the resolved form loses the other direction: an ``&amp;``
+    inside a payload is one component before resolution and two after it, and
+    two short components can both sit under a prose floor the long one clears.
+
+    One level, once, and over the URL rather than over what comes out of it.
+    That is the same rule the payload decoders keep, for the same reason: a
+    view nobody can reach is a span this library cannot justify.
+    """
+    resolved = unescape(url)
+    return (url,) if resolved == url else (url, resolved)
+
+
 def _url_parts(url: str) -> tuple[list[str], list[str]]:
     """Path segments and query keys and values of a hierarchical URL.
 
@@ -335,8 +499,8 @@ def _url_parts(url: str) -> tuple[list[str], list[str]]:
     """
     body = url.split("#", 1)[0]
     after_scheme = body.split("://", 1)[-1]
-    authority, _, rest = after_scheme.partition("/")
-    del authority
+    ends = _AUTHORITY_END.search(after_scheme)
+    rest = after_scheme[ends.start() :] if ends is not None else ""
     path, _, query = rest.partition("?")
     segments = [segment for segment in path.split("/") if segment]
     fields: list[str] = []
@@ -588,17 +752,31 @@ class UrlExfiltrationGuardrail:
                 found[(target.span, type_name)] = None
 
         for target in _targets(content):
+            views = _consumer_views(target.url)
             scheme_view = _normalised_scheme(target.url)
             if _SCRIPT_SCHEME.match(scheme_view):
                 claim(target, "SCRIPT_SCHEME")
                 continue
-            if _data_uri_payload(target.url):
+            # `scheme_view` joins the views here and only here. It strips ASCII
+            # controls and spaces from the WHOLE string, which is what turns
+            # `dat<TAB>a:` into a data URI, and that over-stripping is safe for a
+            # question about what a URI DECLARES itself to be. It is not safe for
+            # the components below, where the same strip deletes the spaces
+            # `is_prose` counts and turns a sentence into one long word: an
+            # over-strip is fail-closed for a scheme and fail-open for a payload.
+            # The raw view stays because stripping can also empty a body that a
+            # declared image is lying about.
+            if any(_data_uri_payload(view) for view in dict.fromkeys((*views, scheme_view))):
                 claim(target, "DATA_URI_PAYLOAD")
                 continue
             if not _HTTP_SCHEME.match(scheme_view):
                 continue
-            segments, fields = _url_parts(target.url)
-            components = segments + fields
+            seen: dict[str, None] = {}
+            for view in views:
+                segments, fields = _url_parts(view)
+                for component in segments + fields:
+                    seen[component] = None
+            components = list(seen)
             if _nested_redirect(components):
                 claim(target, "NESTED_REDIRECT")
             if target.image:

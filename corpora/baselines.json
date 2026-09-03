@@ -44,9 +44,9 @@
     "precision": 0.819,
     "recall": 0.964
   },
-  "url-exfiltration/in-repo/c8015e4e93e2": {
+  "url-exfiltration/in-repo/3db90a1b72e5": {
     "decision_mismatches": 6,
-    "precision": 0.914,
-    "recall": 0.914
+    "precision": 0.923,
+    "recall": 0.923
   }
 }

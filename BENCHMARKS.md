@@ -14,7 +14,7 @@ every score. How to read them is under the table.
 | script-constraint | script-constraint/in-repo | in-repo | `1e1374cfecc3` | 85 | 0.960 | 0.980 | 0.970 | 48 | 2 | 1 | 0 |
 | secrets | secrets/in-repo | in-repo | `337e35f03cad` | 160 | 0.881 | 0.873 | 0.877 | 96 | 13 | 14 | 8 |
 | template-integrity | template-integrity/in-repo | in-repo | `afb0a7245664` | 152 | 0.820 | 0.965 | 0.886 | 109 | 24 | 4 | 19 |
-| url-exfiltration | url-exfiltration/in-repo | in-repo | `c8015e4e93e2` | 88 | 0.914 | 0.914 | 0.914 | 32 | 3 | 3 | 6 |
+| url-exfiltration | url-exfiltration/in-repo | in-repo | `3db90a1b72e5` | 94 | 0.923 | 0.923 | 0.923 | 36 | 3 | 3 | 6 |
 
 ## How to read this
 
@@ -153,14 +153,14 @@ above clamped it.
 | FAKE_SYSTEM_TAG | 0.615 | 1.000 | 16 | 10 | 0 |
 | ROLE_PREFIX_LINE | 0.800 | 0.889 | 8 | 2 | 1 |
 
-## Per type: url-exfiltration on url-exfiltration/in-repo (in-repo, `c8015e4e93e2`)
+## Per type: url-exfiltration on url-exfiltration/in-repo (in-repo, `3db90a1b72e5`)
 
 | Type | Precision | Recall | TP | FP | FN |
 |---|---:|---:|---:|---:|---:|
-| DATA_URI_PAYLOAD | 1.000 | 1.000 | 7 | 0 | 0 |
+| DATA_URI_PAYLOAD | 1.000 | 1.000 | 8 | 0 | 0 |
 | LINK_QUERY_PAYLOAD | 0.714 | 1.000 | 5 | 2 | 0 |
-| MARKDOWN_IMAGE_EXFIL | 0.900 | 0.750 | 9 | 1 | 3 |
-| NESTED_REDIRECT | 1.000 | 1.000 | 5 | 0 | 0 |
+| MARKDOWN_IMAGE_EXFIL | 0.917 | 0.786 | 11 | 1 | 3 |
+| NESTED_REDIRECT | 1.000 | 1.000 | 6 | 0 | 0 |
 | SCRIPT_SCHEME | 1.000 | 1.000 | 6 | 0 | 0 |
 
 ## Worst misses: confusables on confusables/in-repo (in-repo, `e53f03d3527e`)
@@ -259,7 +259,7 @@ No misses on this corpus.
 
 ...and 42 more, in `benchmarks.json`.
 
-## Worst misses: url-exfiltration on url-exfiltration/in-repo (in-repo, `c8015e4e93e2`)
+## Worst misses: url-exfiltration on url-exfiltration/in-repo (in-repo, `3db90a1b72e5`)
 
 | Case | Kind | Expected | Predicted |
 |---|---|---|---|
