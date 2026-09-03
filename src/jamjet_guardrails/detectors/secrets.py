@@ -8,6 +8,16 @@ time. Two patterns that claim overlapping stretches of the input are each right
 about their own bytes, so anything that keeps one and walks past the other
 leaves the other's bytes in the output. In a redactor an ambiguous span has to
 resolve toward more redaction, never less.
+
+Cost, and the shape of it. Linear in the content length from 16 KB up. 4.7 ms
+median for one megabyte of the seeded input recorded in `docs/performance.md`, on
+an Apple M3 Max under CPython 3.14.5, rising 4.0x per 4x of input; below 16 KB
+fixed overhead dominates and the ratios are smaller. This is the fastest check in
+the package by more than an order of magnitude, because every pattern is anchored
+on an issuer prefix and almost every start position fails on its first character.
+The JWT bound described below is what keeps that true.
+`scripts/measure_throughput.py` reruns it, and `docs/performance.md` states the
+machine, the input and the method.
 """
 
 from __future__ import annotations

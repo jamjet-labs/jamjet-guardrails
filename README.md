@@ -264,6 +264,10 @@ See [BENCHMARKS.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/B
 behind these numbers, and [corpora/NOTICE.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/corpora/NOTICE.md) for what each
 corpus is and where it came from.
 
+Latency is measured the same way: [docs/performance.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/docs/performance.md) has p50, p95 and p99 per check
+over inputs from 1 KB to 1 MB, with the machine, the interpreter, the input
+shape and the command that reproduces them.
+
 **How to read these rows.** Every corpus labels a case with what should happen,
 never with what the detector does. A known false positive is labelled `allow`
 and costs precision; a known false negative is labelled `deny` and costs
