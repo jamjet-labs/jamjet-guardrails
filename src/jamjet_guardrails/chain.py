@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hmac
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import cast
 
@@ -83,6 +83,42 @@ _KINDS: tuple[Kind, ...] = ("constraint", "classifier")
 _DECISIONS: tuple[Decision, ...] = ("allow", "redact", "deny")
 
 
+# `type.__name__`'s own getset descriptor, bound once here, and the reason it is
+# spelled this way is the same reason `_identity_of` writes `str.__eq__(known,
+# kind)` rather than `known == kind`: an attribute lookup asks the object, and
+# the object is caller code.
+#
+# `SomeClass.__name__` is not an inert read. Attribute lookup on a class walks
+# the METACLASS first, so a metaclass with a `__name__` property shadows this
+# descriptor, and that property is a function the detector's author wrote:
+#
+#     class NameRaises(type):
+#         @property
+#         def __name__(cls): raise RuntimeError("the class name is caller code too")
+#     class Hostile(Exception, metaclass=NameRaises): pass
+#
+# `_bounded` reads that name from inside the `except` clause that exists to keep
+# a run alive, so a raise there is a second exception thrown from a handler and
+# it propagates straight out of `run`: no `ChainResult`, no audit record, and no
+# verdict for any guardrail that had already run. That is the exact failure the
+# fail-closed path was rebuilt to eliminate, reached through the one string the
+# chain reads off a RAISED exception rather than off a returned verdict.
+#
+# Going through the descriptor removes the lookup instead of guarding it. There
+# is no `try` around the read because there is nothing left that could run: this
+# is `type`'s own C-level getter, applied to `type(exc)`, which is the object's
+# real type read from its header and not `exc.__class__`, an ordinary writable
+# attribute a caller can make raise. The metaclass property above is never
+# consulted, and neither is a metaclass `__getattr__` or `__getattribute__`.
+#
+# It also narrows what can come back. The metaclass route can return ANY object
+# -- an `int` reached `value[:200]` and raised `TypeError` from the same handler
+# -- while `type.__name__`'s setter admits only a string, so this returns a
+# `str` or a `str` subclass and never anything else. `_bounded_str` closes the
+# subclass half.
+_TYPE_NAME: Callable[[type], str] = type.__dict__["__name__"].__get__
+
+
 def _bounded_str(value: str) -> str:
     """Truncate one caller-supplied string to `_CALLER_STRING_LIMIT`.
 
@@ -92,8 +128,25 @@ def _bounded_str(value: str) -> str:
     the same ceiling. A 2,000,000-character name interpolated four times into
     one message produced a 4,000,073-character `error`, which every log, trace
     and database column downstream of a `ChainResult` then pays for.
+
+    `str.__getitem__(value, ...)`, not `value[:200]`, and the difference is the
+    same one `_identity_of` records at `str.__eq__`. `value[:200]` dispatches on
+    `type(value)`, and a `str` SUBCLASS with its own `__getitem__` is caller
+    code that runs wherever this is called from. That subclass reaches here:
+    `type.__name__`'s setter checks for a string but admits a subclass of one,
+    so `Sub.__name__ = LyingStr("x")` puts one in front of `_bounded`'s
+    truncation, inside the `except` clause that must not fail. Slicing through
+    `str`'s own unbound method runs the built-in over the underlying characters
+    and returns a plain `str`, so a lying `__getitem__` is never called and what
+    lands in the audit record is this module's own object.
+
+    `_Identity`'s use of this reads an exact `str` -- `_identity_of` refuses
+    anything else before it gets here -- so nothing changes on that path. The
+    bound belongs where the caller-supplied string enters the message, so this
+    function stays correct on its own terms rather than only in combination
+    with a rule enforced elsewhere in the file.
     """
-    return value[:_CALLER_STRING_LIMIT]
+    return str.__getitem__(value, slice(_CALLER_STRING_LIMIT))
 
 
 def _bounded(exc: BaseException) -> str:
@@ -122,9 +175,17 @@ def _bounded(exc: BaseException) -> str:
     would leak the first N characters of whatever the detector interpolated. The
     traceback still carries the message to whoever is debugging the detector,
     which is where that detail belongs and where it is not persisted.
+
+    The type is read through `_TYPE_NAME` rather than as `type(exc).__name__`,
+    and nothing in this function can run caller code. See `_TYPE_NAME` above for
+    what an attribute lookup here cost: a metaclass `__name__` property that
+    raises, evaluated inside the handler that keeps the run alive, took the
+    whole run down along with its audit record. This function has one job that
+    everything else in the chain's fail-closed path depends on, which is to
+    RETURN.
     """
     return (
-        f"{_bounded_str(type(exc).__name__)} raised; the message is withheld "
+        f"{_bounded_str(_TYPE_NAME(type(exc)))} raised; the message is withheld "
         "because a detector's message may quote the content"
     )
 
@@ -852,6 +913,25 @@ class GuardrailChain:
     are unreachable through ``run`` and remain as assertions for a direct
     caller.
 
+    That sentence covers what a detector RAISES as well, and it did not until
+    the handler that catches a raise was made unable to raise itself. Two ways
+    through it, both reachable from an ordinary ``Guardrail``: the ``error``
+    string is built from the exception's class name, and a class name is an
+    attribute lookup that a metaclass property can answer with a raise or with
+    a ``str`` subclass whose slicing raises; and ``except Exception`` does not
+    catch ``class Sneaky(BaseException)``. Either one threw out of ``run`` and
+    cost the run its audit record, from inside the code written to keep it. See
+    ``_TYPE_NAME``, ``_bounded_str`` and ``run``'s two ``except`` clauses.
+
+    **The exceptions are ``KeyboardInterrupt`` and ``SystemExit``**, which
+    propagate rather than becoming a ``deny``. They are the operator's and the
+    interpreter's, and a chain that swallowed them would need one ctrl-c per
+    guardrail to interrupt. A detector CAN raise them deliberately and abandon
+    a run that way, which is the honest limit of the sentence above: it is
+    bounded by what no handler can take back, since a detector that wants the
+    process stopped can also call ``os._exit``, crash a C extension, or loop
+    forever.
+
     **A caller must treat any exception out of ``run`` as a deny.** That case
     abandons the run, so there is no ``ChainResult`` and no audit record, which
     is acceptable only because nothing was allowed through. A caller that
@@ -908,7 +988,44 @@ class GuardrailChain:
                 # a tail that is still there.
                 returned = guardrail.check(content, context)
                 verdict = _verified(returned, identity, digest, content)
-            except Exception as exc:  # noqa: BLE001 - fail closed on any detector bug
+            except (KeyboardInterrupt, SystemExit):
+                # The two this clause always MEANT to leave alone, now said out
+                # loud instead of left to `Exception` to imply. They are not the
+                # detector's: one is the operator's ctrl-c and the other is the
+                # interpreter being told to stop, and turning either into a deny
+                # verdict would swallow a shutdown, carry on down the chain, and
+                # hand back a `ChainResult` that reads like an ordinary set of
+                # denials. A fifty-guardrail chain would need fifty ctrl-c
+                # presses to interrupt.
+                #
+                # This is the whole of the carve-out and it is named in
+                # `GuardrailChain`'s docstring and in `docs/conformance.md`,
+                # because a detector CAN raise these two on purpose and so the
+                # "no detector behaviour abandons a run" sentence is not true
+                # without them. It is true up to a boundary no handler can move:
+                # a detector that wants the process stopped can call `os._exit`,
+                # segfault a C extension, or never return, and the chain
+                # survives none of those either. What the carve-out costs is
+                # bounded by that; what catching them would cost is the
+                # operator's control over their own process.
+                #
+                # NOT extended to `GeneratorExit` or `asyncio.CancelledError`,
+                # the other two `BaseException`s a reader will think of. Neither
+                # is raised INTO a synchronous `check` by the runtime -- one
+                # arrives at a `yield`, the other at an `await`, and `run` has
+                # neither -- so out of `check` they are a detector's own choice,
+                # and every class name added here is one more class name a
+                # detector can raise to abandon a run.
+                raise
+            except BaseException as exc:  # noqa: BLE001 - fail closed on any detector bug
+                # `BaseException`, not `Exception`. The docstring already said
+                # this clause was reserving ctrl-c and SystemExit, and
+                # `Exception` does not spell that: `class Sneaky(BaseException)`
+                # is three words a detector can write, and `raise Sneaky()` from
+                # `check` walked straight past this handler and out of `run`,
+                # taking the audit record and every earlier guardrail's verdict
+                # with it. The reservation is now the clause above and this one
+                # catches what is left.
                 verdict = _synthesised_deny(identity, digest, _bounded(exc))
             verdicts.append(verdict)
             decision = combine(decision, verdict.decision)
