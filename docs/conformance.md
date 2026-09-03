@@ -855,6 +855,20 @@ choice for every one of them:
   and so does any evidence for it -- the mutation battery `corpora/NOTICE.md`
   describes is this implementation's argument that its corpus moves when its
   detector does, not a requirement on a port.
+- **Where Unicode property data comes from, and at what version.** This
+  implementation vendors Script, Script_Extensions and confusables tables
+  generated from files published by Unicode, Inc. at 16.0.0, because
+  `unicodedata` exposes neither property on any supported interpreter and its
+  own Unicode version varies from 13.0 to 16.0 across the CI matrix. The table
+  format, the generator and the pin are this implementation's means. A port
+  reaching the same verdicts on the corpora conforms with any Unicode data
+  source at any version, and each corpus records the version its labels were
+  written against.
+- **The fold machinery.** How a check that matches over a transformed view of
+  the content maps a match back to a span in the original is not specified.
+  What is specified is the span itself: it indexes the content the chain was
+  given, which is the string `saw` hashes, whatever view the match was found
+  in.
 - **Everything about performance**, threading, and how a port lays its modules
   out.
 

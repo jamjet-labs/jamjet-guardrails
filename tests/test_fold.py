@@ -6,13 +6,21 @@ what a corpus labels. The transformation is not length-preserving in either
 direction: casefolding the German sharp s produces two characters from one,
 and stripping a zero-width space produces none from one. Both directions are
 here, because a mapping that is right for one is silently wrong for the other.
+
+The four tests at the end arrived with the UTS #39 skeleton, which is the
+first caller that needs a map to compose and the first that produces one that
+is not non-decreasing. Each was watched to FAIL, `__pycache__` cleared
+between runs, against: `span` reading the first and last entries of the map
+rather than its minimum and maximum; `span` dropping the plus one from the
+end; `compose` returning the inner view unchanged; and `compose` dropping the
+check that the two views meet.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from jamjet_guardrails._fold import casefold_view, fold
+from jamjet_guardrails._fold import _Folded, casefold_view, compose, fold
 
 
 def test_an_identity_fold_leaves_every_span_where_it_was() -> None:
@@ -130,3 +138,75 @@ def test_a_fold_that_deletes_everything_produces_an_empty_view() -> None:
     view = fold("\u200b\u200b", lambda ch: "")
     assert view.text == ""
     assert view.origin == ()
+
+
+def test_a_span_over_a_reordering_map_covers_the_whole_source_run() -> None:
+    """The case ``span`` takes a minimum and a maximum for.
+
+    Every fold ``fold`` builds produces a NON-DECREASING map, and the UTS #39
+    skeleton's canonical ordering step does not: it permutes combining marks by
+    class, so a map of (0, 2, 1) is what the caller is handed. Reading the
+    first and last entries of the matched range returns (0, 2) there, one
+    character short of the run the match covered, and a redaction over that
+    span leaves a character standing inside content reported as rewritten.
+
+    Built literally rather than through ``jamjet_guardrails._unicode``, because
+    this is a property of the map and not of normalisation, and a test that
+    reached for the skeleton would fail for whichever of the two broke.
+    """
+    view = _Folded(text="abc", origin=(0, 2, 1), source_length=3)
+    assert view.span(0, 3) == (0, 3)
+    assert view.span(1, 3) == (1, 3)
+    assert view.span(1, 2) == (2, 3)
+
+
+def test_a_span_over_a_non_decreasing_map_is_what_it_always_was() -> None:
+    """The widening above must not have moved any answer that was already right.
+
+    Minimum and maximum over a non-decreasing map are its first and last
+    entries, so every existing caller sees the same spans. Asserted rather than
+    argued, over the contracting and the expanding fold both.
+    """
+    expanding = casefold_view("Stra\u00dfe")
+    assert expanding.span(4, 7) == (expanding.origin[4], expanding.origin[6] + 1)
+    contracting = fold("<|im_\u200bstart|>", lambda ch: "" if ch == "\u200b" else ch)
+    assert contracting.span(0, 5) == (contracting.origin[0], contracting.origin[4] + 1)
+
+
+def test_composing_two_views_gives_one_map_back_to_the_original_source() -> None:
+    """Three folds deep, one map. The skeleton is what needs this.
+
+    The alternative is a caller holding three views and walking them by hand at
+    every match site, which is how the two copies of the span arithmetic in
+    ``_spans`` began.
+    """
+    source = "Stra\u00dfe \u200bX"
+    stripped = fold(source, lambda ch: "" if ch == "\u200b" else ch)
+    lowered = casefold_view(stripped.text)
+    both = compose(stripped, lowered)
+
+    assert both.text == "strasse x"
+    assert both.source_length == len(source)
+    start = both.text.index("x")
+    assert both.span(start, start + 1) == (8, 9)
+    assert source[slice(*both.span(start, start + 1))] == "X"
+    # The sharp s expanded in the second fold and the zero-width space was
+    # deleted in the first, so the composed map has to survive both directions
+    # at once: "sse" is one source character plus one.
+    sse = both.text.index("sse")
+    assert both.span(sse, sse + 3) == (4, 6)
+    assert source[slice(*both.span(sse, sse + 3))] == "\u00dfe"
+
+
+def test_composing_views_that_do_not_meet_is_refused() -> None:
+    """A silent wrong span is the one failure this module exists to prevent.
+
+    Without the check the composition indexes ``first.origin`` with offsets
+    computed against some other string. Where the second view is shorter that
+    returns spans that are simply wrong, with nothing raised and nothing to
+    notice.
+    """
+    first = casefold_view("abc")
+    second = casefold_view("a much longer string")
+    with pytest.raises(ValueError, match="cannot compose"):
+        compose(first, second)

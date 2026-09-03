@@ -7,13 +7,35 @@ name = "jamjet-guardrails"
 version = "0.3.0"
 description = "Content guardrails for LLM applications, with published precision and recall and provenance on every decision."
 readme = "README.md"
-# `Apache-2.0 AND CC-BY-4.0`, not `Apache-2.0`, and the AND is about the SDIST.
-# The code is Apache-2.0 throughout. The sdist also carries
-# `corpora/pii/third-party.jsonl`, 300 rows derived from nvidia/Nemotron-PII
-# under CC-BY-4.0, so the distribution as a whole is a combination and the SPDX
-# expression has to say so. `corpora/NOTICE.md` travels beside it and carries
-# the attribution, so the legal chain held either way; what did not hold was
-# the licence FIELD, which is the one line most consumers read.
+# Three licences, and each AND names material this distribution carries beyond
+# its own code.
+#
+#   Apache-2.0    every line of code in this repository.
+#   CC-BY-4.0     `corpora/pii/third-party.jsonl`, 300 rows derived from
+#                 nvidia/Nemotron-PII. Sdist only.
+#   Unicode-3.0   `unicode-data/16.0.0/`, the four files published by Unicode,
+#                 Inc., in the sdist; AND `src/jamjet_guardrails/_unicode/`,
+#                 which is generated from them and is therefore derived from
+#                 them, in BOTH artifacts. The first draft of this comment said
+#                 the wheel was Apache-2.0 alone because "a table of code point
+#                 ranges derived from a data file is not that data file". It is
+#                 the same data re-encoded, the Unicode License v3 grants the
+#                 right to modify and redistribute on exactly the condition
+#                 that its notice travels, and a project that ships a derived
+#                 table under a licence field that does not name its source has
+#                 made this file's own argument and not applied it to itself.
+#
+# The Unicode License v3 is satisfied where its notice "appear[s] with all
+# copies of the Data Files or Software" or "in associated Documentation".
+# `corpora/NOTICE.md` carries the notice verbatim and travels in the sdist
+# beside the files; the README's licence section carries the pointer and is
+# embedded in the wheel's own METADATA, so it reaches an installer who never
+# sees this repository.
+#
+# The distribution as a whole is a combination and the SPDX expression has to
+# say so. NOTICE.md travelling beside these files is what makes the legal chain
+# hold; what did not hold before was the licence FIELD, which is the one line
+# most consumers read.
 #
 # This document argues the same point against someone else. `docs/conformance.md`
 # rejects two otherwise-ideal corpora because "an Apache-2.0 tag downstream does
@@ -21,9 +43,12 @@ readme = "README.md"
 # reveals it". A project that says that and then ships a CC-BY corpus under a
 # bare `Apache-2.0` has made the argument and not applied it to itself.
 #
-# The alternative was to drop `corpora/` from the sdist. Rejected: the sdist
-# ships the tests, and the tests ARE the corpora for anything that scores.
-license = "Apache-2.0 AND CC-BY-4.0"
+# The alternative was to drop `corpora/` and `unicode-data/` from the sdist.
+# Rejected twice over: the sdist ships the tests, and the tests ARE the corpora
+# for anything that scores; and the raw Unicode files are the evidence a reader
+# regenerates the vendored tables from, which is the only way to check that
+# what the package matches on is what Unicode published.
+license = "Apache-2.0 AND CC-BY-4.0 AND Unicode-3.0"
 requires-python = ">=3.10"
 dependencies = []
 authors = [{ name = "Sunil Prakash" }]
@@ -94,12 +119,53 @@ Benchmarks = "https://github.com/jamjet-labs/jamjet-guardrails/blob/main/BENCHMA
 # screen runs on every leg. types-PyYAML is what lets `mypy --strict` see the
 # library at all: PyYAML ships no py.typed, and without the stubs the bare
 # `import yaml` in training/fetch.py fails the gate.
-dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.11", "pyyaml>=6", "types-PyYAML>=6"]
+#
+# hatchling is here so `tests/test_packaging.py` can BUILD the sdist and the
+# wheel and look inside them. It is already this project's build backend, named
+# under [build-system] above, so it is not a new third party; what is new is
+# that the test suite needs it importable rather than only present in pip's
+# isolated build environment. That is what turns "the wheel is built from the
+# package directory alone" from a claim about pyproject.toml into a claim about
+# an artifact, which is the difference between reading the configuration and
+# opening the archive.
+dev = [
+  "pytest>=8",
+  "ruff>=0.6",
+  "mypy>=1.11",
+  "pyyaml>=6",
+  "types-PyYAML>=6",
+  "hatchling>=1.24",
+]
 
 [project.scripts]
 jamjet-guardrails = "jamjet_guardrails.eval.cli:main"
 
+[tool.hatch.build.targets.sdist]
+# The raw Unicode files, force-included so that no later ignore rule can drop
+# them. They are in the sdist and NOT in the wheel, and the asymmetry is the
+# point: an installer gets the generated tables, and a reader gets the four
+# published files those tables were derived from, so the derivation can be
+# rerun and diffed. The sdist is the evidence.
+#
+# `artifacts` rather than `include`, and the difference is not cosmetic. An
+# `include` list turns the sdist into an allowlist and would silently drop
+# `corpora/`, `tests/` and `training/`, which are the sdist's other reason to
+# exist. `artifacts` adds to what the VCS walk already found and takes nothing
+# away; it is the same mechanism the wheel target below uses for py.typed.
+#
+# What actually holds the property is
+# tests/test_packaging.py::test_the_built_sdist_carries_the_pinned_unicode_data,
+# which builds the archive and reads its member list. This line states the
+# requirement so that the day someone adds an ignore rule or an `include` list,
+# there is something here to have contradicted.
+artifacts = ["unicode-data/"]
+
 [tool.hatch.build.targets.wheel]
+# `src/jamjet_guardrails` and nothing else, which is also what keeps
+# `unicode-data/` out of the wheel: 1.4 MB of raw text that no installed code
+# reads, since the generator that reads it runs from a checkout and the tables
+# it produced are already inside the package. Asserted against the built
+# archive by tests/test_packaging.py::test_the_built_wheel_carries_no_raw_unicode_data.
 packages = ["src/jamjet_guardrails"]
 # PEP 561. Without this marker in the BUILT distribution, a consumer's type
 # checker must ignore this package entirely: downstream `mypy --strict` reports

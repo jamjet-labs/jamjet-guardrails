@@ -28,9 +28,62 @@ a number that changes quietly is a number nobody can rely on.
   `security-and-quality` suite. It builds nothing and installs nothing, because
   `ci.yml` already lints, typechecks, tests and gates the benchmarks on five
   interpreters and a scan that repeats that work is a scan nobody reads.
+- Vendored Unicode tables, pinned at 16.0.0. The four published files
+  `Scripts.txt`, `ScriptExtensions.txt`, `PropertyValueAliases.txt` and
+  `confusables.txt` are committed under `unicode-data/16.0.0/`, and
+  `scripts/generate_unicode_tables.py` writes
+  `src/jamjet_guardrails/_unicode/scripts.py` and
+  `src/jamjet_guardrails/_unicode/confusables.py` from them. Nothing user-facing
+  reads either module yet; the checks that will are `confusables`,
+  `script-constraint` and the `fold_confusables` option on the rules engine.
+  `unicodedata` carries no Script property and no confusables table on any
+  supported interpreter, and its Unicode version runs from 13.0 to 16.0 across
+  the CI matrix, so a check deriving either from it would reach different
+  verdicts on different legs of one test suite.
+- Two private functions over those tables. `script_set` resolves one code
+  point's scripts per UTS #39 section 5.1, returning long property names, with
+  Script_Extensions taking precedence over Script, `Common` and `Inherited`
+  returned as themselves, and an unassigned code point resolving to `Unknown`.
+  `skeleton` builds the UTS #39 section 4 confusable skeleton together with the
+  offset map back to the source, so a match found over a skeleton is reported
+  as the span of the original characters that produced it, including where a
+  prototype expanded one character into eighteen.
+- `_fold.compose`, which joins a view of the source and a view of that view
+  into one map, and `_Folded.span` now takes the minimum and the maximum over
+  the matched range. The skeleton's canonical ordering step permutes combining
+  marks, which is the first offset map in this package that is not
+  non-decreasing; reading its first and last entries returned a span one
+  character short of the run the match covered, and a redaction over that span
+  would have left a reordered mark standing inside content reported as
+  rewritten. Every map built by `fold` is non-decreasing, so no existing span
+  moved.
+- Three guards on the vendored data: both generated modules are rebuilt from
+  the committed files and compared byte for byte with no network; each module's
+  recorded SHA-256 digests are checked against those files; and a test skipped
+  unless `JAMJET_GUARDRAILS_NETWORK=1`, which is never set in CI, re-downloads
+  all four and compares them with what unicode.org publishes.
+- `tests/test_packaging.py` now BUILDS the sdist and the wheel and reads their
+  member lists, rather than reading the configuration that is supposed to
+  produce them. `unicode-data/` is in the sdist and out of the wheel, and both
+  halves are asserted against the archives. `hatchling`, already the build
+  backend, joins the dev extra so the suite can do that offline.
+
+### Changed
+- The distribution declares `Apache-2.0 AND CC-BY-4.0 AND Unicode-3.0`. The
+  generated tables are derived from data files published by Unicode, Inc. under
+  the Unicode License v3 and ship in the wheel, and the raw files ship in the
+  sdist; the licence requires its notice to travel with copies or in associated
+  documentation. `corpora/NOTICE.md` carries the notice, the four digests and
+  the reason the data is vendored, and the README's licence section says so in
+  one sentence.
+- `docs/conformance.md` adds two entries to "What is deliberately unspecified":
+  where Unicode property data comes from and at what version, and the fold
+  machinery. A port reaching the same verdicts on the corpora conforms with any
+  Unicode data source at any version. What stays specified is the span itself,
+  which indexes the content the chain was given whatever view the match was
+  found in.
 
 ### Security
-
 - Every GitHub Action in every workflow is pinned to a full commit SHA with a
   comment naming the release it resolves to, in place of the floating tags
   (`actions/checkout@v7` and the rest) the workflows used before. A tag is a

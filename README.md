@@ -328,8 +328,16 @@ It is a library, not a service. No configuration file, no daemon, no account.
 
 The code is Apache-2.0. See [LICENSE](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/LICENSE).
 
-The published distribution declares `Apache-2.0 AND CC-BY-4.0`, because the
-source distribution also carries `corpora/pii/third-party.jsonl`, derived from
+The published distribution declares `Apache-2.0 AND CC-BY-4.0 AND Unicode-3.0`,
+because the source distribution also carries `corpora/pii/third-party.jsonl`,
+derived from
 [nvidia/Nemotron-PII](https://huggingface.co/datasets/nvidia/Nemotron-PII) under
 CC-BY-4.0. Attribution and the list of changes are in
 [corpora/NOTICE.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/corpora/NOTICE.md). The installed wheel contains code only.
+
+`Unicode-3.0` is there because the Script, Script_Extensions and confusables
+tables the package matches on are generated from data files published by
+Unicode, Inc. under the Unicode License v3, which requires its copyright and
+permission notice to travel with copies; the notice, the pinned files and their
+digests are in
+[corpora/NOTICE.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/corpora/NOTICE.md).
