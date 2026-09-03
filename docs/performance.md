@@ -54,6 +54,13 @@ instead: `secrets` costs 8 microseconds over a kilobyte here, which is inside on
 tick of a 15.6 millisecond timer by three orders of magnitude. Raise
 `--sizes` until the numbers move.
 
+Rows are ADDED to this table when a check ships, and the rows already in it are
+not re-measured at the same time. Rerunning the whole script for every release
+would move numbers for checks nobody touched, and a reader diffing this page
+would read that as a regression somebody should explain. Every row here was
+taken on the machine and the interpreter named above; `script-constraint` was
+measured on 2026-09-03 and the other four when this page was first written.
+
 ## The input
 
 One deterministic string per size, built by
@@ -117,6 +124,12 @@ Milliseconds per call. `MB/s` is derived from the p50.
 | rules | 65 536 | 123 | 8.313 | 8.767 | 8.901 | 7.6 |
 | rules | 262 144 | 491 | 34.193 | 36.405 | 37.047 | 7.4 |
 | rules | 1 048 576 | 1 959 | 142.608 | 150.364 | 152.402 | 7.1 |
+| script-constraint | 1 024 | 0 | 0.248 | 0.274 | 0.320 | 4.0 |
+| script-constraint | 4 096 | 0 | 0.998 | 1.094 | 1.118 | 3.9 |
+| script-constraint | 16 384 | 0 | 4.049 | 4.252 | 4.312 | 3.9 |
+| script-constraint | 65 536 | 0 | 15.961 | 16.535 | 17.112 | 4.0 |
+| script-constraint | 262 144 | 0 | 63.889 | 66.362 | 68.548 | 3.9 |
+| script-constraint | 1 048 576 | 0 | 255.746 | 263.393 | 267.481 | 3.9 |
 | secrets | 1 024 | 1 | 0.008 | 0.010 | 0.010 | 125.9 |
 | secrets | 4 096 | 4 | 0.021 | 0.026 | 0.027 | 184.1 |
 | secrets | 16 384 | 15 | 0.073 | 0.078 | 0.087 | 216.9 |
@@ -161,6 +174,16 @@ of it, so 4.0 is exactly linear.
   by the number of URLs and by their length, not by the length of the document
   around them, so it is linear in a different variable rather than a worse power
   of this one.
+- **`script-constraint`** is linear. Ratios run 3.94 to 4.06 and the rate holds
+  at 3.9 to 4.0 megabytes per second across the whole range. It is the slowest
+  check here, and the reason is structural rather than fixable: every other
+  check is a regular expression that rejects most start positions on their first
+  character, and this one has to resolve every code point it is handed, through
+  two bisections over the vendored tables. Its `findings` column is 0 at every
+  size, because the seeded input is Latin and Common throughout and the fixture
+  allows both, so these rows are the PASS path with no findings built and
+  nothing rewritten. Content that fires costs more, and how much more depends on
+  how many separate runs it carries rather than on how much of it is disallowed.
 - **`secrets`** is linear from 16 KB upward, at ratios of 3.97, 3.93 and 4.12.
   Below that it is dominated by fixed overhead rather than by the content: the
   first step reads as 2.62x and the second as 3.48x, climbing towards 4.0 as the

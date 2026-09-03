@@ -31,6 +31,18 @@ FIXTURES: Mapping[str, Mapping[str, object]] = {
         "limits": Limits(max_chars=2000),
         "on_match": "redact",
     },
+    # Chosen so the row measures the two things that separate this check from a
+    # naive one, on text where both occur naturally. Japanese needs all three
+    # of Hiragana, Katakana and Han in one sentence, so the row exercises a
+    # multi-script constraint rather than a single-script one; and Japanese
+    # punctuation is where Script_Extensions resolution stops being theoretical,
+    # because the prolonged sound mark and the ideographic comma are not
+    # `Common` to this check and pass only because their extensions name a
+    # script the fixture allows. Latin rides alongside because every one of
+    # those sentences also carries a product name written in it. What the
+    # fixture then LOCATES is a Cyrillic, Greek, Arabic or Devanagari run
+    # inside that text, which is the shape the check exists for.
+    "script-constraint": {"allowed_scripts": frozenset({"Latin", "Hiragana", "Katakana", "Han"})},
 }
 
 

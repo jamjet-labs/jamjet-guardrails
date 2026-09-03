@@ -12,6 +12,28 @@ a number that changes quietly is a number nobody can rely on.
 
 ### Added
 
+- The `script-constraint` check, detector version 0.1.0, constraint kind, both
+  directions, `on_match` defaulting to `deny`. One required option,
+  `allowed_scripts`, a collection of long Unicode script names, and one finding
+  type, `DISALLOWED_SCRIPT`, whose span covers a maximal run of code points that
+  no allowed script covers. `Common` and `Inherited` pass under every
+  constraint, so punctuation, digits, currency, mathematics, whitespace, emoji,
+  combining marks, ZWJ, ZWNJ and variation selectors are never findings; a code
+  point the pinned 16.0.0 tables do not assign resolves to `Unknown` and always
+  is one. Published row: precision 1.000, recall 1.000 over 85 cases of
+  `corpora/script-constraint/in-repo.jsonl`, measured under the fixture
+  `{"Latin", "Hiragana", "Katakana", "Han"}` recorded in
+  `jamjet_guardrails.eval.fixtures` and printed beside the row in
+  `docs/conformance.md`. That row measures the check under those options and
+  promises nothing about any other set.
+- **There is no default `allowed_scripts` and `build("script-constraint")`
+  refuses.** So do a bare string, which is an iterable of its own characters; a
+  value that cannot be iterated; an empty collection, which would deny every run
+  of letters in every language; an entry that is not a string; a name the pinned
+  tables do not know, which is refused with the valid names listed; and
+  `Unknown`, which is not a script but what the tables return for a code point
+  they cannot name. A collection naming only `Common` or `Inherited` is
+  permitted and does what the empty one would have done.
 - `docs/performance.md` publishes p50, p95 and p99 per check over deterministic
   inputs from 1 KB to 1 MB, with the machine, the interpreter, the input shape,
   the repetition count and the command that reproduces them. Each check's own

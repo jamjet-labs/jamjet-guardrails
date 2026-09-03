@@ -896,6 +896,120 @@ the same trade seen from both ends.
 These six are the corpus's bar and not a licence. A port that denies `url-0078`, `url-0079` or
 `url-0080` matches the label where this implementation does not; what a port is held to is the `allow`
 side.
+## The script-constraint constraint
+
+`script-constraint` is the second check here whose behaviour is chosen by the
+caller, and the only one with no default at all. It carries one option,
+`allowed_scripts`, a collection of long Unicode script names, and it reports the
+stretches of content that no allowed script covers. `build("script-constraint")`
+with no options is refused: the two candidate defaults are a check that permits
+every script and reports nothing, and a check that decides for a deployment
+which languages are ordinary.
+
+Its `kind` is `constraint`, so no finding it produces carries a `confidence`.
+Its corpus is `corpora/script-constraint/in-repo.jsonl`.
+
+### The configuration the row was measured under
+
+    allowed_scripts: ["Han", "Hiragana", "Katakana", "Latin"]
+    on_match: deny
+
+A conforming implementation scores `corpora/script-constraint/in-repo.jsonl`
+with these options. **The row measures the check under this configuration and
+promises nothing about any other**: a different `allowed_scripts` is a different
+check with a different false-positive population, and no number here transfers
+to it. The set is Japanese plus Latin because Japanese is the smallest ordinary
+text that needs three scripts in one sentence and carries punctuation whose
+script resolution is not obvious, and because Cyrillic, Greek, Arabic and
+Devanagari then sit outside it and can be located inside that text.
+
+### One finding type
+
+`DISALLOWED_SCRIPT`. A finding covers a MAXIMAL RUN of code points that no
+allowed script covers, half-open over code points of the string `saw` hashes.
+
+Maximal over disallowed-ness, never over one script: Greek followed immediately
+by Cyrillic is ONE finding, because the fact reported is that a stretch of
+content lies outside the constraint and not which script it is in. An allowed
+code point between two disallowed runs separates them, so `Привет мир` is two
+findings and the space between them belongs to neither.
+
+### How a code point is resolved
+
+Per UTS #39 section 5.1: Script_Extensions where the code point has them,
+otherwise its Script value. A code point PASSES when any member of that resolved
+set is allowed. Containment is the wrong test and would deny ordinary text: the
+middle dot `U+00B7` resolves to sixteen scripts, and requiring all of them to be
+allowed denies it under every constraint anybody would write.
+
+Two rules sit on top of that, and both are contract:
+
+- **`Common` and `Inherited` always pass.** Punctuation, digits, currency,
+  mathematical symbols, whitespace, emoji, combining marks, ZWJ, ZWNJ and
+  variation selectors resolve to one of the two, so they pass under every
+  constraint. This is the whole false-positive defence: a `{"Latin"}` constraint
+  that denied a comma would be switched off in its first week. Measured on this
+  corpus: dropping the rule denies 33 of its 42 `allow` cases, held by
+  `tests/test_script_constraint.py::test_the_document_publishes_the_number_of_allow_cases_the_wildcards_carry`.
+- **`Unknown` never passes.** A code point the implementation's tables do not
+  assign is a finding. That is fail-closed and it is disclosed below.
+
+### Script_Extensions, and what resolving Script instead would cost
+
+A port that resolved Script alone would look correct on Japanese text and be
+wrong in one direction only. Measured over every code point any
+Script_Extensions range covers, under the fixture above: 186 code points would
+then pass that this implementation denies, and none would be denied that this
+implementation passes. So the rule buys recall and never precision here, and a
+port that skips it does not become noisier, it goes quiet. The figure is
+recomputed on every run by
+`tests/test_script_constraint.py::test_the_document_publishes_the_measured_cost_of_resolving_extensions`.
+
+The two shapes behind it are in the corpus. The Katakana-Hiragana prolonged
+sound mark `U+30FC` has Script `Common` and Script_Extensions
+{Hiragana, Katakana}, so it passes under the fixture and FIRES under a
+`{"Latin"}` constraint, which is the opposite of what a Script-only port
+reports. The Devanagari danda `U+0964`, the Arabic comma `U+060C` and the Arabic
+tatweel `U+0640` are the same fact seen from the other side: Script `Common`,
+extensions naming no script the fixture allows, so they fire here and pass
+there. `sc-0008`, `sc-0081` and `sc-0083` carry the second shape.
+
+### It runs on input and on output
+
+`directions` holds both. On input the check locates a language the deployment
+does not handle, which is where a retrieved page carries a payload nobody on the
+team can read; on output it locates a model answering in a script the caller
+cannot render or moderate. The corpus carries cases in both directions.
+
+### The exemptions
+
+None by enumeration. There is no list of characters this check forgives and no
+allowlist of anything. The two rules above derive from a Unicode property, the
+resolution rule is UTS #39's own, and `allowed_scripts` is the caller's
+statement rather than this project's.
+
+### Where this implementation falls short of its own corpus
+
+- **A code point assigned after the pinned tables fires.** The tables are
+  16.0.0, so a code point assigned later resolves to `Unknown` and is denied
+  even where it belongs to a script the caller allowed. Fail-closed and
+  deliberate, and a pin bump is the fix rather than an exemption. A private-use
+  code point behaves the same way, which is what `sc-0021` records.
+- **A constraint that names one script of a language that needs two denies that
+  language.** `{"Hiragana", "Katakana"}` without `Han` denies the kanji in every
+  ordinary Japanese sentence, and `{"Latin"}` denies the Japanese punctuation in
+  a bilingual page. Nothing here detects that, because the check cannot know
+  which language the caller meant; naming the scripts a language is written in
+  is the caller's job and the corpus does not do it for them.
+- **A combining mark inside a disallowed run can split it.** The combining acute
+  `U+0301` has Latin among its extensions, so under a constraint naming Latin it
+  passes and `Приве́т` is reported as two findings rather than one. That is the
+  maximal-run rule applied consistently, and its consequence on a `redact` is
+  that the mark is left standing between two placeholders. `sc-0020` labels it.
+- **A run is not a word, and this check does not read.** A single Cyrillic
+  letter substituted into a Latin word is a one-character finding, and so is a
+  Cyrillic letter that a Russian speaker typed on purpose. Telling those apart
+  is `confusables`' question, not this one's.
 
 ## Third-party corpora
 

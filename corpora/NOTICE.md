@@ -28,6 +28,7 @@ so in-repo and third-party numbers can never be merged into one score.
 | `corpora/injection-structural/in-repo.jsonl` | `in-repo` | `Apache-2.0` |
 | `corpora/pii/in-repo.jsonl` | `in-repo` | `Apache-2.0` |
 | `corpora/rules/in-repo.jsonl` | `in-repo` | `Apache-2.0` |
+| `corpora/script-constraint/in-repo.jsonl` | `in-repo` | `Apache-2.0` |
 | `corpora/secrets/in-repo.jsonl` | `in-repo` | `Apache-2.0` |
 | `corpora/url-exfiltration/in-repo.jsonl` | `in-repo` | `Apache-2.0` |
 | `corpora/pii/third-party.jsonl` | `nvidia/Nemotron-PII@b70ffaf` | `CC-BY-4.0` |
@@ -308,6 +309,49 @@ an enumeration.
 labelled corpus of URL exfiltration was found, so these numbers are measured on
 our own file only and are self-graded in the same way the injection-structural,
 rules and secrets numbers are.
+### `corpora/script-constraint/in-repo.jsonl`
+
+Written for this repository and covered by its Apache-2.0 licence. It holds no
+credential and no person: the values are ordinary sentences, and the one thing
+in it that could be mistaken for a target is `pаypal.example`, which uses the
+`example` label reserved by RFC 2606 and carries a Cyrillic letter where a
+reader expects a Latin one.
+
+Like the injection corpus, its negatives could not be invented. The Japanese
+sentences, the Devanagari, Arabic, Hebrew, Thai, Armenian, Georgian, Ethiopic,
+Tibetan, Khmer, Bengali, Tamil, Coptic and Mongolian fragments, and the emoji
+sequences are text somebody really writes, because the point of a negative here
+is exactly that. What IS invented is where they sit: each foreign-script run was
+placed inside a Latin or Japanese sentence written for this file.
+
+Every span in the file was computed from a substring of its own case text rather
+than counted by hand, and the whole file is written as `\uXXXX` escapes, so a
+reviewer reading the diff sees the same code points the loader decodes. That
+matters more here than anywhere else in `corpora/`: half of these cases turn on
+a single character that renders identically to a Latin one, or on a combining
+mark that renders as part of the letter before it.
+
+**The disclosed misses.** There are none, and the reason is worth stating rather
+than celebrating. This check is a mechanical property of a table: a code point
+either resolves to an allowed script or it does not, and there is no threshold,
+no heuristic and nothing to tune. A perfect score therefore says the corpus
+agrees with the table, not that the check is good, and the numbers that carry
+information about it are the two measured in `docs/conformance.md`: 33 of its 42
+`allow` cases stop allowing if `Common` and `Inherited` stop passing, and 186
+code points stop being denied if Script is resolved in place of
+Script_Extensions.
+
+**What this file cannot measure at all** is any other value of
+`allowed_scripts`. The row is the check under
+`{"Latin", "Hiragana", "Katakana", "Han"}` and nothing else, and a deployment
+that names a different set is running a check whose false-positive population
+this corpus has never seen. `docs/conformance.md` prints the fixture beside the
+section for that reason.
+
+**There is no third-party corpus for this check**, and there could not be a
+useful one: the labels depend on which scripts are allowed, so a corpus somebody
+else wrote would be labelled against their constraint. The row is self-graded in
+the same way the secrets row is.
 
 ## How to read the numbers these corpora produce
 

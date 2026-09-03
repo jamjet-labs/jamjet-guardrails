@@ -19,6 +19,11 @@
     "precision": 1.0,
     "recall": 1.0
   },
+  "script-constraint/in-repo/92fddb0f04be": {
+    "decision_mismatches": 0,
+    "precision": 1.0,
+    "recall": 1.0
+  },
   "secrets/in-repo/337e35f03cad": {
     "decision_mismatches": 8,
     "precision": 0.88,
