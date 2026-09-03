@@ -152,6 +152,46 @@ mtime tick makes Python import the stale `.pyc`, the test passes against code
 that is not on disk, and the mutation is recorded as green. That has happened
 here.
 
+## Property tests, and the wider profile
+
+`tests/test_properties.py` states the invariants
+[docs/conformance.md](docs/conformance.md) already carries, over input Hypothesis
+generates: span merging covers exactly the union of its inputs, no character a
+finding claimed survives a redaction, a folded view's offsets lead back to the
+source run that produced a match, and a chain's decision is the restrictive
+combination of its verdicts. A property that fails is a conformance failure, not
+a new opinion about how the library should behave.
+
+The default profile is fixed on purpose, and `tests/conftest.py` says why: it
+derandomises, disables the example database and bounds the number of examples, so
+all five CI legs try the same inputs and a failure reproduces from the name of
+the test. A suite that explores different inputs on every leg turns a red build
+into a coin flip.
+
+Exploring more is opt in:
+
+    HYPOTHESIS_PROFILE=explore ./.venv/bin/pytest -q tests/test_properties.py
+
+That randomises, runs ten times the examples and keeps Hypothesis's database, so
+each run tries a different slice and a counterexample it finds is replayed on the
+next run. Run it when you touch span arithmetic, the fold, the chain's
+composition or the structural detector's character sets.
+
+**A counterexample the wider profile finds belongs in the committed suite.** Add
+it as an `@example` on the property that found it, so the fixed profile keeps
+checking that exact input forever, and mutation-check it like anything else.
+Several properties there already carry seeded examples for that reason: a
+boundary one input wide is reached by luck under a bounded derandomised run, and
+widening one strategy's alphabet moved the draw sequence far enough to lose a
+boundary a mutation check had previously caught.
+
+If a property fails and the behaviour is deliberate, do not weaken the property.
+Reduce the counterexample by hand, check it against `docs/conformance.md`, and
+either fix the code or leave the property failing as an `xfail` whose docstring
+names the defect.
+`tests/test_properties.py::test_a_word_boundary_gated_pattern_reports_a_zero_width_span`
+is the worked example.
+
 ## Prose is checked too
 
 Numbers in documentation are claims and are treated as such. `tests/` holds

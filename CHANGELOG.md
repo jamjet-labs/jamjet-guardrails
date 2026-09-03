@@ -67,23 +67,63 @@ a number that changes quietly is a number nobody can rely on.
   produce them. `unicode-data/` is in the sdist and out of the wheel, and both
   halves are asserted against the archives. `hatchling`, already the build
   backend, joins the dev extra so the suite can do that offline.
+- Property tests, in `tests/test_properties.py`, over the invariants
+  `docs/conformance.md` already states: span merging covers exactly the union of
+  its inputs and no character any span claimed survives a rewrite; a folded
+  view's offset map has one entry per view character and a view span maps back to
+  a source run closed over what produced the match; the structural injection
+  check never raises and reports spans that index into the content it was given;
+  a chain's decision is the restrictive combination of its verdicts, every
+  verdict hashes the string the chain was given, no guardrail is handed another's
+  rewrite, and no byte inside a reported span survives the composed redaction.
+  Every Critical this package has recorded was a class of input nobody wrote
+  down rather than a wrong answer on a case somebody thought of, and each was a
+  short counterexample to one of those sentences.
+- `hypothesis` in the `dev` extra. It cannot reach a consumer's environment: the
+  zero-dependency promise is checked against the BUILT metadata with `extra ==`
+  markers filtered out, by
+  `tests/test_packaging.py::test_the_installed_distribution_declares_no_runtime_dependencies`.
+- A recorded known miss, `tests/test_properties.py::test_a_word_boundary_gated_pattern_reports_a_zero_width_span`.
+  A pattern gated by `\b` or by a lookbehind constructs, because it does not
+  match at position zero of the empty string, and then reports a zero-width span
+  against real content. It is left failing, marked `xfail`, rather than repaired
+  by dropping zero-width matches inside the scan: that repair would turn a broken
+  rule into a check that runs and never matches, which is the configured-and-
+  silent failure the constructor already refuses five other ways. The chain
+  refuses the verdict, so the composition fails closed, and the test asserts that
+  containment beside the miss.
 
 ### Changed
-- The distribution declares `Apache-2.0 AND CC-BY-4.0 AND Unicode-3.0`. The
-  generated tables are derived from data files published by Unicode, Inc. under
-  the Unicode License v3 and ship in the wheel, and the raw files ship in the
-  sdist; the licence requires its notice to travel with copies or in associated
-  documentation. `corpora/NOTICE.md` carries the notice, the four digests and
-  the reason the data is vendored, and the README's licence section says so in
-  one sentence.
-- `docs/conformance.md` adds two entries to "What is deliberately unspecified":
-  where Unicode property data comes from and at what version, and the fold
-  machinery. A port reaching the same verdicts on the corpora conforms with any
-  Unicode data source at any version. What stays specified is the span itself,
-  which indexes the content the chain was given whatever view the match was
-  found in.
+
+- A `redact` the chain cannot locate, meaning no findings or a finding carrying
+  no span, is now a synthesised `deny` instead of a `GuardrailChainError` out of
+  `run`. It was the last shape in which one misbehaving detector cost the whole
+  run its audit record, including the verdicts of every guardrail that had
+  already run. Both shapes are reachable from an ordinary `Guardrail`
+  implementation, because a `Verdict` may carry a finding with no span and
+  nothing required a `redact` to carry findings at all, which makes them
+  detector contract violations rather than assertions about this library. The
+  content is not forwarded either way. `GuardrailChain._spans_of` keeps the same
+  refusals for a direct caller, where they are now genuinely unreachable through
+  `run`.
+- `training/ship_bar.json` records the structural corpus's own version digest
+  beside its path. The recorded floor is defined as decision-level recall
+  measured on the corpus at that path, so unrelated work that legitimately grows
+  that corpus moves the floor; with only a path recorded, nothing could tell a
+  re-derivation from a silent edit. A test now re-derives the digest and fails
+  until a move is disclosed in `structural_floor_rederived`.
+- The bar's digest is split in two. The semantic registration, which is what the
+  bar actually is, is digested on its own and has never moved; the whole file's
+  digest moves with a disclosed re-derivation of the structural side.
+  `clears_the_bar`, the file's prose statement of the same pass rule its values
+  state, was on neither side of that split until an adversarial review found it,
+  so the rule could be relaxed from `>` to `>=` in the sentence describing it
+  with every digest still green. A test now refuses any key on neither side, so
+  a field added later is a decision about which side it belongs to rather than a
+  field nobody digests.
 
 ### Security
+
 - Every GitHub Action in every workflow is pinned to a full commit SHA with a
   comment naming the release it resolves to, in place of the floating tags
   (`actions/checkout@v7` and the rest) the workflows used before. A tag is a
@@ -132,35 +172,24 @@ a number that changes quietly is a number nobody can rely on.
   fails OPEN: growing it alone lets a `Context` carry a direction no guardrail
   declares, so every guardrail is skipped and the run reports `allow` over
   content nothing checked. That mutation passed the entire suite.
-
-### Changed
-
-- A `redact` the chain cannot locate, meaning no findings or a finding carrying
-  no span, is now a synthesised `deny` instead of a `GuardrailChainError` out of
-  `run`. It was the last shape in which one misbehaving detector cost the whole
-  run its audit record, including the verdicts of every guardrail that had
-  already run. Both shapes are reachable from an ordinary `Guardrail`
-  implementation, because a `Verdict` may carry a finding with no span and
-  nothing required a `redact` to carry findings at all, which makes them
-  detector contract violations rather than assertions about this library. The
-  content is not forwarded either way. `GuardrailChain._spans_of` keeps the same
-  refusals for a direct caller, where they are now genuinely unreachable through
-  `run`.
-- `training/ship_bar.json` records the structural corpus's own version digest
-  beside its path. The recorded floor is defined as decision-level recall
-  measured on the corpus at that path, so unrelated work that legitimately grows
-  that corpus moves the floor; with only a path recorded, nothing could tell a
-  re-derivation from a silent edit. A test now re-derives the digest and fails
-  until a move is disclosed in `structural_floor_rederived`.
-- The bar's digest is split in two. The semantic registration, which is what the
-  bar actually is, is digested on its own and has never moved; the whole file's
-  digest moves with a disclosed re-derivation of the structural side.
-  `clears_the_bar`, the file's prose statement of the same pass rule its values
-  state, was on neither side of that split until an adversarial review found it,
-  so the rule could be relaxed from `>` to `>=` in the sentence describing it
-  with every digest still green. A test now refuses any key on neither side, so
-  a field added later is a decision about which side it belongs to rather than a
-  field nobody digests.
+- `_scan` no longer loops forever on a pattern that matches ZERO-WIDTH at the end
+  of the content. `Pattern.search` clamps a `pos` past the end of the string back
+  to `len(content)`, so such a match was found again at the same offset on every
+  pass, the containment filter dropped the repeat as no longer than the one
+  already kept, and `pos` was set back to the same value. Nothing advanced.
+  `PatternGuardrail` refuses a pattern that matches the empty string outright and
+  cannot refuse one gated by a lookbehind or a word boundary, so a user rule as
+  ordinary as `\ba*` over the content `"0"`, or `(?<=a)` over `"a"`, reached the
+  scan through the caller-configured `rules` check and hung the process. A
+  guardrail that never returns is the one failure a fail-closed library cannot
+  report: there is no verdict, no synthesised deny and no audit record, and the
+  caller's own timeout is the only thing that ends the request. The scan now
+  stops once its resume position passes the end of the content, which is what
+  makes the backstop `authoring.py` already described reachable: the zero-width
+  match is reported once and the chain refuses the verdict, so the composition
+  fails closed. **No published number moves.** Every pattern in every bundled
+  check and in the `rules` fixture is unable to match the empty string at any
+  position, so none of them can produce a zero-width match at all.
 
 ## [0.3.0]
 

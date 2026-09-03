@@ -128,6 +128,18 @@ Benchmarks = "https://github.com/jamjet-labs/jamjet-guardrails/blob/main/BENCHMA
 # package directory alone" from a claim about pyproject.toml into a claim about
 # an artifact, which is the difference between reading the configuration and
 # opening the archive.
+# hypothesis generates the inputs nobody wrote down. Every Critical this
+# package has recorded was a CLASS of input rather than a wrong answer on a
+# case somebody thought of: a decoy of the same shape in front of a real
+# credential, two spans overlapping where one was kept and one dropped, a fold
+# that changes length in either direction. Each is a short counterexample to an
+# invariant `docs/conformance.md` already states, and each shipped past a suite
+# that grew to 1845 hand-written cases. It is a dev extra like the four above,
+# so it cannot reach a consumer's environment either, and
+# tests/test_packaging.py::test_the_installed_distribution_declares_no_runtime_dependencies
+# reads the BUILT metadata and filters `extra ==` markers, which is what proves
+# the shipped wheel still declares no runtime dependency at all. It ships
+# py.typed, so `mypy --strict` needs no stub package beside it.
 dev = [
   "pytest>=8",
   "ruff>=0.6",
@@ -135,6 +147,7 @@ dev = [
   "pyyaml>=6",
   "types-PyYAML>=6",
   "hatchling>=1.24",
+  "hypothesis>=6.100",
 ]
 
 [project.scripts]
