@@ -134,6 +134,7 @@ Branch on the decision first.
 | `rules` | constraint | input, output | `INTERNAL_HOST`, `LENGTH_LIMIT`, `PROJECT_CODENAME`, `TICKET_ID` |
 | `script-constraint` | constraint | input, output | `DISALLOWED_SCRIPT` |
 | `secrets` | constraint | input, output | `ANTHROPIC_KEY`, `AWS_ACCESS_KEY`, `GITHUB_TOKEN`, `JWT`, `OPENAI_KEY`, `PRIVATE_KEY`, `SLACK_TOKEN` |
+| `template-integrity` | constraint | input, output | `CHAT_TEMPLATE_MARKER`, `FAKE_SYSTEM_TAG`, `ROLE_PREFIX_LINE` |
 | `url-exfiltration` | constraint | input, output | `DATA_URI_PAYLOAD`, `LINK_QUERY_PAYLOAD`, `MARKDOWN_IMAGE_EXFIL`, `NESTED_REDIRECT`, `SCRIPT_SCHEME` |
 
 **`injection-structural`** is the one worth reading about. It looks at
@@ -188,6 +189,17 @@ JWT is not exempted either: it does not fire because its payload decodes to JSON
 and its signature does not decode at all. It decodes ONE level, so a doubly
 encoded payload passes, and that residual is published with the case that proves
 it in
+**`template-integrity`** catches content that claims to be a turn of the
+conversation. A chat model never sees a conversation, only one string in which
+the turn boundaries are ordinary characters the serving stack wrote, so a
+retrieved page carrying `<|im_start|>` or `[INST]` is asking to be read as a
+turn nobody sent. The delimiters it matches are read out of the tokenizer
+configuration of eight model repositories at pinned revisions rather than typed
+into the source, and it matches them through a fold that removes invisible
+characters, collapses fullwidth forms and folds lookalike letters, so one
+zero-width space inside a delimiter does not buy a bypass. Documentation that
+quotes a delimiter fires under the default, which is the trade it makes on
+purpose and the cases are named in
 [corpora/NOTICE.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/corpora/NOTICE.md).
 
 **`rules`** is the check whose types you choose. It takes your own regular
@@ -312,6 +324,7 @@ failures is a number you cannot check.
 | rules | rules/in-repo | in-repo | `8fe119ddb734` | 42 | 1.000 | 1.000 | 1.000 | 29 | 0 | 0 | 0 |
 | script-constraint | script-constraint/in-repo | in-repo | `92fddb0f04be` | 85 | 1.000 | 1.000 | 1.000 | 50 | 0 | 0 | 0 |
 | secrets | secrets/in-repo | in-repo | `337e35f03cad` | 160 | 0.881 | 0.873 | 0.877 | 96 | 13 | 14 | 8 |
+| template-integrity | template-integrity/in-repo | in-repo | `afb0a7245664` | 152 | 0.820 | 0.965 | 0.886 | 109 | 24 | 4 | 19 |
 | url-exfiltration | url-exfiltration/in-repo | in-repo | `c8015e4e93e2` | 88 | 0.914 | 0.914 | 0.914 | 32 | 3 | 3 | 6 |
 
 See [BENCHMARKS.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/BENCHMARKS.md) for the per-type scores and the worst misses
@@ -367,6 +380,14 @@ third-party corpus for `confusables`, `encoded-content`,
 `injection-structural`, `rules`, `script-constraint`, `secrets` or
 `url-exfiltration`. No compatibly licensed one was found for any of them, so all
 seven are measured on our own corpora only and are self-graded.
+third-party corpus for `confusables`, `injection-structural`, `rules`,
+`script-constraint`, `secrets` or `url-exfiltration`. No compatibly licensed one
+was found for any of them, so all six are measured on our own corpora only and
+are self-graded.
+third-party corpus for `injection-structural`, `rules`, `secrets`,
+`template-integrity` or `url-exfiltration`. No compatibly licensed one was found
+for any of them, so all five are measured on our own corpora only and are
+self-graded.
 
 The third-party PII corpus is derived from
 [nvidia/Nemotron-PII](https://huggingface.co/datasets/nvidia/Nemotron-PII),

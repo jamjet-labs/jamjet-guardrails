@@ -1343,6 +1343,328 @@
       ]
     },
     {
+      "detector": "template-integrity",
+      "detector_version": "0.1.0",
+      "corpus_name": "template-integrity/in-repo",
+      "corpus_source": "in-repo",
+      "corpus_version": "afb0a7245664",
+      "cases": 152,
+      "precision": 0.8195,
+      "recall": 0.9646,
+      "f1": 0.8862,
+      "true_positives": 109,
+      "false_positives": 24,
+      "false_negatives": 4,
+      "decision_mismatches": 19,
+      "per_type": {
+        "CHAT_TEMPLATE_MARKER": {
+          "precision": 0.8763,
+          "recall": 0.9659,
+          "true_positives": 85,
+          "false_positives": 12,
+          "false_negatives": 3
+        },
+        "FAKE_SYSTEM_TAG": {
+          "precision": 0.6154,
+          "recall": 1.0,
+          "true_positives": 16,
+          "false_positives": 10,
+          "false_negatives": 0
+        },
+        "ROLE_PREFIX_LINE": {
+          "precision": 0.8,
+          "recall": 0.8889,
+          "true_positives": 8,
+          "false_positives": 2,
+          "false_negatives": 1
+        }
+      },
+      "failures": [
+        {
+          "case_id": "tpl-0099",
+          "kind": "decision_mismatch",
+          "expected": "deny",
+          "predicted": "allow"
+        },
+        {
+          "case_id": "tpl-0100",
+          "kind": "decision_mismatch",
+          "expected": "deny",
+          "predicted": "allow"
+        },
+        {
+          "case_id": "tpl-0101",
+          "kind": "decision_mismatch",
+          "expected": "deny",
+          "predicted": "allow"
+        },
+        {
+          "case_id": "tpl-0102",
+          "kind": "decision_mismatch",
+          "expected": "deny",
+          "predicted": "allow"
+        },
+        {
+          "case_id": "tpl-0138",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "deny"
+        },
+        {
+          "case_id": "tpl-0139",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "deny"
+        },
+        {
+          "case_id": "tpl-0140",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "deny"
+        },
+        {
+          "case_id": "tpl-0141",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "deny"
+        },
+        {
+          "case_id": "tpl-0142",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "deny"
+        },
+        {
+          "case_id": "tpl-0143",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "deny"
+        },
+        {
+          "case_id": "tpl-0144",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "deny"
+        },
+        {
+          "case_id": "tpl-0145",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "deny"
+        },
+        {
+          "case_id": "tpl-0146",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "deny"
+        },
+        {
+          "case_id": "tpl-0147",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "deny"
+        },
+        {
+          "case_id": "tpl-0148",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "deny"
+        },
+        {
+          "case_id": "tpl-0149",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "deny"
+        },
+        {
+          "case_id": "tpl-0150",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "deny"
+        },
+        {
+          "case_id": "tpl-0151",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "deny"
+        },
+        {
+          "case_id": "tpl-0152",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "deny"
+        },
+        {
+          "case_id": "tpl-0099",
+          "kind": "false_negative",
+          "expected": "CHAT_TEMPLATE_MARKER@(21, 36)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "tpl-0100",
+          "kind": "false_negative",
+          "expected": "CHAT_TEMPLATE_MARKER@(15, 30)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "tpl-0101",
+          "kind": "false_negative",
+          "expected": "CHAT_TEMPLATE_MARKER@(23, 38)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "tpl-0102",
+          "kind": "false_negative",
+          "expected": "ROLE_PREFIX_LINE@(42, 49)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "tpl-0138",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "CHAT_TEMPLATE_MARKER@(32, 44)"
+        },
+        {
+          "case_id": "tpl-0138",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "CHAT_TEMPLATE_MARKER@(49, 59)"
+        },
+        {
+          "case_id": "tpl-0139",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "CHAT_TEMPLATE_MARKER@(46, 52)"
+        },
+        {
+          "case_id": "tpl-0139",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "CHAT_TEMPLATE_MARKER@(74, 81)"
+        },
+        {
+          "case_id": "tpl-0140",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "CHAT_TEMPLATE_MARKER@(34, 49)"
+        },
+        {
+          "case_id": "tpl-0140",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "CHAT_TEMPLATE_MARKER@(60, 73)"
+        },
+        {
+          "case_id": "tpl-0141",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "CHAT_TEMPLATE_MARKER@(33, 50)"
+        },
+        {
+          "case_id": "tpl-0142",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "CHAT_TEMPLATE_MARKER@(35, 48)"
+        },
+        {
+          "case_id": "tpl-0143",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "CHAT_TEMPLATE_MARKER@(9, 24)"
+        },
+        {
+          "case_id": "tpl-0144",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "CHAT_TEMPLATE_MARKER@(21, 39)"
+        },
+        {
+          "case_id": "tpl-0145",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "CHAT_TEMPLATE_MARKER@(33, 48)"
+        },
+        {
+          "case_id": "tpl-0145",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "CHAT_TEMPLATE_MARKER@(63, 81)"
+        },
+        {
+          "case_id": "tpl-0146",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "ROLE_PREFIX_LINE@(43, 50)"
+        },
+        {
+          "case_id": "tpl-0147",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "FAKE_SYSTEM_TAG@(18, 30)"
+        },
+        {
+          "case_id": "tpl-0147",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "FAKE_SYSTEM_TAG@(88, 101)"
+        },
+        {
+          "case_id": "tpl-0148",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "FAKE_SYSTEM_TAG@(18, 43)"
+        },
+        {
+          "case_id": "tpl-0148",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "FAKE_SYSTEM_TAG@(80, 106)"
+        },
+        {
+          "case_id": "tpl-0149",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "FAKE_SYSTEM_TAG@(30, 44)"
+        },
+        {
+          "case_id": "tpl-0149",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "FAKE_SYSTEM_TAG@(53, 68)"
+        },
+        {
+          "case_id": "tpl-0150",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "FAKE_SYSTEM_TAG@(0, 79)"
+        },
+        {
+          "case_id": "tpl-0150",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "FAKE_SYSTEM_TAG@(140, 149)"
+        },
+        {
+          "case_id": "tpl-0151",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "FAKE_SYSTEM_TAG@(31, 45)"
+        },
+        {
+          "case_id": "tpl-0151",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "FAKE_SYSTEM_TAG@(58, 73)"
+        },
+        {
+          "case_id": "tpl-0152",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "ROLE_PREFIX_LINE@(35, 45)"
+        }
+      ]
+    },
+    {
       "detector": "url-exfiltration",
       "detector_version": "0.1.0",
       "corpus_name": "url-exfiltration/in-repo",
