@@ -480,6 +480,34 @@ def test_each_row_lists_exactly_the_types_that_check_can_report(name: str) -> No
     assert listed == set(TYPES[name])
 
 
+# The lead table's first column, which is a name in backticks and nothing else.
+# Three columns rather than the four `_ROW` expects, so it gets its own parse
+# instead of a looser shared one that would stop telling the two tables apart.
+_LEAD_ROW = re.compile(r"^\|\s*`([a-z0-9-]+)`\s*\|", re.MULTILINE)
+
+
+def _lead_table() -> set[str]:
+    return set(_LEAD_ROW.findall(_section("## What it catches")))
+
+
+def test_the_lead_table_names_every_check_the_registry_can_build() -> None:
+    """The first table a reader sees, held to the registry like the second one.
+
+    Found by the recorded contributor walkthrough, not by review: a toy check
+    added end to end, following every message the suite produced, reached all
+    five green gates with "What it catches" never mentioning it. That table is
+    the one most readers stop at, so a check missing from it is a check most
+    readers never learn exists, and until this guard nothing said so.
+
+    Both directions, for the same reason the checks table is checked both ways:
+    a row for a name `build` refuses sends a reader to a name that raises.
+    """
+    assert _lead_table() == set(AVAILABLE), (
+        "the README's 'What it catches' table and the registry disagree; "
+        f"table has {sorted(_lead_table())}, registry has {sorted(AVAILABLE)}"
+    )
+
+
 @pytest.mark.parametrize(("prefix", "sample"), KNOWN_MISSES, ids=[p for p, _ in KNOWN_MISSES])
 def test_the_prefixes_the_readme_names_as_misses_are_still_misses(prefix: str, sample: str) -> None:
     """A published false negative is a claim, and the expensive direction is

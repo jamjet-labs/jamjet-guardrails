@@ -26,10 +26,24 @@ file being recreated for the next run, but clearing is what makes the difference
 
     ./.venv/bin/python scripts/mutate.py mutations.json
 
-Each entry is either a `text` mutation, which replaces the first occurrence of
-`old` with `new` in `path`, or a `rows` mutation, which transforms
-`training/generated/rows.jsonl` through the lambda in `fn`. Both are reverted
-afterwards and the test is re-run to prove the revert was clean.
+The file is yours to write; none is committed. Each entry is either a `text`
+mutation, which replaces the first occurrence of `old` with `new` in `path`, or
+a `rows` mutation, which transforms `training/generated/rows.jsonl` through the
+lambda in `fn`. Both are reverted afterwards and the test is re-run to prove the
+revert was clean.
+
+    [
+      {
+        "name": "widen the pattern",
+        "test": "tests/test_my_check.py::test_ordinary_text_is_allowed",
+        "path": "src/jamjet_guardrails/detectors/my_check.py",
+        "old": "r\"MY-\\d+\"",
+        "new": "r\".+\""
+      }
+    ]
+
+`test` is a full node id. A bare name still means `tests/test_training_data.py`,
+which is where the entries written before this were.
 """
 
 from __future__ import annotations
@@ -52,6 +66,19 @@ def _clear_bytecode() -> None:
             compiled.unlink()
 
 
+def node_id(test: str) -> str:
+    """The pytest node id for one mutation entry.
+
+    A bare name means `tests/test_training_data.py`, which is where every entry
+    written before this function lived and is why the path was hardcoded there.
+    That made the tool unusable for the audience CONTRIBUTING points at it: a
+    contributor adding a check writes `tests/test_<name>.py`, and this script
+    could not address that file at all, so the mutation loop it exists to
+    mechanise had to be run by hand for every test outside one module.
+    """
+    return test if "::" in test else f"tests/test_training_data.py::{test}"
+
+
 def run(test: str) -> tuple[bool, str]:
     """Run one test by node id. Returns (passed, last line of output)."""
     _clear_bytecode()
@@ -61,7 +88,7 @@ def run(test: str) -> tuple[bool, str]:
             "-B",
             "-m",
             "pytest",
-            f"tests/test_training_data.py::{test}",
+            node_id(test),
             "-q",
             "--no-header",
             "-p",
