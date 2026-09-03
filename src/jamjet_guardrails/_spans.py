@@ -103,7 +103,19 @@ def _scan(pattern: re.Pattern[str], content: str) -> list[re.Match[str]]:
     """
     matches: list[re.Match[str]] = []
     pos = 0
-    while (match := pattern.search(content, pos)) is not None:
+    # `pos <= len(content)` is a termination bound, not a micro-optimisation, and
+    # without it this loop does not end. `Pattern.search` CLAMPS a `pos` past the
+    # end of the string back to `len(content)`, so a pattern that matches
+    # ZERO-WIDTH at the end of the input is found again at that same offset on
+    # every pass: the containment filter drops the repeat as no longer than the
+    # one already kept, `pos` is set back to the same `len(content) + 1`, and
+    # nothing changes. `authoring.PatternGuardrail` refuses a pattern that
+    # matches the empty string OUTRIGHT and says in its own comment that it
+    # cannot refuse one gated by a lookbehind, so `(?<=a)` over "a" arrived here
+    # -- through the caller-configured `rules` check -- and spun forever. That
+    # comment names the chain's span bound as the backstop; the backstop is only
+    # reachable if this returns.
+    while pos <= len(content) and (match := pattern.search(content, pos)) is not None:
         if not matches or match.end() > matches[-1].end():
             matches.append(match)
         pos = match.start() + 1

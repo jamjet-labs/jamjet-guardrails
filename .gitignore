@@ -4,6 +4,10 @@ dist/
 build/
 .venv/
 .pytest_cache/
+# Hypothesis writes its own caches here. The `ci` profile in tests/conftest.py
+# sets `database=None`, so no failing example is stored, but the unicode and
+# constants caches are written regardless.
+.hypothesis/
 .ruff_cache/
 .mypy_cache/
 .claude/
