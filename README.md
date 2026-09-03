@@ -49,6 +49,7 @@ Coming from llm-guard, archived in July 2026? [docs/migrating-from-llm-guard.md]
 | `url-exfiltration` | URLs that carry data out rather than fetch something in | a markdown image whose query string is your conversation, a `data:` URI that says it is a picture, a `javascript:` scheme |
 | `rules` | whatever you define | your ticket ids, internal hostnames, banned codenames, size limits |
 | `script-constraint` | text written in a script your deployment did not ask for | a Cyrillic paragraph in an English page, one Greek letter inside a Latin word |
+| `confusables` | words that read as one script and are written in two | `pаypal` with a Cyrillic a, a spoofed host label, a banned word dodged by one substituted letter |
 
 Every check runs on input and on output, returns `allow`, `redact` or `deny`,
 and reports the exact span it matched so a redaction can be applied and
