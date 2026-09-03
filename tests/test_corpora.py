@@ -381,11 +381,30 @@ _RECORDS_A_MISS = {
         "pii-0035",  # a TLD carrying a Devanagari spacing mark
         "pii-0036",  # punycode, whose final label the letters-only TLD class drops
     ),
+    # Seventeen, and the twelve added when the corpus grew from 39 cases to 160
+    # are mostly SPAN ARITHMETIC rather than leaks: the credential is redacted in
+    # full and the audit record is what is wrong. They are here because a corpus
+    # that scored coverage instead of findings would report every one of them as
+    # a success, which is the miscount `src/jamjet_guardrails/_spans.py` warns
+    # about in the docstring of `_scan`.
     "secrets": (
         "sec-0020",  # github_pat_ fine-grained tokens are in no pattern here
         "sec-0021",  # xapp- Slack app-level tokens likewise
         "sec-0022",  # a JWT header over the 4096 bound, a complete miss
         "sec-0034",  # a PEM header in prose with no key body
+        "sec-0090",  # a GitHub body running three characters into the next prefix
+        "sec-0091",  # two Slack tokens joined, reported as one finding over the run
+        "sec-0092",  # the same overrun on OPENAI_KEY, at two characters
+        "sec-0093",  # two Anthropic keys joined, one finding over the run
+        "sec-0094",  # two JWTs joined, three findings across the join
+        "sec-0095",  # a well-formed decoy in front of a real token, three characters
+        "sec-0098",  # a decoy sharing the fixed-length AWS prefix, a phantom key
+        "sec-0099",  # an Anthropic key whose body holds sk-, reported as OpenAI too
+        "sec-0107",  # a GitHub body swallowing the AWS key joined to its end
+        "sec-0109",  # github_pat_ again, this time as a YAML value
+        "sec-0110",  # xoxe- Slack refresh tokens are in no pattern here either
+        "sec-0158",  # a PEM header in prose, second shape
+        "sec-0159",  # a PEM header in prose, third shape
     ),
 }
 
@@ -422,6 +441,54 @@ def test_a_case_that_records_a_miss_is_not_labelled_with_what_the_detector_does(
         f"{check} produces on it. Either the label was moved onto the detector's "
         "output, which erases the miss, or the detector was fixed and this case "
         "should leave _RECORDS_A_MISS."
+    )
+
+
+# Every file that cites a `secrets` case id in prose. The generated benchmark
+# artifacts are deliberately absent: they are written from the corpus on every
+# run, so an id in them cannot go stale and one of them naming a case would make
+# this guard pass on evidence nobody wrote.
+_SECRETS_CITING = (NOTICE, ROOT / "docs" / "conformance.md", ROOT / "README.md")
+_SECRETS_CASE_ID = re.compile(r"sec-\d{4}")
+
+
+def test_every_secrets_case_id_cited_in_prose_exists() -> None:
+    """The `inj-` guard one corpus over, and it arrives with the same defect.
+
+    A disclosure that names `sec-0091` when it means `sec-0093` reads exactly
+    like one that does not, and the two are one digit apart and describe the
+    same class. Nothing else in the suite reads these ids, so an id that stops
+    naming a case would leave a published disclosure pointing at nothing.
+    """
+    known = {case.id for case in _load("secrets", "in-repo").cases}
+    cited: set[str] = set()
+    for path in _SECRETS_CITING:
+        found = set(_SECRETS_CASE_ID.findall(path.read_text(encoding="utf-8")))
+        missing = sorted(found - known)
+        assert missing == [], f"{path.name} cites {missing}, which are not in the corpus"
+        cited |= found
+    assert cited, "no secrets case ids are cited anywhere; this guard would prove nothing"
+
+
+@pytest.mark.parametrize("case_id", _RECORDS_A_MISS["secrets"])
+def test_a_disclosed_secrets_shape_is_in_the_corpus_and_in_the_notice(case_id: str) -> None:
+    """Present, and named where the disclosure lives. Either half alone is half
+    a disclosure: a case dropped from the file leaves the notice describing
+    evidence that is not there, and an id dropped from the notice leaves a case
+    whose label reads as an ordinary expectation, which for these seventeen it
+    is not.
+
+    The notice is the file that carries the ids because it is the file that
+    carries the provenance. `docs/conformance.md` groups the same cases into
+    classes and is checked for staleness by the citation test above, not by
+    completeness here: naming every id twice would make one of the two lists a
+    copy nobody re-reads.
+    """
+    case = next((c for c in _load("secrets", "in-repo").cases if c.id == case_id), None)
+    assert case is not None, f"{case_id} is disclosed in {NOTICE} and is not in the corpus"
+    assert case_id in NOTICE.read_text(encoding="utf-8"), (
+        f"{case_id} carries a label this implementation does not produce and {NOTICE} "
+        "does not name it"
     )
 
 

@@ -258,7 +258,7 @@ failures is a number you cannot check.
 | pii | pii/in-repo | in-repo | `06fb3b601aba` | 81 | 0.631 | 0.872 | 0.732 | 41 | 24 | 6 | 24 |
 | pii | pii/third-party | nvidia/Nemotron-PII@b70ffaf | `c25ef538d677` | 300 | 0.960 | 0.997 | 0.978 | 340 | 14 | 1 | 6 |
 | rules | rules/in-repo | in-repo | `f1b809114b13` | 40 | 1.000 | 1.000 | 1.000 | 28 | 0 | 0 | 0 |
-| secrets | secrets/in-repo | in-repo | `e9e0ed70dc37` | 39 | 0.957 | 0.880 | 0.917 | 22 | 1 | 3 | 4 |
+| secrets | secrets/in-repo | in-repo | `337e35f03cad` | 160 | 0.881 | 0.873 | 0.877 | 96 | 13 | 14 | 8 |
 
 See [BENCHMARKS.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/BENCHMARKS.md) for the per-type scores and the worst misses
 behind these numbers, and [corpora/NOTICE.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/corpora/NOTICE.md) for what each
@@ -295,6 +295,17 @@ deliberately, and six allow a payload that really is in there. All fifteen are
 named by case id in [corpora/NOTICE.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/corpora/NOTICE.md), along with the
 invisible-character families this check does not count and one measured encoder
 for each.
+
+The `secrets` corpus is disclosed the same way, and its numbers moved when it
+grew: the cases this check gets wrong are labelled with what should happen, so
+they cost precision and recall instead of scoring as successes. Most of them are
+span arithmetic rather than leaks, where the credential is redacted in full and
+the audit record is what is wrong. Every one is named by case id in
+[corpora/NOTICE.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/corpora/NOTICE.md)
+and grouped by class, with a worked input each, in
+[docs/conformance.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/docs/conformance.md).
+[CHANGELOG.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/CHANGELOG.md)
+carries the old figures beside the new ones.
 
 Numbers measured on a corpus we wrote are reported separately from numbers
 measured on a corpus we did not, and the two are never merged. There is no

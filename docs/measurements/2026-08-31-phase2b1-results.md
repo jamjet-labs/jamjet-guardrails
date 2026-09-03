@@ -142,20 +142,22 @@ structural layer alone.
 `training/ship_bar.json` records that clearing the bar would have authorised
 shipping and would still not have authorised putting a headline precision and
 recall row for a semantic injection check beside `pii` (0.631 / 0.872),
-`secrets` (0.957 / 0.880) and `injection-structural` (0.972 / 0.873). Those
+`secrets` (0.881 / 0.873) and `injection-structural` (0.972 / 0.873). Those
 three are measured on corpora with disclosed provenance and named failures and
 are gated in CI; this rests on one external corpus for an adjacent task inside
 the reference model's own training distribution. Since the bar was missed, both
 authorisations are refused, and the question of whether one external corpus
 could ever support a published row stays open for whoever tries again.
 
+
 What may be said publicly, then: nothing about a semantic injection classifier
 in this package, because there is not one. The three published rows are
 unaffected BY THIS STAGE. (`injection-structural`'s own published precision and
 recall later moved, from 0.971 / 0.870 to 0.972 / 0.873, when Task 11 widened
-that check to run on output as well as input; that revision has nothing to do
-with the classifier this stage measured and did not change this stage's
-verdict.)
+that check to run on output as well as input, and `secrets` later moved from
+0.957 / 0.880 to 0.881 / 0.873 when its corpus grew from 39 cases to 160 with
+no change to the detector; neither revision has anything to do with the
+classifier this stage measured and neither changed this stage's verdict.)
 
 ## Even a cleared bar would not have meant "usable on real documents"
 
