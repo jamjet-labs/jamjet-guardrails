@@ -8,7 +8,7 @@ A published precision or recall figure is part of the interface here. A release
 that moves one says so in its entry, with the old value and the new one, because
 a number that changes quietly is a number nobody can rely on.
 
-## [Unreleased]
+## [0.4.0]
 
 
 ### Added
