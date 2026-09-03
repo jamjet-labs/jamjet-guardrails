@@ -1676,12 +1676,12 @@
       "detector_version": "0.1.0",
       "corpus_name": "url-exfiltration/in-repo",
       "corpus_source": "in-repo",
-      "corpus_version": "c8015e4e93e2",
-      "cases": 88,
-      "precision": 0.9143,
-      "recall": 0.9143,
-      "f1": 0.9143,
-      "true_positives": 32,
+      "corpus_version": "3db90a1b72e5",
+      "cases": 94,
+      "precision": 0.9231,
+      "recall": 0.9231,
+      "f1": 0.9231,
+      "true_positives": 36,
       "false_positives": 3,
       "false_negatives": 3,
       "decision_mismatches": 6,
@@ -1689,7 +1689,7 @@
         "DATA_URI_PAYLOAD": {
           "precision": 1.0,
           "recall": 1.0,
-          "true_positives": 7,
+          "true_positives": 8,
           "false_positives": 0,
           "false_negatives": 0
         },
@@ -1701,16 +1701,16 @@
           "false_negatives": 0
         },
         "MARKDOWN_IMAGE_EXFIL": {
-          "precision": 0.9,
-          "recall": 0.75,
-          "true_positives": 9,
+          "precision": 0.9167,
+          "recall": 0.7857,
+          "true_positives": 11,
           "false_positives": 1,
           "false_negatives": 3
         },
         "NESTED_REDIRECT": {
           "precision": 1.0,
           "recall": 1.0,
-          "true_positives": 5,
+          "true_positives": 6,
           "false_positives": 0,
           "false_negatives": 0
         },

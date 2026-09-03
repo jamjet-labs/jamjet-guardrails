@@ -15,6 +15,8 @@ used to claim it did.
 
 from __future__ import annotations
 
+import ast
+from pathlib import Path
 from typing import cast, get_args
 
 import pytest
@@ -26,6 +28,8 @@ from jamjet_guardrails.types import Context, Direction, Kind, Provenance, Verdic
 
 OUT = Context(direction="output", origin="model")
 IN = Context(direction="input", origin="user")
+
+SOURCE = Path(__file__).resolve().parent.parent / "src" / "jamjet_guardrails"
 
 
 class _Declared:
@@ -145,8 +149,8 @@ def test_a_guardrail_declaring_one_runnable_direction_is_still_built() -> None:
     assert chain.run("content", IN).verdicts == ()
 
 
-def test_all_five_declared_copies_of_the_runnable_directions_agree() -> None:
-    """One value, declared in five modules, and each looks right alone.
+def test_every_declared_copy_of_the_runnable_directions_agrees() -> None:
+    """One value, declared in seven places, and each looks right alone.
 
     CHANGED from `test_the_two_declared_copies_...`, which compared the chain's
     copy to the registry's, walked every member into a `Context`, and then
@@ -158,13 +162,27 @@ def test_all_five_declared_copies_of_the_runnable_directions_agree() -> None:
     key, an email address and an SSN. A denylist of five strings cannot catch a
     sixth.
 
-    Five copies, none of which can import another without closing a cycle:
+    Seven copies, none of which can import another without closing a cycle:
 
         chain._RUNNABLE_DIRECTIONS
         detectors._RUNNABLE_DIRECTIONS
         types._DIRECTIONS
         authoring._RUNNABLE
         eval.corpus._DIRECTIONS
+        url_exfiltration._DEFAULT_ON_DETECT           its KEYS
+        template_integrity._DEFAULT_ON_DETECT         its KEYS
+
+    CHANGED again, and the reason is the sentence this docstring already
+    ended with. Two checks that shipped after it added copies six and seven,
+    a default-decision mapping each, whose KEYS encode this same domain and
+    which nothing here could see. `url_exfiltration` indexed its mapping with
+    every direction a caller declared, so a `Direction` that grew into
+    `_RUNNABLE` and not into the mapping threw a bare `KeyError` out of a
+    constructor whose contract is `GuardrailUnavailableError`; that module now
+    DERIVES its `_RUNNABLE` from these keys, which is why only the mapping is
+    listed for it. A list is still a list, so
+    `test_no_source_file_declares_an_unguarded_copy_of_the_runnable_directions`
+    below finds the eighth by scanning for it.
 
     Each is listed literally rather than derived from `get_args(Direction)`, for
     the reason `types.py` records: the domain is designed to grow, and deriving
@@ -180,6 +198,13 @@ def test_all_five_declared_copies_of_the_runnable_directions_agree() -> None:
     """
     from jamjet_guardrails.authoring import _RUNNABLE as AUTHORING_DIRECTIONS
     from jamjet_guardrails.detectors import _RUNNABLE_DIRECTIONS as REGISTRY_DIRECTIONS
+    from jamjet_guardrails.detectors.template_integrity import (
+        _DEFAULT_ON_DETECT as TEMPLATE_DEFAULTS,
+    )
+    from jamjet_guardrails.detectors.url_exfiltration import (
+        _DEFAULT_ON_DETECT as URL_DEFAULTS,
+    )
+    from jamjet_guardrails.detectors.url_exfiltration import _RUNNABLE as URL_DIRECTIONS
     from jamjet_guardrails.eval.corpus import _DIRECTIONS as CORPUS_DIRECTIONS
     from jamjet_guardrails.types import _DIRECTIONS as CONTEXT_DIRECTIONS
 
@@ -191,6 +216,9 @@ def test_all_five_declared_copies_of_the_runnable_directions_agree() -> None:
         ("types", CONTEXT_DIRECTIONS),
         ("authoring", AUTHORING_DIRECTIONS),
         ("eval.corpus", CORPUS_DIRECTIONS),
+        ("url_exfiltration on_detect keys", URL_DEFAULTS.keys()),
+        ("url_exfiltration directions", URL_DIRECTIONS),
+        ("template_integrity on_detect keys", TEMPLATE_DEFAULTS.keys()),
     ):
         assert set(copy) == declared, (
             f"{label} declares {sorted(set(copy))} and Direction declares "
@@ -207,6 +235,98 @@ def test_all_five_declared_copies_of_the_runnable_directions_agree() -> None:
         assert outside not in declared
         with pytest.raises(ValueError, match="unknown direction"):
             Context(direction=cast(Direction, outside), origin="user")
+
+
+def _declared_string_domain(node: ast.expr) -> frozenset[str] | None:
+    """The set of string literals a module-level value spells out, or None.
+
+    Four shapes, because they are the four this package writes a domain in: a
+    set, list or tuple display of strings, a `frozenset(...)`/`set(...)` around
+    one, and a dict display whose KEYS are strings. A value assembled any other
+    way is not a literal and cannot be read off the source, which is the limit
+    of this guard and is why it is a floor under the named list above rather
+    than a replacement for it.
+    """
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+        if node.func.id in ("frozenset", "set") and len(node.args) == 1:
+            return _declared_string_domain(node.args[0])
+        return None
+    if isinstance(node, ast.Dict):
+        keys = node.keys
+    elif isinstance(node, (ast.Set, ast.List, ast.Tuple)):
+        keys = list(node.elts)
+    else:
+        return None
+    if not keys or not all(
+        isinstance(key, ast.Constant) and isinstance(key.value, str) for key in keys
+    ):
+        return None
+    return frozenset(key.value for key in keys)  # type: ignore[union-attr]
+
+
+def test_no_source_file_declares_an_unguarded_copy_of_the_runnable_directions() -> None:
+    """The list above is a list, and the test above says what a list cannot do.
+
+    It said it in its own docstring -- "a denylist of five strings cannot catch
+    a sixth" -- and then two checks shipped with a sixth and a seventh and it
+    caught neither, because each was a `_DEFAULT_ON_DETECT` mapping whose KEYS
+    are this domain and which no module names to any other. One of them was
+    indexed unguarded and would have thrown a bare `KeyError` out of a
+    constructor.
+
+    So this one finds the copies instead of listing them: every module-level
+    assignment under `src/` whose literal value spells exactly the members of
+    `Direction`, in any of the four shapes this package writes a domain in, is a
+    copy of it, and every copy has to be one the test above holds. The rule is
+    derived from `get_args(Direction)` rather than from a set of names somebody
+    remembered, which is the same reason `docs/conformance.md` gives for
+    deriving an exemption from a property.
+
+    A false positive here is a constant that happens to spell `{"input",
+    "output"}` for an unrelated reason. There is no such constant, and if one
+    ever appears it is still the same two strings and still worth a maintainer
+    looking at the two together.
+
+    Mutation watched: `url_exfiltration._DEFAULT_ON_DETECT` removed from
+    `_GUARDED` below, which is exactly the state the package shipped in. FAILS,
+    naming the file and the constant.
+    """
+    declared = frozenset(get_args(Direction))
+    assert declared, "Direction declares no members; the scan below would be vacuous"
+
+    guarded = {
+        ("chain.py", "_RUNNABLE_DIRECTIONS"),
+        ("types.py", "_DIRECTIONS"),
+        ("authoring.py", "_RUNNABLE"),
+        ("eval/corpus.py", "_DIRECTIONS"),
+        ("detectors/__init__.py", "_RUNNABLE_DIRECTIONS"),
+        ("detectors/url_exfiltration.py", "_DEFAULT_ON_DETECT"),
+        ("detectors/template_integrity.py", "_DEFAULT_ON_DETECT"),
+    }
+
+    found: set[tuple[str, str]] = set()
+    for path in sorted(SOURCE.rglob("*.py")):
+        module = ast.parse(path.read_text(encoding="utf-8"))
+        for node in module.body:
+            if isinstance(node, ast.AnnAssign):
+                targets: list[ast.expr] = [node.target]
+                value = node.value
+            elif isinstance(node, ast.Assign):
+                targets = list(node.targets)
+                value = node.value
+            else:
+                continue
+            if value is None or _declared_string_domain(value) != declared:
+                continue
+            where = path.relative_to(SOURCE).as_posix()
+            found.update((where, target.id) for target in targets if isinstance(target, ast.Name))
+
+    assert found == guarded, (
+        f"the runnable-direction domain is declared at {sorted(found - guarded)} "
+        f"with nothing holding it to Direction, and expected at "
+        f"{sorted(guarded - found)}; every copy has to be in "
+        "test_every_declared_copy_of_the_runnable_directions_agrees"
+    )
 
 
 def test_the_caller_string_ceiling_is_the_same_at_every_door() -> None:

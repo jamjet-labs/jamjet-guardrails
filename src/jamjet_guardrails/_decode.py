@@ -40,14 +40,14 @@ between that and a finding.
 Each floor was swept from 1 to 259 in steps of one over
 ``corpora/url-exfiltration/in-repo.jsonl``, with every other value at its
 shipped setting, scoring the corpus at each step. The shipped configuration
-scores F1 0.9143 on that corpus.
+scores F1 0.9231 on that corpus.
 
-| Alphabet | Floor | Plateau at F1 0.9143 | First floor that costs | Cost there |
+| Alphabet | Floor | Plateau at F1 0.9231 | First floor that costs | Cost there |
 |---|---:|---|---:|---|
-| base64 | 16 | 1 to 32 | 33 | one true positive, F1 to 0.8986 |
-| hex | 16 | 1 to 42 | 43 | one true positive, F1 to 0.8986 |
-| percent | 6 | 1 to 106 | none below 260 | see below |
-| rot13 | 24 | 1 to 109 | 110 | one true positive, F1 to 0.8986 |
+| base64 | 16 | 1 to 32 | 33 | one true positive, F1 to 0.9091 |
+| hex | 16 | 1 to 42 | 43 | one true positive, F1 to 0.9091 |
+| percent | 6 | 1 to 104 | 105 | one true positive, F1 to 0.9091 |
+| rot13 | 24 | 1 to 109 | 110 | one true positive, F1 to 0.9091 |
 
 **The sweep bounds these four from ABOVE and does not choose them, and saying
 otherwise would be dressing noise as a measurement.** Every alphabet's curve is
@@ -59,16 +59,22 @@ percent, three words for rot13. What the sweep contributes is the margin, which
 is the part that could have been wrong: 16 is half the base64 ceiling and 38% of
 the hex one, and 24 is 22% of the rot13 ceiling.
 
-**The percent curve improves above its plateau, and the improvement is
-rejected.** From 107 to 147 F1 rises to 0.9275, because one false positive stops
+**The percent curve used to improve above its plateau, the improvement was
+rejected, and six new cases then closed it.** On the 88-case corpus F1 rose from
+0.9143 to 0.9275 anywhere from 107 to 147, because one false positive stopped
 being read: case ``url-0076`` carries a 106-character percent run, a chart API's
-``title`` parameter. That is not a better rule. It is a URL parser that declines
-to read percent escapes above a length, and the length is one corpus case's
-query string. The window shuts again at 148, one past the 147-character percent
-run in ``url-0001``, which is a positive, and F1 falls to 0.8788, below what the
-shipped floor scores. A window bounded at both ends by the lengths of two strings
-in one corpus is the definition of a value fitted to that corpus, so 6 ships and
-this paragraph is why.
+``title`` parameter. That was never a better rule. It is a URL parser that
+declines to read percent escapes above a length, and the length is one corpus
+case's query string, so 6 shipped and this paragraph said why.
+
+The 94-case corpus settles it with a measurement rather than an argument. Two of
+the cases added for the no-path query and the entity-laundered ``?`` carry
+percent runs of 104 and 119 characters, both positives, and the window now peaks
+at F1 0.9211 from 107 to 119, BELOW the 0.9231 the shipped floor scores. The
+plateau's ceiling came down with them, from 106 to 104, and 105 costs
+``url-0093``. Above 119 the curve falls to 0.9067, and at 148, one past the
+147-character percent run in ``url-0001``, to 0.8611. A value fitted to a corpus
+is a value the next six cases can beat, and these six did.
 
 ``tests/test_decode.py::test_every_floor_sits_inside_the_flat_region_the_sweep_measures``
 re-runs the sweep on every test run rather than trusting this table, so a corpus
@@ -87,11 +93,11 @@ wearing an encoding's name.
 
 **It ships, and the ablation is why.** Removing rot13 from the readings
 ``url-exfiltration`` takes of a URL component, with nothing else changed, moves
-that check on its own corpus from precision 0.9143, recall 0.9143, F1 0.9143 and
-6 wrong decisions to precision 0.9091, recall 0.8571, F1 0.8824 and 8 wrong
+that check on its own corpus from precision 0.9231, recall 0.9231, F1 0.9231 and
+6 wrong decisions to precision 0.9189, recall 0.8718, F1 0.8947 and 8 wrong
 decisions. Two positives are lost, ``url-0071`` and ``url-0072``, and NO case
 changes the other way: the false-positive count is 3 with rot13 and 3 without,
-over a corpus whose 53 negatives are almost entirely ordinary English prose, all
+over a corpus whose 55 negatives are almost entirely ordinary English prose, all
 of it a rot13 candidate. The two-sided test is what buys that, and the ablation
 is re-run by
 ``tests/test_url_exfiltration.py::test_rot13_buys_two_positives_and_costs_no_precision``

@@ -935,6 +935,24 @@ a share or a prefilled issue when a user or a page did. The corpus cannot expres
 would need the same text labelled two ways in two directions, and no case does that, so it is written
 here.
 
+### A URL is read twice: as written, and as the consumer resolves it
+
+**Every signal runs over both readings and fires on either.** The consumer resolves HTML entity
+references before a URL parser sees the string: an HTML parser resolves an attribute value, and
+CommonMark resolves a link destination. So `dat&#97;:text/html,<script>` is a `data:` URI carrying a
+document, and `p.png&#63;d=<payload>` has a query string, whatever a partition over the raw
+characters says.
+
+Resolving is not enough on its own, and neither is declining to. `&amp;` is how every HTML document
+writes a query separator, so resolution SPLITS one component into two, and two short components can
+both sit under a prose floor that the one long component clears. Neither reading contains the other,
+so a port takes both and unions what they find. Resolution is applied once, and to the URL rather
+than to what comes out of it, which is the one-level rule the payload decoders keep.
+
+`url-0092`, `url-0093` and `url-0094` are the cases. This implementation resolved for the scheme test
+alone and handed the raw string to the other four signals, and `url-0019` pinned it for
+`SCRIPT_SCHEME` and for nothing else, which is a corpus too small to see the bug it was written for.
+
 ### There are no exemptions, and this is what stands in their place
 
 There is no host allowlist, no safe-domain list and no scheme allowlist. The only thing that excuses
@@ -950,10 +968,16 @@ those bound the check in the same way and would otherwise go unstated.
   renderer links either.
 - **The authority is not a component.** Only path segments and query keys and values are decoded and
   tested. Hostname labels are not, and two corpus cases pay for it; see below.
+  **The authority ends at the first `/` OR the first `?`.** `https://host?d=...` carries a query and
+  no path, RFC 3986 permits it and every browser resolves it to `https://host/?d=...`, so a port that
+  splits on `/` alone puts the whole query inside the authority and then discards it. Three of the
+  five signals read nothing but the components, so that one character is the difference between a
+  deny and an allow: `url-0089`, `url-0090` and `url-0091` are the cases, and this implementation
+  failed all three until a whole-branch review measured it.
 
 ### Where this implementation falls short of its own corpus
 
-The published row is 0.914 precision and 0.914 recall over 88 cases with 6 wrong decisions, and every
+The published row is 0.923 precision and 0.923 recall over 94 cases with 6 wrong decisions, and every
 one of the six is named here. Three are false positives and three are false negatives, and they are
 the same trade seen from both ends.
 

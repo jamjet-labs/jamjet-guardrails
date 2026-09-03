@@ -68,6 +68,16 @@ would read that as a regression somebody should explain. Every row here was
 taken on the machine and the interpreter named above; `script-constraint` was
 measured on 2026-09-03 and the other four when this page was first written.
 
+**A row IS re-measured when the check under it changes, and `url-exfiltration`
+was, on 2026-09-04.** Its six rows moved from 0.112 / 0.439 / 1.733 / 6.961 /
+28.090 / 112.116 ms to 0.130 / 0.510 / 2.025 / 8.058 / 32.241 / 129.702, and
+9.4 MB/s to 7.8, because the fix for the paragraph below added three scans to
+the discovery pass. The old numbers were a fifth faster and quadratic in two
+places these rows could not see. Same machine, same interpreter, same script
+defaults; the machine carried other builds during that run rather than being
+idle, and what says the run is still readable is the spread, with the p99 4%
+above the p50 at a megabyte where the original run's was 5%.
+
 ## The input
 
 One deterministic string per size, built by
@@ -167,12 +177,12 @@ Milliseconds per call. `MB/s` is derived from the p50.
 | template-integrity | 65 536 | 0 | 1.866 | 1.949 | 2.037 | 33.8 |
 | template-integrity | 262 144 | 0 | 7.493 | 8.280 | 8.544 | 33.7 |
 | template-integrity | 1 048 576 | 0 | 29.724 | 31.835 | 32.471 | 34.0 |
-| url-exfiltration | 1 024 | 0 | 0.112 | 0.117 | 0.156 | 9.2 |
-| url-exfiltration | 4 096 | 0 | 0.439 | 0.470 | 0.486 | 9.4 |
-| url-exfiltration | 16 384 | 0 | 1.733 | 1.811 | 1.839 | 9.5 |
-| url-exfiltration | 65 536 | 0 | 6.961 | 7.354 | 7.471 | 9.5 |
-| url-exfiltration | 262 144 | 0 | 28.090 | 29.141 | 34.361 | 9.4 |
-| url-exfiltration | 1 048 576 | 0 | 112.116 | 115.217 | 118.193 | 9.4 |
+| url-exfiltration | 1 024 | 0 | 0.130 | 0.142 | 0.155 | 7.6 |
+| url-exfiltration | 4 096 | 0 | 0.510 | 0.541 | 0.576 | 7.7 |
+| url-exfiltration | 16 384 | 0 | 2.025 | 2.134 | 2.164 | 7.8 |
+| url-exfiltration | 65 536 | 0 | 8.058 | 8.404 | 8.534 | 7.8 |
+| url-exfiltration | 262 144 | 0 | 32.241 | 33.407 | 33.769 | 7.8 |
+| url-exfiltration | 1 048 576 | 0 | 129.702 | 134.430 | 135.108 | 7.8 |
 
 ## What each check does with the length
 
@@ -236,16 +246,30 @@ of it, so 4.0 is exactly linear.
   a rot13 candidate, so ordinary prose is nothing but candidates, and each one is
   rotated and scored for prose twice, once in each direction. Content full of
   base64 costs less per byte than the English around it.
-- **`url-exfiltration`** is linear. Ratios run 3.90 to 4.04 and the rate holds
-  at 9.2 to 9.5 megabytes per second across the range, which makes it the
-  fastest of the five scanning checks. **The findings column is zero at every
-  size, and that is what these rows measure**: the seeded input carries no URL,
-  so the number is the discovery pass over the whole content and none of the
-  decoding. Content full of URLs costs more, because each one is taken apart and
-  its components are decoded at up to four alphabets each; that work is bounded
-  by the number of URLs and by their length, not by the length of the document
-  around them, so it is linear in a different variable rather than a worse power
-  of this one.
+- **`url-exfiltration`** is linear. Ratios run 3.92 to 4.02 and the rate holds
+  at 7.6 to 7.8 megabytes per second across the range. **The findings column is
+  zero at every size, and that is what these rows measure**: the seeded input
+  carries no URL, so the number is the discovery pass over the whole content and
+  none of the decoding. Content full of URLs costs more, because each one is
+  taken apart and its components are decoded at up to four alphabets each; that
+  work is bounded by the number of URLs and by their length, not by the length of
+  the document around them, so it is linear in a different variable rather than a
+  worse power of this one.
+
+  **That last sentence was written to foreclose a shape the check then had, and
+  the row could not see it because the row's input carries no URL.** Discovery
+  was quadratic in two independent places: the containment test that stops a bare
+  URL being reported twice was a linear scan of every construct already found,
+  run once per bare URL, and the lazy `[^>]*?` inside the single-regex form of
+  the HTML attribute patterns rescanned to the end of the content from every
+  `<img` or `<a` that never reached its attribute. A megabyte of a short markdown
+  link repeated beside a bare `http://x.example/` took 37.9 seconds, and a megabyte
+  of `<img ` took 37.3, against these rows' 112 ms. Both sites are bisects now and take 0.226 and
+  0.113 seconds on the same two inputs, both curves are 4.0x per 4x, and
+  `tests/test_url_exfiltration.py::test_finding_the_urls_is_linear_in_the_content_and_was_not`
+  holds each with a budget that is not a performance gate and would not survive
+  either shape coming back. **A complexity claim measured only on input that
+  carries none of the thing it is about is not a measurement.**
 - **`script-constraint`** is linear. Ratios run 3.94 to 4.06 and the rate holds
   at 3.9 to 4.0 megabytes per second across the whole range. It is the slowest
   check here, and the reason is structural rather than fixable: every other
