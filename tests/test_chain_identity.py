@@ -3,21 +3,25 @@
 `tests/test_chain.py` covers what a chain does with what a guardrail RETURNS.
 This file covers what it does with what a guardrail DECLARES, which is read once
 in `GuardrailChain.__init__` and used to stamp every verdict that guardrail ever
-produces. Two refusals here were made by `detectors.build` on the registry door
-and by nothing at all on the door `GuardrailChain` is: direct construction is a
-supported path, because the chain's own docstring tells a caller who wants no
-checks to write `GuardrailChain([])` themselves.
+produces.
+
+One of the two refusals added here, the inert `directions`, is the fifth refusal
+`detectors.build` already made on the registry door and nothing made on the door
+`GuardrailChain` is: direct construction is a supported path, because the chain's
+own docstring tells a caller who wants no checks to write `GuardrailChain([])`
+themselves. The other, the length ceiling, has NO registry parity and this file
+used to claim it did.
 """
 
 from __future__ import annotations
 
-from typing import cast
+from typing import cast, get_args
 
 import pytest
 
 from jamjet_guardrails.chain import _CALLER_STRING_LIMIT, _RUNNABLE_DIRECTIONS, GuardrailChain
 from jamjet_guardrails.errors import GuardrailUnavailableError
-from jamjet_guardrails.protocol import saw
+from jamjet_guardrails.protocol import Guardrail, saw
 from jamjet_guardrails.types import Context, Direction, Kind, Provenance, Verdict
 
 OUT = Context(direction="output", origin="model")
@@ -122,7 +126,7 @@ def test_a_guardrail_that_no_context_can_run_refuses_the_chain(directions: froze
     `if not directions` lets the three non-empty cases through, and deleting it
     lets all four through.
     """
-    with pytest.raises(GuardrailUnavailableError, match="no direction it can run in"):
+    with pytest.raises(GuardrailUnavailableError, match="none of which it can run in"):
         GuardrailChain([_Declared(directions=directions)])
 
 
@@ -141,39 +145,133 @@ def test_a_guardrail_declaring_one_runnable_direction_is_still_built() -> None:
     assert chain.run("content", IN).verdicts == ()
 
 
-def test_the_two_declared_copies_of_the_runnable_directions_agree() -> None:
-    """One value, declared in three modules, and each looks right alone.
+def test_all_five_declared_copies_of_the_runnable_directions_agree() -> None:
+    """One value, declared in five modules, and each looks right alone.
 
-    `types.Context.__post_init__` refuses a direction outside its own literal
-    list, `detectors._RUNNABLE_DIRECTIONS` refuses a guardrail declaring none of
-    its own, and `chain._RUNNABLE_DIRECTIONS` now does the same. The chain cannot
-    import the registry's copy, because `detectors/__init__.py` imports the
-    chain, so the duplication is structural rather than careless. Each is listed
-    literally rather than derived from `get_args(Direction)` for the reason
-    `types.py` records: the domain is designed to grow, and deriving the check
-    would auto-accept a new member before anything could handle it.
+    CHANGED from `test_the_two_declared_copies_...`, which compared the chain's
+    copy to the registry's, walked every member into a `Context`, and then
+    asserted that five hard-coded strings build no `Context`. It missed the copy
+    whose drift FAILS OPEN. Growing `types._DIRECTIONS` alone lets a `Context`
+    carry a direction no guardrail declares; `chain.run` then skips every
+    guardrail and reports `allow`, no verdicts, content untouched. That mutation
+    was made and the entire suite stayed green over a payload carrying an AWS
+    key, an email address and an SSN. A denylist of five strings cannot catch a
+    sixth.
 
-    A re-declared value drifts. Add a fourth direction to `Direction` and to two
-    of these three, and the third refuses every guardrail that declares only the
-    new one, or skips it in silence; both halves read correctly in their own
-    file. This holds them to each other through BEHAVIOUR rather than through
-    the literals, so a copy spelled differently but behaving the same passes and
-    one that behaves differently cannot.
+    Five copies, none of which can import another without closing a cycle:
 
-    Mutation-checked: adding "stream" to `chain._RUNNABLE_DIRECTIONS` alone fails
-    on the `Context` half, and removing "input" from it fails on the registry
-    half.
+        chain._RUNNABLE_DIRECTIONS
+        detectors._RUNNABLE_DIRECTIONS
+        types._DIRECTIONS
+        authoring._RUNNABLE
+        eval.corpus._DIRECTIONS
+
+    Each is listed literally rather than derived from `get_args(Direction)`, for
+    the reason `types.py` records: the domain is designed to grow, and deriving
+    the check would auto-accept a new member before anything could handle it.
+    That argument is about the MODULES. A test is the right place to compare
+    them, and comparing every copy to `get_args(Direction)` closes the drift in
+    both directions at once: a copy that grows is caught, and so is one that
+    does not grow when the Literal does.
+
+    Mutation-checked: adding "stream" to any one copy fails, removing "input"
+    from any one copy fails, and adding "system" to `types._DIRECTIONS` alone,
+    the mutation the old test missed, fails here.
     """
+    from jamjet_guardrails.authoring import _RUNNABLE as AUTHORING_DIRECTIONS
     from jamjet_guardrails.detectors import _RUNNABLE_DIRECTIONS as REGISTRY_DIRECTIONS
+    from jamjet_guardrails.eval.corpus import _DIRECTIONS as CORPUS_DIRECTIONS
+    from jamjet_guardrails.types import _DIRECTIONS as CONTEXT_DIRECTIONS
 
-    assert _RUNNABLE_DIRECTIONS == set(REGISTRY_DIRECTIONS)
-    for direction in sorted(_RUNNABLE_DIRECTIONS):
-        # Every direction the chain will run must be one a Context can carry, or
-        # the chain accepts a guardrail nothing can ever reach.
+    declared = set(get_args(Direction))
+    assert declared, "Direction declares no members; every comparison below would be vacuous"
+    for label, copy in (
+        ("chain", _RUNNABLE_DIRECTIONS),
+        ("detectors", REGISTRY_DIRECTIONS),
+        ("types", CONTEXT_DIRECTIONS),
+        ("authoring", AUTHORING_DIRECTIONS),
+        ("eval.corpus", CORPUS_DIRECTIONS),
+    ):
+        assert set(copy) == declared, (
+            f"{label} declares {sorted(set(copy))} and Direction declares "
+            f"{sorted(declared)}; a copy that drifts is a refusal that means "
+            "something different from the one beside it"
+        )
+
+    # And the behaviour, because equal literals are not the same claim as equal
+    # behaviour: a copy could agree and its consumer could still test membership
+    # against something else.
+    for direction in sorted(declared):
         assert Context(direction=cast(Direction, direction), origin="user").direction == direction
-    for outside in ("stream", "tool", "Input", "", "both"):
-        # And nothing outside it may construct a Context, or a guardrail the
-        # chain refused as unreachable would in fact have been reachable.
-        assert outside not in _RUNNABLE_DIRECTIONS
+    for outside in ("stream", "system", "tool", "Input", "", "both"):
+        assert outside not in declared
         with pytest.raises(ValueError, match="unknown direction"):
             Context(direction=cast(Direction, outside), origin="user")
+
+
+def test_the_caller_string_ceiling_is_the_same_at_every_door() -> None:
+    """Three modules refuse an over-long identity and none can import another.
+
+    `chain` holds the ceiling for a guardrail entering a chain, `authoring` holds
+    it where a check is authored, and `detectors` holds it as a message bound on
+    the name it reports. `detectors` imports `chain`, and `authoring` is imported
+    by `detectors`, so the constant cannot live in one place without a cycle.
+
+    Two ceilings that disagree are worse than one that is wrong: a check would
+    construct, pass the registry, and be refused by the chain, which is the
+    detonates-later shape this repository refuses everywhere else.
+    """
+    from jamjet_guardrails.authoring import _CALLER_STRING_LIMIT as AUTHORING_LIMIT
+    from jamjet_guardrails.detectors import _NAME_LIMIT as REGISTRY_LIMIT
+
+    assert _CALLER_STRING_LIMIT == AUTHORING_LIMIT == REGISTRY_LIMIT
+
+
+def test_a_refusal_never_quotes_the_directions_it_refuses() -> None:
+    """The message bound, on the refusal that was written without one.
+
+    `directions` is the guardrail's own declared data, read from caller code
+    that runs after the caller has content in hand, so a declared direction can
+    BE the content. The first draft of the inert-guardrail refusal interpolated
+    `sorted(directions)` whole: a guardrail declaring one two-million-character
+    direction produced a two-million-character refusal, and one declaring a
+    direction that was an AWS key and an email address put both into the message
+    that a caller wrapping the configuration seam writes to a log.
+
+    That is the defect `_bounded` exists to close, reached from a third side,
+    and `_refusal`'s own docstring already forbade it: the guardrail is named by
+    POSITION because what is being refused is its account of itself.
+
+    Mutation-checked: restoring `sorted(directions)` in either refusal fails
+    here.
+    """
+    secret = "AKIAIOSFODNN7EXAMPLE alice@example.com"
+    huge = "D" * 500_000
+
+    for directions in (frozenset({secret}), frozenset({huge}), frozenset({secret, huge})):
+        with pytest.raises(GuardrailUnavailableError) as raised:
+            GuardrailChain([_Declared(directions=directions)])
+        message = str(raised.value)
+        assert secret not in message, message[:200]
+        assert huge not in message
+        assert len(message) < 500, len(message)
+        # The count is what replaces the values, and it has to be there or the
+        # message says nothing about what was wrong.
+        assert f"{len(directions)} direction(s)" in message
+
+    # The registry door carries the same message and had the same hole. Reached
+    # through `build` rather than restated, because the two messages are written
+    # separately in two modules that cannot import each other's constant.
+    from jamjet_guardrails.detectors import AVAILABLE, build
+
+    def factory(**_options: object) -> Guardrail:
+        return cast("Guardrail", _Declared(directions=frozenset({secret})))
+
+    AVAILABLE["__probe__"] = factory
+    try:
+        with pytest.raises(GuardrailUnavailableError) as raised:
+            build("__probe__")
+    finally:
+        del AVAILABLE["__probe__"]
+    assert secret not in str(raised.value)
+    assert len(str(raised.value)) < 500

@@ -202,6 +202,11 @@ _TYPE_NAME = re.compile(r"\A[A-Z][A-Z0-9_]*\Z")
 
 _RUNNABLE: frozenset[Direction] = frozenset({"input", "output"})
 
+# `chain._CALLER_STRING_LIMIT`, spelled here because importing `chain` from this
+# module would close an import cycle: `detectors/__init__.py` imports `chain` and
+# `authoring`. `tests/test_chain_identity.py` holds the two to each other.
+_CALLER_STRING_LIMIT = 200
+
 
 class PatternGuardrail:
     """A constraint over patterns, banned substrings and length.
@@ -227,6 +232,22 @@ class PatternGuardrail:
         directions: frozenset[Direction] = frozenset({"input", "output"}),
         fold_case: bool = True,
     ) -> None:
+        # The ceiling `GuardrailChain` refuses above, held HERE too, so a check
+        # built through the documented path fails at the mistake rather than at
+        # the chain. Without it, `PatternGuardrail(name="a" * 250, ...)`
+        # constructed cleanly, satisfied the protocol, and then made
+        # `build_chain` refuse the whole configuration: a factory that hands
+        # back an object which only detonates later has moved the failure away
+        # from the mistake, which is the argument `detectors.build`'s own
+        # docstring makes against exactly this shape.
+        for field, value in (("name", name), ("version", version)):
+            if len(value) > _CALLER_STRING_LIMIT:
+                raise ValueError(
+                    f"{field} is {len(value)} characters, above the "
+                    f"{_CALLER_STRING_LIMIT}-character ceiling; it is copied into the "
+                    "provenance of every verdict this check produces, and a chain "
+                    "refuses a guardrail that declares one this long"
+                )
         self.name = name
         self.version = version
         self.directions = directions

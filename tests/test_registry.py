@@ -395,9 +395,9 @@ def test_build_rejects_an_unknown_kind_too_not_only_build_chain(
 def test_a_guardrail_that_can_never_run_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     """An inert guardrail is a configured check that does not check."""
     monkeypatch.setitem(AVAILABLE, "inert", Inert)
-    with pytest.raises(GuardrailUnavailableError, match="no direction"):
+    with pytest.raises(GuardrailUnavailableError, match="none of which it can run in"):
         build("inert")
-    with pytest.raises(GuardrailUnavailableError, match="no direction"):
+    with pytest.raises(GuardrailUnavailableError, match="none of which it can run in"):
         build_chain(["inert"])
 
 
@@ -406,7 +406,7 @@ def test_a_guardrail_whose_only_direction_no_context_carries_is_refused(
 ) -> None:
     """Same property, different spelling: it can never run either."""
     monkeypatch.setitem(AVAILABLE, "sideways", OnlyUnrunnableDirection)
-    with pytest.raises(GuardrailUnavailableError, match="no direction"):
+    with pytest.raises(GuardrailUnavailableError, match="none of which it can run in"):
         build("sideways")
 
 
@@ -432,7 +432,7 @@ def test_the_chain_now_refuses_the_inert_guardrail_it_used_to_run_silently() -> 
     Mutation-checked: deleting the intersection test in `_identity_of` restores
     both silences and fails both halves of this test.
     """
-    with pytest.raises(GuardrailUnavailableError, match="no direction it can run in"):
+    with pytest.raises(GuardrailUnavailableError, match="none of which it can run in"):
         GuardrailChain([Inert()])
 
     mixed: list[Guardrail] = [PiiGuardrail(), Inert()]

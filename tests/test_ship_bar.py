@@ -111,11 +111,27 @@ SHIP_BAR_SHA256_AT_VERDICT = "74fb86231e6ef98813d09433041d032989ce7ed1512fb6c03d
 #: file's own bytes, because the bytes of these keys sit inside a file whose
 #: other keys are allowed to move, and reformatting the file must not read as a
 #: tampered bar.
-SHIP_BAR_CORE_SHA256 = "c1c3c9f8615093989bd0d1b54f21e5b108a10484e882c784a7f68aea4eba0d29"
+SHIP_BAR_CORE_SHA256 = "69d6c65ffde2df7d2f2a35802892a651b0eb73984ab6c3cf86aeb552dc9a24c1"
 
 #: The keys that digest covers. Listed literally, because deriving it as "every
 #: key except the structural ones" would silently admit a key added later to the
 #: side that is allowed to move, which is the direction that loses the guard.
+#:
+#: A literal list has the mirror hole: a key added later to the side that may NOT
+#: move is silently outside the digest. `SHIP_BAR_STRUCTURAL_KEYS` below closes
+#: it. The two lists partition the file, and
+#: `test_every_key_in_the_bar_is_on_exactly_one_side_of_the_digest` refuses a key
+#: that is on neither, so a field added to the bar is a decision about which side
+#: it belongs to rather than a field nobody digested.
+#:
+#: `clears_the_bar` is here after an adversarial review found it on neither list
+#: and therefore outside the digest. It is the file's own statement of the pass
+#: rule, in prose, beside `our_minimum` and `our_minimum_comparison` which state
+#: it as values. Both value forms were covered and the prose form was not, so
+#: `> our_minimum` could be relaxed to `>= our_minimum` in the sentence that
+#: describes the rule while every digest still matched: two tables that must
+#: agree, with only one of them pinned. It re-derives nothing (it is built from
+#: constants) so it belongs on this side.
 SHIP_BAR_CORE_KEYS = (
     "metric",
     "metric_definition",
@@ -135,6 +151,27 @@ SHIP_BAR_CORE_KEYS = (
     "recorded_utc",
     "recorded_before_any_model_existed",
     "rationale",
+    "clears_the_bar",
+)
+
+#: The keys that MAY move, and the only ones. Every one of them is the structural
+#: side, which this file defines as decision-level recall re-derived from a corpus
+#: that ships with the library, so it moves when that corpus legitimately grows.
+#: A move is disclosed in `structural_floor_rederived` and moves `SHIP_BAR_SHA256`
+#: in the same commit.
+#:
+#: `published_finding_level_recall` and `structural_floor_note` are here because
+#: they carry the finding-level number, which moved from 0.870 to 0.873 with the
+#: same corpus growth. `structural_floor_level` is a constant and is here because
+#: it describes the structural side and belongs with it.
+SHIP_BAR_STRUCTURAL_KEYS = (
+    "structural_floor",
+    "structural_floor_level",
+    "structural_floor_detail",
+    "structural_floor_note",
+    "structural_floor_rederived",
+    "published_finding_level_recall",
+    "why_the_structural_side_exists",
 )
 
 #: The instant every committed artifact under `training/artifacts/` records, by
@@ -766,3 +803,45 @@ def test_the_structural_floor_names_the_corpus_version_it_was_measured_on() -> N
     # And the derivation reads the FILE rather than quoting the pin, or the
     # whole guard would agree with itself no matter what is on disk.
     assert structural_floor(harness())["corpus_version"] == derived
+
+
+def test_every_key_in_the_bar_is_on_exactly_one_side_of_the_digest() -> None:
+    """A key on neither list is a key nothing digests.
+
+    `SHIP_BAR_CORE_KEYS` is a literal list, argued for in its own comment: a
+    derived one would silently admit a key added later to the side that is
+    allowed to move. The mirror hole is the reason this test exists. Before it,
+    adding `"our_minimum_tolerance": 0.05` to the bar left the core digest
+    matching, because the digest is taken over the listed keys and a key nobody
+    listed is a key nobody covers. An adversarial review found `clears_the_bar`
+    already sitting in that gap: the file's own prose statement of the pass rule,
+    beside two value forms of the same rule that WERE covered, so `> our_minimum`
+    could be relaxed to `>= our_minimum` in the sentence describing the rule with
+    every digest still green.
+
+    The two lists partition the file. A new key fails here until somebody decides
+    which side it belongs to, which is the decision the digest is made of.
+
+    `tests/test_ship_check.py` applies the same pattern to the structural record:
+    "a key added later that nobody thought about fails here rather than
+    disappearing into a subset match".
+
+    Mutation-checked: adding a key to the bar and to neither list fails here;
+    moving `our_minimum` from the core list to the structural list fails the
+    ordering test, whose digest then no longer covers it.
+    """
+    recorded = bar()
+    core = set(SHIP_BAR_CORE_KEYS)
+    structural = set(SHIP_BAR_STRUCTURAL_KEYS)
+    assert core & structural == set(), sorted(core & structural)
+    undigested = sorted(set(recorded) - core - structural)
+    assert undigested == [], (
+        f"{undigested} are in training/ship_bar.json and on neither digest list; a key "
+        "nobody listed is a key nobody covers"
+    )
+    absent = sorted((core | structural) - set(recorded))
+    assert absent == [], f"{absent} are digested and not in the file"
+    # The pass rule is stated twice in this file, as values and as prose, and
+    # both statements are now inside the digest that never moves.
+    for key in ("our_minimum", "our_minimum_comparison", "clears_the_bar"):
+        assert key in core

@@ -1728,7 +1728,7 @@ def test_a_declared_direction_that_is_not_an_exact_str_cannot_force_a_run() -> N
     # the lying member, nothing was left, and the guardrail was skipped in every
     # context. Dropping every member is exactly the inert shape `_identity_of`
     # now refuses, so the silence is a refusal.
-    with pytest.raises(GuardrailUnavailableError, match="no direction it can run in"):
+    with pytest.raises(GuardrailUnavailableError, match="none of which it can run in"):
         GuardrailChain([Sideways()])
 
     # The coercion is what this test is actually about, so it is asserted where

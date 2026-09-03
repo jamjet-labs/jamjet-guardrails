@@ -50,13 +50,23 @@ _CALLER_STRING_LIMIT = 200
 # deliberately NOT derived from `get_args(Direction)`, for the reason `_KINDS`
 # and `_DECISIONS` give below and `types.py` gives at its own copy.
 #
-# This is the package's third copy. `types.Context.__post_init__` refuses a
-# direction outside it, and `detectors._RUNNABLE_DIRECTIONS` refuses a guardrail
-# that declares none of it. This module cannot import the second, because
-# `detectors/__init__.py` imports this module. A re-declared value drifts and
-# both sides look right alone, so `tests/test_chain.py` holds all three to each
-# other behaviourally: every direction named here constructs a `Context`, and
-# nothing outside it does.
+# One value, declared in FIVE places in this package, and the count is written
+# here because the first draft of this comment said three and a maintainer
+# following it would have missed two:
+#
+#   chain._RUNNABLE_DIRECTIONS          this line
+#   detectors._RUNNABLE_DIRECTIONS      refuses a guardrail declaring none of it
+#   types._DIRECTIONS                   refuses a Context outside it
+#   authoring._RUNNABLE                 refuses a PatternGuardrail outside it
+#   eval.corpus._DIRECTIONS             refuses a corpus row outside it
+#
+# This module cannot import any of them, because `detectors/__init__.py` imports
+# this module and the rest import `types`. A re-declared value drifts and every
+# side reads correctly alone, so `tests/test_chain_identity.py` holds all five
+# to `get_args(Direction)` and to each other. The direction that fails OPEN is
+# `types._DIRECTIONS` growing alone: a `Context` would then carry a direction no
+# guardrail declares, every guardrail would be skipped, and the run would report
+# allow over content nothing checked.
 _RUNNABLE_DIRECTIONS: frozenset[str] = frozenset({"input", "output"})
 
 # The two kinds and the three decisions, as this module's OWN string objects.
@@ -187,16 +197,21 @@ def _identity_of(guardrail: Guardrail, position: int) -> _Identity:
     for the same reason: the whole attack class is subclasses with lying
     dunders, and the exact type is the only property that cannot be faked.
 
-    Six refusals, and the last two are the ones ``detectors.build`` already made
-    on the registry door while this one, which is public and reachable without
-    the registry, did not. A ``name`` or ``version`` above
-    ``_CALLER_STRING_LIMIT`` characters is refused rather than truncated,
-    because both are copied into the ``Provenance`` of every verdict this
-    guardrail produces and were bounded only where they reached a message. A
-    ``directions`` that no ``Context`` can match is refused because such a
-    guardrail is inert: configured, silent, skipped in every context, and
-    indistinguishable from a working check in every artifact this library
+    Six refusals. The last one, an inert ``directions``, is the fifth refusal
+    ``detectors.build`` already made on the registry door while this
+    constructor, which is public and reachable without the registry, did not:
+    such a guardrail is skipped in every context, so it is configured, silent,
+    and indistinguishable from a working check in every artifact this library
     emits.
+
+    The length refusal has NO registry parity, and saying otherwise would be a
+    contract that lies: ``detectors.build`` makes no length check. A ``name`` or
+    ``version`` above ``_CALLER_STRING_LIMIT`` characters is refused here, and
+    refused rather than truncated, because both are copied into the
+    ``Provenance`` of every verdict this guardrail produces and were bounded
+    only where they reached a message. ``authoring.PatternGuardrail`` holds the
+    same ceiling at ITS constructor, so a check built through the documented
+    path fails where the mistake is rather than at the chain.
     """
     try:
         # One read each, into a local. Every check and every stored copy below
@@ -285,12 +300,28 @@ def _identity_of(guardrail: Guardrail, position: int) -> _Identity:
     # match, which is the same silence reached by a typo instead of by an
     # omission, and an emptiness test passes it.
     if not (directions & _RUNNABLE_DIRECTIONS):
+        # COUNTED, never quoted, and this line is the second draft. The first
+        # interpolated `sorted(directions)` whole, which is the guardrail's own
+        # declared data and therefore the exact class of string `_bounded_str`
+        # exists to keep out of a message: a guardrail declaring one
+        # two-million-character direction produced a two-million-character
+        # refusal, and fifty of them produced five million. Worse, a
+        # `directions` property is caller code that runs after the caller has
+        # content in hand, so a declared direction can BE the content, and a
+        # refusal quoting it puts the content into whatever log the
+        # configuration seam writes.
+        #
+        # `_refusal`'s own docstring already said this and the clause broke it:
+        # the guardrail is named by POSITION "because the thing being refused
+        # is precisely the guardrail's account of itself". Reporting how many
+        # directions were declared says everything a reader needs, and the
+        # expected set is this module's own literal.
         raise GuardrailUnavailableError(
             _refusal(
                 position,
-                f"declares no direction it can run in ({sorted(directions)}); every "
-                f"context would skip it, so it would be configured and silent. Expected "
-                f"at least one of {sorted(_RUNNABLE_DIRECTIONS)}",
+                f"declares {len(directions)} direction(s), none of which it can run in; "
+                f"every context would skip it, so it would be configured and silent. "
+                f"Expected at least one of {sorted(_RUNNABLE_DIRECTIONS)}",
             )
         )
     return _Identity(
@@ -829,7 +860,10 @@ class GuardrailChain:
 
     Raises ``GuardrailUnavailableError`` from ``__init__``, not from ``run``,
     for a guardrail that cannot declare a usable ``name``, ``version`` or
-    ``kind``, or whose ``directions`` cannot be read. Nothing has been checked
+    ``kind``; whose ``directions`` cannot be read; whose ``directions`` read
+    perfectly well and contain none the runtime carries, which makes it inert;
+    or whose declared ``name`` or ``version`` exceeds the ceiling every
+    caller-supplied string in an audit record is held to. Nothing has been checked
     at that point and nothing has been allowed, so refusing to build is the
     cheapest possible failure and the only one that arrives before a caller has
     content in hand.

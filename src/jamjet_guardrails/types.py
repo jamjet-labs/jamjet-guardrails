@@ -22,6 +22,22 @@ _SEVERITY: tuple[Decision, ...] = ("allow", "redact", "deny")
 
 _SHA256_HEX = re.compile(r"\A[0-9a-f]{64}\Z")
 
+# The directions a Context may carry, and the origins. NAMED rather than written
+# inline in `__post_init__`, where they were, because this is the copy whose
+# drift fails OPEN: growing it alone lets a Context carry a direction no
+# guardrail declares, so `chain.run` skips every guardrail and reports allow over
+# content nothing checked. Four other modules declare the same direction set and
+# each refuses something against it, and none of them could see a literal buried
+# in a method body. `tests/test_chain_identity.py` now holds all five to
+# `get_args(Direction)` and to each other.
+#
+# Still listed literally and still NOT derived from `get_args(Direction)`, for
+# the reason given for Kind below: the domain is designed to grow, and deriving
+# the check would auto-accept a new member before anything could handle it. The
+# test compares the two; the module does not.
+_DIRECTIONS: tuple[str, ...] = ("input", "output")
+_ORIGINS: tuple[str, ...] = ("user", "retrieved", "model", "tool")
+
 
 def combine(a: Decision, b: Decision) -> Decision:
     """Restrictive combination: deny > redact > allow. Never weakens."""
@@ -82,7 +98,7 @@ class Context:
         # reason `Verdict` gives below and `detectors._RUNNABLE_DIRECTIONS`
         # gives again: these domains are designed to grow, and deriving the
         # check would auto-accept a new member before anything could handle it.
-        if self.direction not in ("input", "output"):
+        if self.direction not in _DIRECTIONS:
             raise ValueError(
                 f"unknown direction {self.direction!r}; expected 'input' or 'output'. "
                 "A chain runs only the guardrails whose directions contain this one, "
@@ -93,7 +109,7 @@ class Context:
         # never surface: it travels into the audit record, and a caller filtering
         # their own log for origin="retrieved" silently sees none of the rows
         # written as "retreived".
-        if self.origin not in ("user", "retrieved", "model", "tool"):
+        if self.origin not in _ORIGINS:
             raise ValueError(
                 f"unknown origin {self.origin!r}; expected one of "
                 "'user', 'retrieved', 'model', 'tool'"

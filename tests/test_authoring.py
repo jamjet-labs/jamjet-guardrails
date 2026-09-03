@@ -13,6 +13,7 @@ import re
 import pytest
 
 from jamjet_guardrails.authoring import (
+    _CALLER_STRING_LIMIT,
     Limits,
     PatternGuardrail,
     _limit_spans,
@@ -257,7 +258,7 @@ def test_a_decision_outside_redact_and_deny_is_refused(decision: str) -> None:
 
 
 def test_a_guardrail_declaring_no_direction_is_refused() -> None:
-    with pytest.raises(GuardrailUnavailableError, match="no direction"):
+    with pytest.raises(GuardrailUnavailableError, match="no direction it can run in"):
         _guard(directions=frozenset())
 
 
@@ -453,3 +454,46 @@ def test_a_second_match_directly_behind_a_greedy_first_one_is_not_lost() -> None
     assert verdict.decision == "redact"
     assert verdict.content is not None
     assert "B" not in verdict.content
+
+
+@pytest.mark.parametrize("field", ["name", "version"])
+def test_a_name_or_version_above_the_chain_ceiling_is_refused_here(field: str) -> None:
+    """The failure belongs at the mistake, not two seams later.
+
+    `GuardrailChain` refuses a declared `name` or `version` above 200 characters,
+    because both are copied into the `Provenance` of every verdict the guardrail
+    produces. This constructor did not, so `PatternGuardrail(name="a" * 250)`
+    built cleanly, satisfied the protocol, passed the registry, and then made
+    `build_chain` refuse the whole configuration. A 250-character name is a
+    plausible namespaced slug, so that is a real upgrade path for a deployment,
+    failing at the seam furthest from the edit that caused it.
+
+    `detectors.build`'s own docstring makes the argument this closes: "A factory
+    that hands back an object which only detonates on first use has moved the
+    failure away from the mistake."
+
+    `ValueError`, not `GuardrailUnavailableError`, matching how this constructor
+    already separates the two: an out-of-domain option value is a bad argument,
+    and a configuration that selects nothing is an unavailable check. A name too
+    long is the first of those.
+
+    Mutation-checked: removing the length loop from `PatternGuardrail.__init__`
+    makes this pass silently and the chain refuse instead, which is the state it
+    replaces.
+    """
+    over = "x" * (_CALLER_STRING_LIMIT + 1)
+    with pytest.raises(ValueError, match="above the"):
+        _guard(**{field: over})
+
+
+@pytest.mark.parametrize("field", ["name", "version"])
+def test_a_name_or_version_at_the_ceiling_still_builds_and_runs(field: str) -> None:
+    """The false-reject control. A guard that refused every name would also pass
+    the test above, and this constructor is the one a contributor meets first."""
+    at_limit = "x" * _CALLER_STRING_LIMIT
+    guardrail = _guard(**{field: at_limit})
+    assert getattr(guardrail, field) == at_limit
+    verdict = guardrail.check("JIRA-1234", Context(direction="input", origin="user"))
+    assert verdict.decision == "deny"
+    recorded = verdict.provenance.detector if field == "name" else verdict.provenance.version
+    assert recorded == at_limit
