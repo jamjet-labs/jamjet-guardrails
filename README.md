@@ -371,12 +371,18 @@ It is a library, not a service. No configuration file, no daemon, no account.
 
 The code is Apache-2.0. See [LICENSE](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/LICENSE).
 
-The published distribution declares `Apache-2.0 AND CC-BY-4.0 AND Unicode-3.0`,
-because the source distribution also carries `corpora/pii/third-party.jsonl`,
-derived from
-[nvidia/Nemotron-PII](https://huggingface.co/datasets/nvidia/Nemotron-PII) under
-CC-BY-4.0. Attribution and the list of changes are in
-[corpora/NOTICE.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/corpora/NOTICE.md). The installed wheel contains code only.
+The published distribution declares `Apache-2.0 AND CC-BY-4.0 AND Unicode-3.0 AND MIT AND LicenseRef-Llama-2-Community AND LicenseRef-Meta-Llama-3-Community AND LicenseRef-Gemma-Terms`,
+because the source distribution carries more than the code. `CC-BY-4.0` is
+`corpora/pii/third-party.jsonl`, derived from
+[nvidia/Nemotron-PII](https://huggingface.co/datasets/nvidia/Nemotron-PII);
+attribution and the list of changes are in
+[corpora/NOTICE.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/corpora/NOTICE.md).
+The last four are `template-data/`, the tokenizer configuration the chat-template
+marker table was read out of, from eight model repositories pinned by revision.
+What travels under them is configuration and not weights: JSON settings, special
+token names and a Jinja template, a few kilobytes each. The three `LicenseRef-`
+terms are SPDX's mechanism for a licence with no short identifier, which these
+three vendor community licences do not have.
 
 `Unicode-3.0` is there because the Script, Script_Extensions and confusables
 tables the package matches on are generated from data files published by
