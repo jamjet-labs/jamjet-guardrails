@@ -23,5 +23,10 @@
     "decision_mismatches": 8,
     "precision": 0.88,
     "recall": 0.872
+  },
+  "url-exfiltration/in-repo/c8015e4e93e2": {
+    "decision_mismatches": 6,
+    "precision": 0.914,
+    "recall": 0.914
   }
 }
