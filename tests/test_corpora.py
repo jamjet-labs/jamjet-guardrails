@@ -42,6 +42,7 @@ EXPECTED = [
     ("pii", "third-party"),
     ("rules", "in-repo"),
     ("secrets", "in-repo"),
+    ("url-exfiltration", "in-repo"),
 ]
 
 
@@ -785,6 +786,68 @@ def test_an_id_cited_inside_a_signal_names_a_case_that_signal_is_about() -> None
                 f"the {kind} region of injection_structural.py cites {case_id}, which "
                 f"neither produces nor expects a {kind} finding"
             )
+
+
+# The same two guards, for the corpus this branch adds. `_CASE_ID` above is
+# `inj-\d{4}` and matches nothing here, so without these the url ids cited in
+# four source files and two published documents are unchecked prose -- which is
+# the exact state the injection ids were in when one of them named the wrong
+# case twice in one round.
+_URL_CASE_ID = re.compile(r"url-\d{4}")
+_URL_CITING = (
+    ROOT / "src" / "jamjet_guardrails" / "_decode.py",
+    ROOT / "src" / "jamjet_guardrails" / "detectors" / "url_exfiltration.py",
+    ROOT / "tests" / "test_decode.py",
+    ROOT / "tests" / "test_url_exfiltration.py",
+    NOTICE,
+    ROOT / "docs" / "conformance.md",
+    ROOT / "CHANGELOG.md",
+)
+
+
+def _url_cases() -> dict[str, object]:
+    return {case.id: case for case in _load("url-exfiltration", "in-repo").cases}
+
+
+def test_every_url_case_id_cited_in_prose_exists() -> None:
+    """A cited id that reads plausibly and names nothing is the cheap failure;
+    one that names the wrong case is the expensive one, which the test below
+    catches."""
+    known = set(_url_cases())
+    for path in _URL_CITING:
+        cited = set(_URL_CASE_ID.findall(path.read_text(encoding="utf-8")))
+        missing = sorted(cited - known)
+        assert missing == [], f"{path.name} cites {missing}, which are not in the corpus"
+
+
+def test_a_url_id_cited_as_a_labelled_case_carries_that_label() -> None:
+    """Prose that says "labelled `allow`" beside an id has to be right about it.
+
+    The url corpus makes this sharper than the injection one did, because the
+    disclosure prose is built on the distinction: three ids are false positives
+    labelled `allow` and three are false negatives labelled `deny`, and swapping
+    one for another in a sentence would turn a disclosure into its opposite while
+    every id in it still named a real case.
+
+    The window is the SENTENCE, for the reason the injection version gives.
+    """
+    cases = _url_cases()
+    boundary = re.compile(r"(?<=\.)\s+|\n\s*\n|\n\s*[-|]\s*")
+    checked = 0
+    for path in _URL_CITING:
+        text = path.read_text(encoding="utf-8")
+        for sentence in boundary.split(text):
+            for phrase, decision in (("labelled `allow`", "allow"), ("labelled `deny`", "deny")):
+                if phrase not in sentence:
+                    continue
+                for case_id in _URL_CASE_ID.findall(sentence):
+                    case = cases[case_id]
+                    checked += 1
+                    assert case.expect_decision == decision, (  # type: ignore[attr-defined]
+                        f"{path.name} says {phrase!r} in the same sentence as {case_id}, "
+                        f"which is labelled {case.expect_decision!r}"  # type: ignore[attr-defined]
+                    )
+    assert checked > 0, "no url id is cited beside a label; this guard would prove nothing"
 
 
 _TEST_NAME = re.compile(r"`(test_[a-z0-9_]+)`")

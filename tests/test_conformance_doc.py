@@ -59,6 +59,7 @@ REQUIRED_SECTIONS = [
     "## Corpus schema",
     "## The injection-structural constraint",
     "## The rules constraint",
+    "## The url-exfiltration constraint",
     "## Third-party corpora",
     "## What is deliberately unspecified",
 ]
