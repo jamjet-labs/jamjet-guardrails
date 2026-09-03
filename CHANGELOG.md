@@ -8,6 +8,38 @@ A published precision or recall figure is part of the interface here. A release
 that moves one says so in its entry, with the old value and the new one, because
 a number that changes quietly is a number nobody can rely on.
 
+## [Unreleased]
+
+### Added
+
+- `docs/performance.md` publishes p50, p95 and p99 per check over deterministic
+  inputs from 1 KB to 1 MB, with the machine, the interpreter, the input shape,
+  the repetition count and the command that reproduces them. Each check's own
+  figure and whether it is linear or near-linear in the content length now sit
+  in that check's module docstring. There is no CI timing gate and there is not
+  going to be one: `ci.yml` diffs the generated benchmark artifacts byte for
+  byte, which works because they are deterministic, and a wall clock is not.
+- `scripts/measure_throughput.py` produces those numbers. It builds every check
+  through `jamjet_guardrails.detectors.build` with
+  `jamjet_guardrails.eval.fixtures.options_for`, so a check that needs options is
+  timed under the same fixture its published precision and recall row was
+  measured under. Local only: it is not in the wheel and not in the sdist.
+- A CodeQL workflow, on push and pull request to `main` and weekly, running the
+  `security-and-quality` suite. It builds nothing and installs nothing, because
+  `ci.yml` already lints, typechecks, tests and gates the benchmarks on five
+  interpreters and a scan that repeats that work is a scan nobody reads.
+
+### Security
+
+- Every GitHub Action in every workflow is pinned to a full commit SHA with a
+  comment naming the release it resolves to, in place of the floating tags
+  (`actions/checkout@v7` and the rest) the workflows used before. A tag is a
+  movable pointer, and these jobs read the repository, hold a job token and,
+  in `release.yml`, stand beside the OIDC identity PyPI trusts.
+- `tests/test_workflows.py` keeps them pinned. It reads every workflow file git
+  tracks rather than a list of names, parses each with PyYAML, and fails on any
+  `uses:` that is not a 40-hex commit SHA carrying a version comment.
+
 ## [0.3.0]
 
 ### Security
