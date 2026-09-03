@@ -683,6 +683,120 @@ datasets may carry non-commercial terms. That has no bearing on measuring the
 model, and it would have a bearing on anything downstream that bundled it, which
 this repository does not.
 
+## Chat-template marker sources
+
+`src/jamjet_guardrails/detectors/_template_markers.py` is a generated table of
+the delimiter strings chat templates use to mark a turn or a role:
+`<|im_start|>`, `[INST]`, `<<SYS>>`, `<start_of_turn>` and their kin. It is
+built by `scripts/generate_template_markers.py` from the tokenizer
+configuration of the repositories below, each pinned to a commit, and those raw
+files are committed under `template-data/` so the table can be regenerated and
+diffed with no network. They are in the sdist and not in the wheel, because the
+sdist is the evidence.
+
+Nothing here is measured on yet. The table is private and unregistered until
+the `template-integrity` check lands with its own corpus and published row.
+This section exists because attribution is a condition of two of the licences
+below, and a condition does not wait for a number.
+
+**What is redistributed, in plain terms.** The files under `template-data/` are
+tokenizer configuration: JSON settings, the special-token names, and the Jinja
+chat template, a few kilobytes each. No model weights, no model outputs, no
+training data, and nothing a model produced. What the generated table extracts
+from them is shorter still: 59 markers, each a bracketed delimiter of at most
+sixty-four characters, recorded beside the repository, revision and SHA-256
+they were read from.
+
+| Source | Repository read | Revision | Licence |
+|---|---|---|---|
+| Llama 2 chat | `unsloth/llama-2-7b-chat` | `a6d63d7c9ac31fd7e6d31e66ee0d1c784a489fcf` | LLAMA 2 Community License |
+| Llama 3 instruct | `NousResearch/Meta-Llama-3-8B-Instruct` | `53346005fb0ef11d3b6a83b12c895cca40156b6c` | Meta Llama 3 Community License |
+| Qwen 2.5 instruct | `Qwen/Qwen2.5-7B-Instruct` | `a09a35458c702b33eeacc393d103063234e8bc28` | Apache-2.0 |
+| Mistral instruct | `mistralai/Mistral-7B-Instruct-v0.3` | `c170c708c41dac9275d15a8fff4eca08d52bab71` | Apache-2.0 |
+| Gemma 2 instruct | `unsloth/gemma-2-9b-it` | `fc7d4737cda11c3a19af2b722319e846670b4d89` | Gemma Terms of Use |
+| Phi-3 instruct | `microsoft/Phi-3-mini-4k-instruct` | `f39ac1d28e925b323eae81227eaba4464caced4e` | MIT |
+| DeepSeek V3 | `deepseek-ai/DeepSeek-V3` | `e815299b0bcbac849fa540c768ef21845365c9eb` | MIT (LICENSE-CODE) |
+| GPT-2 | `openai-community/gpt2` | `607a30d783dfa663caf39e06633721c8d4cfcd7e` | MIT |
+| HTML element index | `w3c/webref` | `f3b81966c45f34f62df20e7f8d6f66d5b5ba9279` | MIT |
+
+### Three sources are gated, and the mirror is named
+
+An anonymous request for any file in these three repositories answers HTTP 401
+until a licence is accepted in a browser, so nothing in this repository can
+fetch them and no CI job could reproduce a table built from them. Each is
+recorded with the revision it was pinned at, and the markers come from a named
+non-gated mirror of that model rather than from an unattributed copy.
+
+| Gated repository | Revision | Read instead from |
+|---|---|---|
+| `meta-llama/Llama-2-7b-chat-hf` | `f5db02db724555f92da89c216ac04704f23d4590` | `unsloth/llama-2-7b-chat` |
+| `meta-llama/Meta-Llama-3-8B-Instruct` | `8afb486c1db24fe5011ec46dfbe5b5dccdb575c2` | `NousResearch/Meta-Llama-3-8B-Instruct` |
+| `google/gemma-2-9b-it` | `11c9b309abf73637e4b6f9a3fa1e92e615547819` | `unsloth/gemma-2-9b-it` |
+
+The Llama 2 mirror declares `apache-2.0` on its Hub page. That declaration is
+not accepted here: a mirror cannot relicense Meta's material, so the stricter
+upstream licence is the one recorded above and the one whose notice is carried
+below.
+
+### The notices those licences ask for
+
+Llama 2 is licensed under the LLAMA 2 Community License, Copyright (c) Meta
+Platforms, Inc. All Rights Reserved. The agreement is at
+<https://ai.meta.com/llama/license/> and the acceptable use policy at
+<https://ai.meta.com/llama/use-policy/>.
+
+Meta Llama 3 is licensed under the Meta Llama 3 Community License, Copyright
+(c) Meta Platforms, Inc. All Rights Reserved. The agreement is at
+<https://llama.meta.com/llama3/license/> and the acceptable use policy at
+<https://llama.meta.com/llama3/use-policy/>. Built with Meta Llama 3.
+
+Gemma is provided under and subject to the Gemma Terms of Use found at
+<https://ai.google.dev/gemma/terms>. The use restrictions those terms carry are
+the Gemma Prohibited Use Policy at
+<https://ai.google.dev/gemma/prohibited_use_policy>, and they travel with this
+distribution to anyone who receives it.
+
+Qwen 2.5 and Mistral are Apache-2.0. Phi-3, GPT-2 and the element index are
+MIT. DeepSeek V3 ships two licences: `LICENSE-CODE` is MIT and covers the
+repository's code and configuration, which is all that is read here, and
+`LICENSE-MODEL` covers weights this repository never touches.
+
+### What the table leaves out, and what that costs
+
+Two populations are removed, each by a property rather than by a hand list,
+because an exemption spelled as a list of strings is the exemption that becomes
+the channel.
+
+**Markers that are also HTML element names are excluded**, and today that is 2
+HTML element names, `<s>` and `</s>`. Each is a sentence-boundary token rather
+than a claim to a role, and each is also the strikethrough tag, so a check that
+denied them would deny ordinary HTML in any document that uses one. The rule is
+membership in the element index of the HTML Standard, pinned above, and not the
+two strings themselves: the day a model adopts `<p>` or `<code>` as a
+delimiter, the same rule removes that one too, and a hand-written pair would
+not have. The excluded markers stay in the module under `EXCLUDED_AS_HTML` so
+the cost is visible rather than deleted.
+
+**Reserved vocabulary slots are dropped**, and today that is 1018 reserved
+slots: `<|reserved_special_token_0|>`, `[control_8]`, `<unused12>` and the rest
+of their blocks. A tokenizer allocates these to be named later, and Llama 3.1
+did exactly that when it turned `<|reserved_special_token_2|>` into
+`<|python_tag|>`. No chat template emits one. The rule is that the name ends in
+a number, so a slot that is later given a real name stops matching it and
+arrives in the table on the next regeneration.
+
+**Two entries are weak and are named rather than quietly kept.**
+`<function-name>` and `<args-json-object>` are written by the Qwen 2.5
+tool-calling template into the system prompt it builds, as placeholders inside
+a JSON example. They were read out of a real template and are kept for that
+reason, and they are also the two entries most likely to occur in ordinary
+developer prose.
+
+**A marker from a model not in the table is not in the table.** Nine
+repositories is not the field. The check that consumes this will say so, and
+the table grows by adding a source and a pinned revision, never by typing a
+string into the module.
+
 ## Training corpora
 
 Nothing in this section is a file in this repository and no published number is

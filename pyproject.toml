@@ -146,6 +146,11 @@ dev = [
   "mypy>=1.11",
   "pyyaml>=6",
   "types-PyYAML>=6",
+  # `tests/test_packaging.py` builds the sdist and the wheel and opens both.
+  # `python -m build --no-isolation` uses the hatchling below rather than
+  # downloading a build environment, so the test needs no network; hatchling
+  # is the backend `[build-system]` already names and is pinned by neither.
+  "build>=1",
   "hatchling>=1.24",
   "hypothesis>=6.100",
 ]
