@@ -106,6 +106,12 @@ Milliseconds per call. `MB/s` is derived from the p50.
 
 | Check | Chars | Findings | p50 ms | p95 ms | p99 ms | MB/s |
 |---|---:|---:|---:|---:|---:|---:|
+| confusables | 1 024 | 0 | 0.182 | 0.190 | 0.197 | 5.4 |
+| confusables | 4 096 | 0 | 0.720 | 0.781 | 0.807 | 5.4 |
+| confusables | 16 384 | 0 | 2.814 | 2.934 | 2.984 | 5.6 |
+| confusables | 65 536 | 0 | 11.296 | 11.739 | 12.291 | 5.5 |
+| confusables | 262 144 | 0 | 45.491 | 47.770 | 48.426 | 5.5 |
+| confusables | 1 048 576 | 0 | 185.595 | 216.458 | 256.182 | 5.4 |
 | injection-structural | 1 024 | 1 | 0.123 | 0.139 | 0.149 | 8.0 |
 | injection-structural | 4 096 | 3 | 0.486 | 0.535 | 0.558 | 8.1 |
 | injection-structural | 16 384 | 15 | 1.987 | 2.089 | 2.127 | 7.9 |
@@ -130,6 +136,12 @@ Milliseconds per call. `MB/s` is derived from the p50.
 | script-constraint | 65 536 | 0 | 15.961 | 16.535 | 17.112 | 4.0 |
 | script-constraint | 262 144 | 0 | 63.889 | 66.362 | 68.548 | 3.9 |
 | script-constraint | 1 048 576 | 0 | 255.746 | 263.393 | 267.481 | 3.9 |
+| rules | 1 024 | 2 | 0.699 | 0.763 | 0.838 | 1.4 |
+| rules | 4 096 | 9 | 2.769 | 2.925 | 2.999 | 1.4 |
+| rules | 16 384 | 31 | 10.844 | 11.312 | 11.536 | 1.4 |
+| rules | 65 536 | 123 | 43.738 | 45.006 | 45.828 | 1.4 |
+| rules | 262 144 | 491 | 175.289 | 178.582 | 182.292 | 1.4 |
+| rules | 1 048 576 | 1 959 | 730.951 | 752.094 | 766.248 | 1.4 |
 | secrets | 1 024 | 1 | 0.008 | 0.010 | 0.010 | 125.9 |
 | secrets | 4 096 | 4 | 0.021 | 0.026 | 0.027 | 184.1 |
 | secrets | 16 384 | 15 | 0.073 | 0.078 | 0.087 | 216.9 |
@@ -148,6 +160,15 @@ Milliseconds per call. `MB/s` is derived from the p50.
 The ratio quoted for each check is p50 at one size divided by p50 at a quarter
 of it, so 4.0 is exactly linear.
 
+- **`confusables`** is linear. Ratios across the range run 3.91 to 4.08 and the
+  rate holds at 5.4 to 5.6 megabytes per second. Its `findings` column is 0 at
+  every size, and that is a real limitation of this row rather than a rounding:
+  the seeded input carries no confusable, so what is timed is the token scan and
+  the label scan with no finding built and nothing rewritten. The input is
+  shared with every other row on this page and was deliberately not changed to
+  add one. Almost every token in it is ASCII, which the check skips before
+  asking the vendored tables anything, so this row is the FLOOR for this check
+  and text in a non-Latin script costs more.
 - **`injection-structural`** is linear. Ratios across the range run 3.94 to 4.09
   and the rate never leaves 7.9 to 8.1 megabytes per second. It denies on this
   input rather than redacting, so the number is a scan and the construction of
@@ -184,6 +205,23 @@ of it, so 4.0 is exactly linear.
   allows both, so these rows are the PASS path with no findings built and
   nothing rewritten. Content that fires costs more, and how much more depends on
   how many separate runs it carries rather than on how much of it is disallowed.
+  range: 4.01 at 256 KB and 4.17 at 1 MB. The drift is the finding count, which
+  grows faster than for the other checks because this fixture has more patterns
+  matching this input, and merging spans is what those extra findings cost. The
+  fixture also sets `max_chars=2000`, so above that size every call reports a
+  `LENGTH_LIMIT` finding and the redacted output is truncated. The patterns are
+  still scanned over the whole content, which is what these rows measure.
+
+  **These figures are 5.1x the ones this page carried before, and the cause is a
+  configuration change rather than a regression.** The fixture now sets
+  `fold_confusables=True`, so every call builds the UTS #39 skeleton of the whole
+  content: two normalisation passes, a fold through the confusables table, and an
+  offset map composed through all three. That is five passes over the content and
+  one integer per character per pass, and it is what the option costs. It is off
+  by default, and a caller who does not set it pays none of it. There is no ASCII
+  shortcut to be had: the confusables table maps eight ASCII code points,
+  including `m` to `rn` and `1`, `I` and `|` to `l`, so an all-ASCII string is
+  not its own skeleton.
 - **`secrets`** is linear from 16 KB upward, at ratios of 3.97, 3.93 and 4.12.
   Below that it is dominated by fixed overhead rather than by the content: the
   first step reads as 2.62x and the second as 3.48x, climbing towards 4.0 as the
@@ -195,6 +233,21 @@ of it, so 4.0 is exactly linear.
   pattern that had to be bounded to stay linear, and the quadratic behaviour that
   bound removed, is recorded in
   `src/jamjet_guardrails/detectors/secrets.py`.
+
+## Which rows were re-measured, and when
+
+The table is not one run. Rows are added and replaced as the checks that produce
+them change, and a row nobody touched is left where it is: rewriting every figure
+on this page whenever one check moves would report a change in checks nobody
+edited, which is exactly the false alarm this page exists not to raise.
+
+The `confusables` rows and the `rules` rows were measured together in one later
+run on the same machine and interpreter. That run also re-measured the three
+untouched checks, and they came out 5% to 13% above the figures recorded here
+(`injection-structural` at 1 MB read 139.909 rather than 124.167, `pii` 209.751
+rather than 206.674, `secrets` 4.729 rather than 4.697). The machine was busier,
+not slower. Their rows were left alone and this paragraph is the reason: read
+across checks with that spread in mind, and read within one check freely.
 
 ## What this does not say
 

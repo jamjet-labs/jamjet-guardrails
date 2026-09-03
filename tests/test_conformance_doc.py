@@ -61,6 +61,7 @@ REQUIRED_SECTIONS = [
     "## The rules constraint",
     "## The url-exfiltration constraint",
     "## The script-constraint constraint",
+    "## The confusables constraint",
     "## Third-party corpora",
     "## What is deliberately unspecified",
 ]
@@ -745,6 +746,95 @@ def test_every_case_list_the_exemptions_publish_is_the_list_the_measurement_give
     assert cited == measured, (
         f"the document says switching off {phrase!r} costs {sorted(cited)}; "
         f"measured, it costs {sorted(measured)}"
+    )
+
+
+CONFUSABLES = "## The confusables constraint"
+CONFUSABLES_CORPUS = ROOT / "corpora" / "confusables" / "in-repo.jsonl"
+CONFUSABLES_MODULE = ROOT / "src" / "jamjet_guardrails" / "detectors" / "confusables.py"
+
+# The same shape as `_EXEMPTIONS` above, for the other check whose section makes
+# per-case claims. Each entry is the phrase that opens the document's own bullet
+# and the single source edit that switches that one rule off.
+_CONFUSABLES_EXEMPTIONS: list[tuple[str, str, str]] = [
+    (
+        "Highly Restrictive is what allows Han beside Katakana",
+        "        if any(union <= permitted for permitted in _HIGHLY_RESTRICTIVE):\n            continue\n",
+        "",
+    ),
+    (
+        "The identifier profile is what allows Slavic prose",
+        "    return all(identifier_allowed(point) for point in prototype)",
+        "    return True",
+    ),
+    (
+        "The three contexts are what allow a Cyrillic word",
+        "    for start, end in _spoofable_labels(content):",
+        "    for start, end in _tokens(content):",
+    ),
+]
+
+
+def _confusables_allow_cases() -> list[Any]:
+    return [
+        c
+        for c in load_corpus(CONFUSABLES_CORPUS, name="confusables").cases
+        if c.expect_decision == "allow"
+    ]
+
+
+def _confusables_without(old: str, new: str, cases: list[Any]) -> set[str]:
+    """The `allow` cases one source edit costs, over the ones already failing.
+
+    Exec'd from a patched copy of the source for the reason `_without` gives:
+    writing the patched file to disk and re-importing it lets CPython reuse a
+    cached bytecode file and report one measurement as another's.
+    """
+    source = CONFUSABLES_MODULE.read_text(encoding="utf-8")
+    assert source.count(old) == 1, (
+        f"the mutation {old[:60]!r} no longer applies to the module "
+        f"({source.count(old)} matches); re-measure the claim rather than repairing the patch"
+    )
+    namespace: dict[str, Any] = {"__name__": "confusables_under_mutation"}
+    exec(compile(source.replace(old, new, 1), str(CONFUSABLES_MODULE), "exec"), namespace)  # noqa: S102
+    mutant = namespace["ConfusablesGuardrail"]()
+    return _flips(mutant, cases) - _flips(build("confusables"), cases)
+
+
+@pytest.mark.parametrize(
+    ("phrase", "old", "new"),
+    _CONFUSABLES_EXEMPTIONS,
+    ids=[e[0][:32].replace(" ", "-") for e in _CONFUSABLES_EXEMPTIONS],
+)
+def test_every_case_list_the_confusables_exemptions_publish_is_the_list_the_measurement_gives(
+    phrase: str, old: str, new: str
+) -> None:
+    """The same guard the injection-structural bullets carry, for this check.
+
+    Written because the first draft of those three bullets was WRONG on all
+    three lists. It said dropping Highly Restrictive denies the six CJK cases,
+    and measured it denies one; it said dropping the identifier profile denies
+    a range of five, and measured it denies six that are not that range. Each
+    list was reasoned about rather than run, which is precisely what this
+    parametrisation exists to make impossible to repeat.
+    """
+    region = _claim_region(phrase)
+    cited = set(re.findall(r"cnf-\d{4}", region))
+    assert cited, f"the claim opening {phrase!r} cites no case ids"
+    measured = _confusables_without(old, new, _confusables_allow_cases())
+    assert cited == measured, (
+        f"the document says switching off {phrase!r} costs {sorted(cited)}; "
+        f"measured, it costs {sorted(measured)}"
+    )
+
+
+def test_the_confusables_section_states_the_size_of_its_negative_population() -> None:
+    """The opening claim counts two things in the corpus, so it is a claim."""
+    cases = load_corpus(CONFUSABLES_CORPUS, name="confusables").cases
+    allowed = [c for c in cases if c.expect_decision == "allow"]
+    section = _section(CONFUSABLES)
+    assert f"{len(allowed)} of the {len(cases)} cases are labelled `allow`" in section, (
+        f"the document does not state the measured figures, which are {len(allowed)} of {len(cases)}"
     )
 
 

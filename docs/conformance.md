@@ -1010,6 +1010,152 @@ statement rather than this project's.
   letter substituted into a Latin word is a one-character finding, and so is a
   Cyrillic letter that a Russian speaker typed on purpose. Telling those apart
   is `confusables`' question, not this one's.
+## The confusables constraint
+
+`confusables` reports a token written in one script and read as another. Its
+`kind` is `constraint`, so no finding it produces carries a `confidence`. Its
+corpus is `corpora/confusables/in-repo.jsonl`.
+
+Every rule below has TWO conditions and both are contract, because either one
+on its own denies a language rather than an attack. A port that implements one
+half of either rule scores worse on this corpus than a port that implements
+neither: 59 of the 109 cases are labelled `allow` and most of them are ordinary
+Russian, Ukrainian, Serbian, Bulgarian, Greek, Japanese, Chinese and Korean
+sentences carrying Latin brand names.
+
+### Two finding types
+
+`MIXED_SCRIPT_CONFUSABLE` and `WHOLE_SCRIPT_CONFUSABLE`. Each is a label the
+corpus uses, so each is what a prediction is matched against by name.
+
+### What a span covers
+
+For `MIXED_SCRIPT_CONFUSABLE` the whole TOKEN, not the substituted letter. A
+placeholder over one letter leaves `p[REDACTED]ypal` on the page, which still
+reads as the brand. For `WHOLE_SCRIPT_CONFUSABLE` the whole LABEL, without its
+dots, its port or its userinfo.
+
+Spans are half-open over code points, as every span in this document is.
+
+### A token is a maximal run of letters, marks and numbers
+
+Common and Inherited code points inside such a run contribute no script.
+Everything else ends a token, so the apostrophe and the hyphen are boundaries
+without either being named as one: `iPhone-ом` and `iPhone'ом` are two
+single-script tokens and pass, and `iPhoneом` is one token and is tested as one.
+Splitting is the conservative direction.
+
+Default-ignorable code points also end a token and belong to none. That is a
+contract rather than an implementation choice: it is what makes this check's
+character set disjoint from every `injection-structural` signal, so no finding
+from the two checks ever covers one code point. Its cost is stated under the
+shortfalls below.
+
+### It runs on input and on output
+
+`directions` holds both. A spoofed brand or hostname in model output is the one
+that reaches a person, because it is rendered, clicked and resolved; on input it
+is an instrument planted in retrieved content. The corpus carries cases in both
+directions.
+
+### The resolved script set, and Highly Restrictive
+
+The resolved script set of a token is the INTERSECTION over its non-wildcard
+code points of their Script_Extensions sets, per UTS #39 section 5.1. Non-empty
+means single script. Empty means mixed.
+
+A mixed token is permitted when the union of its scripts is a subset of Latin
+plus exactly one of {Han, Hiragana, Katakana}, {Han, Bopomofo} or {Han, Hangul},
+which is UTS #39 section 5.2's Highly Restrictive table and not this project's
+list. Japanese, Chinese and Korean text carrying Latin brand names passes by
+rule. A port that implements "Latin plus any one other script" permits Latin
+plus Cyrillic, which is the whole of the attack.
+
+### A prototype is evidence only if it is in the identifier profile
+
+`MIXED_SCRIPT_CONFUSABLE` needs the token to fail Highly Restrictive AND every
+non-wildcard code point outside the majority script to fold, through the UTS #39
+section 4 skeleton, to a string whose non-wildcard code points all lie in the
+majority script and all of whose code points have Identifier_Status=Allowed.
+`WHOLE_SCRIPT_CONFUSABLE` needs a single-script non-Latin label every code point
+of which folds that way into Latin.
+
+The majority script is the one most of the token's code points are in, counted
+per code point and script since a code point carrying Script_Extensions is in
+several; on a tie, a script the first code point is in.
+
+**THE IDENTIFIER-PROFILE CONDITION IS THE ONE A PORT IS MOST LIKELY TO LEAVE
+OUT, AND IT IS THE ONE THAT DENIES A LANGUAGE.** Measured on Unicode 16.0.0, 140
+of the 296 Cyrillic letters fold to a string written wholly in Latin and only
+104 of those fold to one written wholly in the identifier profile. Cyrillic
+small a folds to Latin `a`; Cyrillic small em folds to U+028D LATIN SMALL LETTER
+TURNED W and Cyrillic small ef to U+0278 LATIN SMALL LETTER PHI, which are Latin
+and are not characters any brand, hostname or handle is written in. Without the
+condition, `iPhoneом` in Russian prose is a mixed-script confusable and every
+`.рф` domain is a whole-script one, because `рф` is `p` and U+0278.
+
+### The exemptions
+
+None by enumeration. There is no host allowlist, no safe-domain list and no
+brand list. The two tables that decide what passes are Unicode's own, cited
+above, and the three contexts the whole-script rule runs in are named rather
+than sampled: a URL host label after a scheme, an email domain label, and an
+`@handle`.
+
+Each list below was measured by disabling that one rule and scoring the corpus
+again, and is re-measured on every run by
+`tests/test_conformance_doc.py::test_every_case_list_the_confusables_exemptions_publish_is_the_list_the_measurement_gives`
+rather than left to go stale. Each names the `allow` cases that rule and no
+other holds up.
+
+- **Highly Restrictive is what allows Han beside Katakana.** Dropping it denies
+  `cnf-0108`, labelled `allow`, which is `3カ月間`, ordinary Japanese for a
+  period of three months. It is the ONLY case that turns on this table, and
+  that is worth stating plainly: most CJK text is allowed by the rule below
+  instead, because no kanji folds onto a Latin letter. Ten Katakana characters
+  fold onto Han ones at 16.0.0, and Hangul and Bopomofo do the same, so the
+  table is what stands between this check and that population.
+- **The identifier profile is what allows Slavic prose and the Russian ccTLD.**
+  Dropping it denies `cnf-0054`, `cnf-0055`, `cnf-0085`, `cnf-0086`, `cnf-0087`
+  and `cnf-0089`, all labelled `allow`: two Russian sentences carrying a Latin
+  brand with a case ending, three `.рф` addresses written as a URL and an email
+  address, and one Cyrillic `@handle`.
+- **The three contexts are what allow a Cyrillic word.** Running the
+  whole-script rule over every token instead denies thirteen more `allow`
+  cases: `cnf-0056`, `cnf-0060`, `cnf-0062`, `cnf-0064`, `cnf-0066`,
+  `cnf-0069`, `cnf-0070`, `cnf-0072`, `cnf-0074`, `cnf-0092`, `cnf-0093`,
+  `cnf-0094` and `cnf-0103`. They are Russian, Ukrainian, Serbian, Bulgarian
+  and Greek prose, two transliteration tables, mathematics, and one Hebrew
+  sentence.
+
+### Where this implementation falls short of its own corpus
+
+The recall figure in `BENCHMARKS.md` is below 1.0 on purpose. Seven cases are
+labelled `deny` and allowed here, and they are five distinct shapes:
+
+- **A spoof outside a host, an email domain or a handle.** `cnf-0045` is a
+  spoofed hostname written with no scheme and `cnf-0046` is the same
+  whole-script word in a sentence. A bare dotted string is not treated as a
+  host, because a dot between two words is a missing space after a full stop at
+  least as often as it is a hostname.
+- **A spoof whose non-majority letter is outside the profile.** `cnf-0047` and
+  `cnf-0048` substitute Cyrillic en and te, which fold to letters nothing is
+  written in, so the second condition fails and the token is allowed. This is
+  the standing cost of the condition the section above defends.
+- **A token with no majority.** `cnf-0049` is two Cyrillic and two Latin
+  letters, so the tie-break picks the first code point's script and the Latin
+  half is then the minority. `cnf-0044` is the same shape at two characters.
+- **A spoof laundered with a default-ignorable code point.** `cnf-0050` puts a
+  zero-width space after the substituted letter, which ends the token and
+  leaves two single-script tokens. `injection-structural` reports that code
+  point and denies by default, so a chain running both still denies; this check
+  alone does not.
+
+Three cases labelled `allow` are denied here and cost precision. `cnf-0058` and
+`cnf-0061` are a Latin brand with a Cyrillic case ending built entirely from
+letters that are in the profile, and `cnf-0075` is the physics notation `hν`,
+where Greek nu folds to Latin `v`. All three are in the corpus, and
+`corpora/NOTICE.md` names them.
 
 ## Third-party corpora
 
@@ -1191,10 +1337,11 @@ choice for every one of them:
   describes is this implementation's argument that its corpus moves when its
   detector does, not a requirement on a port.
 - **Where Unicode property data comes from, and at what version.** This
-  implementation vendors Script, Script_Extensions and confusables tables
-  generated from files published by Unicode, Inc. at 16.0.0, because
-  `unicodedata` exposes neither property on any supported interpreter and its
-  own Unicode version varies from 13.0 to 16.0 across the CI matrix. The table
+  implementation vendors Script, Script_Extensions, confusables and
+  Identifier_Status tables generated from files published by Unicode, Inc. at
+  16.0.0, because `unicodedata` exposes none of those properties on any
+  supported interpreter and its own Unicode version varies from 13.0 to 16.0
+  across the CI matrix. The table
   format, the generator and the pin are this implementation's means. A port
   reaching the same verdicts on the corpora conforms with any Unicode data
   source at any version, and each corpus records the version its labels were
@@ -1224,3 +1371,5 @@ the single-pass rewriting rule, the `saw` digest, the corpus schema and its
 version rule, the `injection-structural` types, spans, direction and exemptions,
 the `url-exfiltration` types, spans, directions and its output-only type, and the
 scores on the corpora.
+version rule, the `injection-structural` and `confusables` types, spans,
+directions and exemptions, and the scores on the corpora.

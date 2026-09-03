@@ -123,6 +123,7 @@ Branch on the decision first.
 
 | Name | Kind | Runs on | Types |
 |---|---|---|---|
+| `confusables` | constraint | input, output | `MIXED_SCRIPT_CONFUSABLE`, `WHOLE_SCRIPT_CONFUSABLE` |
 | `injection-structural` | constraint | input, output | `BIDI_OVERRIDE`, `INVISIBLE_TAG_CHARS`, `ZERO_WIDTH_SMUGGLING` |
 | `pii` | constraint | input, output | `CREDIT_CARD`, `EMAIL`, `PHONE_NUMBER`, `US_SSN` |
 | `rules` | constraint | input, output | `INTERNAL_HOST`, `LENGTH_LIMIT`, `PROJECT_CODENAME`, `TICKET_ID` |
@@ -281,6 +282,7 @@ failures is a number you cannot check.
 
 | Check | Corpus | Source | Version | Cases | Precision | Recall | F1 | TP | FP | FN | Wrong decisions |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| confusables | confusables/in-repo | in-repo | `9ba6ea272420` | 109 | 0.936 | 0.863 | 0.898 | 44 | 3 | 7 | 10 |
 | injection-structural | injection-structural/in-repo | in-repo | `b704703f431d` | 154 | 0.972 | 0.873 | 0.920 | 103 | 3 | 15 | 8 |
 | pii | pii/in-repo | in-repo | `06fb3b601aba` | 81 | 0.631 | 0.872 | 0.732 | 41 | 24 | 6 | 24 |
 | pii | pii/third-party | nvidia/Nemotron-PII@b70ffaf | `c25ef538d677` | 300 | 0.960 | 0.997 | 0.978 | 340 | 14 | 1 | 6 |
@@ -288,6 +290,8 @@ failures is a number you cannot check.
 | script-constraint | script-constraint/in-repo | in-repo | `92fddb0f04be` | 85 | 1.000 | 1.000 | 1.000 | 50 | 0 | 0 | 0 |
 | secrets | secrets/in-repo | in-repo | `337e35f03cad` | 160 | 0.881 | 0.873 | 0.877 | 96 | 13 | 14 | 8 |
 | url-exfiltration | url-exfiltration/in-repo | in-repo | `c8015e4e93e2` | 88 | 0.914 | 0.914 | 0.914 | 32 | 3 | 3 | 6 |
+| rules | rules/in-repo | in-repo | `8fe119ddb734` | 42 | 1.000 | 1.000 | 1.000 | 29 | 0 | 0 | 0 |
+| secrets | secrets/in-repo | in-repo | `e9e0ed70dc37` | 39 | 0.957 | 0.880 | 0.917 | 22 | 1 | 3 | 4 |
 
 See [BENCHMARKS.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/BENCHMARKS.md) for the per-type scores and the worst misses
 behind these numbers, and [corpora/NOTICE.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/corpora/NOTICE.md) for what each
@@ -341,6 +345,9 @@ measured on a corpus we did not, and the two are never merged. There is no
 third-party corpus for `injection-structural`, `rules`, `script-constraint`,
 `secrets` or `url-exfiltration`. No compatibly licensed one was found for any of
 them, so all five are measured on our own corpora only and are self-graded.
+third-party corpus for `confusables`, `injection-structural`, `rules` or
+`secrets`. No compatibly licensed one was found for any of them, so all four are
+measured on our own corpora only and are self-graded.
 
 The third-party PII corpus is derived from
 [nvidia/Nemotron-PII](https://huggingface.co/datasets/nvidia/Nemotron-PII),

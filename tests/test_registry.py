@@ -41,6 +41,11 @@ def test_every_bundled_detector_is_registered() -> None:
         "script-constraint",
         "secrets",
         "url-exfiltration",
+        "confusables",
+        "injection-structural",
+        "pii",
+        "rules",
+        "secrets",
     }
 
 

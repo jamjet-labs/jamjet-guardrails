@@ -352,6 +352,71 @@ section for that reason.
 useful one: the labels depend on which scripts are allowed, so a corpus somebody
 else wrote would be labelled against their constraint. The row is self-graded in
 the same way the secrets row is.
+### `corpora/confusables/in-repo.jsonl`
+
+Written for this repository and covered by its Apache-2.0 licence. 109 cases,
+50 labelled `deny` and 59 labelled `allow`, in both directions.
+
+**The negatives are the point of this corpus and they outnumber the positives.**
+A confusables check that keeps one half of either of its two rules passes almost
+every input anybody would think to type and denies a language, so the corpus is
+built to make that visible: Russian, Ukrainian, Serbian, Bulgarian and Greek
+prose carrying Latin brand names and case endings; Japanese, Chinese and Korean
+text carrying Latin; genuine Cyrillic domains including `почта.рф`,
+`президент.рф` and `мвд.рф`; mathematics mixing Greek and Latin; two
+transliteration tables, which are the shape that puts both alphabets on one
+line on purpose; and ordinary code, SQL and shell. `cnf-0108` is there for a
+reason nothing else in the file covers: `3カ月間` is Han beside Katakana, its
+majority is Han, and the one Katakana character folds to a Han character inside
+the identifier profile, so the UTS #39 Highly Restrictive table is the only
+thing that allows it. That was found by mutating the check, not by reading it.
+
+Every value in it is invented or public. The spoofed hostnames use the `example`
+labels reserved by RFC 2606 or the brand's own name misspelled in another
+script, and no credential, address or personal name appears in any case.
+
+**Every non-ASCII character is written as a `\uXXXX` escape in the file.** That
+is the same rule the injection corpus follows and it is stronger here: the whole
+subject of this corpus is characters that are invisible as differences, so a raw
+diff of a case would show a reviewer two identical-looking lines.
+
+**The disclosed misses, by name.** Seven cases labelled `deny` are allowed here.
+
+- `cnf-0045` and `cnf-0046`: a whole-script spoof outside a URL, an email domain
+  or a handle. `cnf-0045` is a spoofed hostname written with no scheme;
+  `cnf-0046` is the same word in a sentence. A bare dotted string is not read as
+  a host here, because a dot between two words is a missing space after a full
+  stop at least as often as it is a hostname, and reading it as one would put
+  every such sentence in front of the whole-script rule.
+- `cnf-0047` and `cnf-0048`: a spoof whose substituted letter is outside the
+  identifier profile. Cyrillic en folds to U+029C and Cyrillic te to U+1D1B, so
+  the token does not read as Latin and the second condition fails. This is the
+  standing cost of the condition that keeps `iPhoneом` and `.рф` out of the
+  false positives.
+- `cnf-0044` and `cnf-0049`: a token with no majority. Two Cyrillic letters and
+  two Latin ones tie, the tie-break takes the first code point's script, and the
+  Latin half becomes the minority.
+- `cnf-0050`: a spoof laundered with a zero-width space, which ends the token
+  and leaves two single-script tokens. `injection-structural` reports that code
+  point and denies by default, so a chain running both still denies. This check
+  alone does not, and the disjointness that makes the two checks partition the
+  code space is what costs it.
+
+**The disclosed false positives, by name.** Three cases labelled `allow` are
+denied here.
+
+- `cnf-0058` and `cnf-0061`: a Latin brand with a Cyrillic case ending glued
+  straight on, where every letter of the ending is in the identifier profile.
+  `Androidа` and `Windowsа` deny; `iPhoneом` and `Photoshopом` do not, because
+  Cyrillic em is outside the profile. The two ordinary spellings that separate
+  the word, `iPhone-ом` and `iPhone'ом`, both pass, which is what makes this a
+  narrow residual rather than a rule that denies Russian.
+- `cnf-0075`: `hν`, the physics notation for photon energy. Greek nu folds to
+  Latin `v`, which is in the profile, so a Latin `h` beside a Greek `ν` is one
+  mixed token that reads as `hv`.
+
+**There is no third-party corpus for this check.** The row is self-graded in the
+same way the injection-structural and secrets rows are.
 
 ## How to read the numbers these corpora produce
 
@@ -585,7 +650,7 @@ same beside the figures it quotes.
 
 This is the one third-party thing in this repository that is REDISTRIBUTED
 rather than fetched, measured against or merely named, so it is the one with a
-condition attached to the act of committing it. The four files under
+condition attached to the act of committing it. The five files under
 `unicode-data/16.0.0/` are published by Unicode, Inc., are committed verbatim,
 and travel inside the source distribution.
 
@@ -595,28 +660,41 @@ and travel inside the source distribution.
 | [`ScriptExtensions.txt`](https://www.unicode.org/Public/16.0.0/ucd/ScriptExtensions.txt) | 20,576 | `049117ce26b9769fe2749b06eef51a50a89faef4a97764dd2d81daa715980700` |
 | [`PropertyValueAliases.txt`](https://www.unicode.org/Public/16.0.0/ucd/PropertyValueAliases.txt) | 80,773 | `440fd3e5460b9bfe31da67b6f923992e1989d31fe2ed91e091c4b8f8e2620bf9` |
 | [`confusables.txt`](https://www.unicode.org/Public/security/16.0.0/confusables.txt) | 722,509 | `95bd0aad6dced5ebc63436f459c06ab21a8d107cd842fb57f5c3a1e91bca8611` |
+| [`IdentifierStatus.txt`](https://www.unicode.org/Public/security/16.0.0/IdentifierStatus.txt) | 48,622 | `c6108ca140e054b55a5b0378e7ebed8b1ef0e846251f6195361bc9af8ffc61b1` |
 
 **No changes were made to any of them.** `scripts/generate_unicode_tables.py`
-reads them and writes `src/jamjet_guardrails/_unicode/scripts.py` and
-`src/jamjet_guardrails/_unicode/confusables.py`, which are DERIVED from them:
+reads them and writes `src/jamjet_guardrails/_unicode/scripts.py`,
+`src/jamjet_guardrails/_unicode/confusables.py` and
+`src/jamjet_guardrails/_unicode/identifiers.py`, which are DERIVED from them:
 the same property values re-encoded as Python literals, with ranges that carry
-one script joined where the published file splits them by general category.
-Those two modules ship in the wheel, so the wheel carries derived Unicode data
+one value joined where the published file splits them by general category.
+Those three modules ship in the wheel, so the wheel carries derived Unicode data
 even though it carries none of the files above. That is why the distribution's
 licence expression names `Unicode-3.0` and not only the two licences the
 corpora carry.
 
 Both directions are checked rather than asserted.
 `tests/test_unicode.py::test_the_generated_modules_are_byte_identical_to_a_regeneration`
-rebuilds both modules from the committed files and requires the bytes to match,
-and
+rebuilds all three modules from the committed files and requires the bytes to
+match, and
 `tests/test_unicode.py::test_each_generated_module_records_the_digest_of_every_file_it_read`
 holds the digests above against the files on disk. A third test, skipped unless
-`JAMJET_GUARDRAILS_NETWORK=1` is set and never set in CI, re-downloads all four
+`JAMJET_GUARDRAILS_NETWORK=1` is set and never set in CI, re-downloads all five
 and compares them with what unicode.org publishes today.
 
-**Why they are vendored at all.** `unicodedata` exposes no Script property and
-no confusables table on any interpreter from 3.10 to 3.14, and the Unicode
+**Why `IdentifierStatus.txt` is one of them.** It is the UTS #39 Identifier
+Profile, and it is what decides whether a confusable prototype is evidence of a
+spoof. Measured on these files, 140 of the 296 Cyrillic letters fold to a string
+written wholly in Latin and only 104 of those fold to one written wholly in the
+profile. Cyrillic small em folds to U+028D LATIN SMALL LETTER TURNED W and
+Cyrillic small ef to U+0278 LATIN SMALL LETTER PHI: both Latin, and neither a
+character any brand or hostname is written in. Without this file the
+`confusables` check denies `iPhoneом` in Russian prose and every `.рф` domain
+there is, which is a check that gets switched off rather than a check.
+
+**Why they are vendored at all.** `unicodedata` exposes no Script property,
+no confusables table and no Identifier_Status on any interpreter from 3.10 to
+3.14, and the Unicode
 version behind it runs from 13.0 to 16.0 across this project's CI matrix. A
 check deriving script from `unicodedata.name()` prefixes would reach different
 verdicts on different legs of one test suite, and a corpus label written on one

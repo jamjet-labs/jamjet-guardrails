@@ -190,6 +190,25 @@ def test_no_corpus_labels_a_type_its_check_does_not_declare(check: str) -> None:
 
 
 @pytest.mark.parametrize("check", CHECKS)
+def test_the_types_a_check_declares_collide_with_no_other_checks(check: str) -> None:
+    """Pairwise, across the registry, and it is a property of the chain.
+
+    A chain merges overlapping spans from every guardrail into ONE region and
+    names each contributing type once, so two checks reporting the same type
+    name produce a placeholder a reader cannot attribute. The per-type rows in
+    `BENCHMARKS.md` are worse: each is keyed by type name alone, so a collision
+    would publish one row that is the sum of two measurements taken on two
+    corpora with two sets of labels.
+
+    Mutation-checked: renaming `WHOLE_SCRIPT_CONFUSABLE` to `BIDI_OVERRIDE`
+    fails this and nothing else in the suite.
+    """
+    collisions = {other: sorted(TYPES[check] & TYPES[other]) for other in CHECKS if other != check}
+    shared = {other: names for other, names in collisions.items() if names}
+    assert shared == {}, f"{check} shares finding types with another check: {shared}"
+
+
+@pytest.mark.parametrize("check", CHECKS)
 def test_every_check_builds_from_its_fixture_or_from_nothing(check: str) -> None:
     """The harness builds by name, so a check that needs options and has no
     fixture cannot be scored at all, and one whose fixture is wrong fails here

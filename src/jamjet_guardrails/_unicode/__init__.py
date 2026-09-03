@@ -1,20 +1,36 @@
-"""The two questions three checks ask of Unicode, answered from vendored tables.
+"""The three questions three checks ask of Unicode, answered from vendored tables.
 
-`script_set` resolves a code point's scripts per UTS #39 section 5.1 and
-`skeleton` builds the confusable skeleton of a string per UTS #39 section 4.
-`confusables`, `script-constraint` and the `fold_confusables` option on
-`jamjet_guardrails.authoring.PatternGuardrail` are the three callers, and they
-share these two functions rather than each deriving what it needs, because
-three derivations of "what script is this" would disagree the first time one of
-them was tightened.
+`script_set` resolves a code point's scripts per UTS #39 section 5.1,
+`skeleton` builds the confusable skeleton of a string per UTS #39 section 4,
+and `identifier_allowed` answers whether a code point is in the UTS #39
+Identifier Profile. `confusables`, `script-constraint` and the
+`fold_confusables` option on `jamjet_guardrails.authoring.PatternGuardrail` are
+the callers, and they share these functions rather than each deriving what they
+need, because three derivations of "what script is this" would disagree the
+first time one of them was tightened.
 
-**Why the tables are vendored and these two questions are not asked of
-`unicodedata`.** No interpreter from 3.10 to 3.14 exposes the Script property
-or the confusables table at all, and the Unicode version behind `unicodedata`
-runs from 13.0 to 16.0 across this project's CI matrix. The tables under
-`jamjet_guardrails._unicode` are 16.0.0 on every interpreter, so a corpus label
-means the same thing on every leg. Category, name and Default_Ignorable
-questions stay with `unicodedata`, as `injection-structural` already asks them.
+**Why `identifier_allowed` is here rather than inside the check that reads it.**
+It is the third leg of one question, not a fourth question: a confusable
+prototype is evidence of a spoof only when it names a string somebody could be
+reading, and Identifier_Status is Unicode's own answer to which characters
+strings are written in. Measured on the 16.0.0 tables, 140 of the 296 Cyrillic
+letters have a prototype written wholly in Latin and only 104 of those have one
+written wholly in the Identifier Profile. The gap is what separates Cyrillic
+small a, whose prototype is Latin `a`, from Cyrillic small em, whose prototype
+is U+028D LATIN SMALL LETTER TURNED W: both are Latin, and only the first is a
+character a brand or a hostname is written in. Without the third table
+`iPhoneом` in Russian prose is a mixed-script confusable and `почта.рф` is a
+whole-script one, because Cyrillic er maps to `p` and Cyrillic ef to U+0278.
+Denying the Russian ccTLD is not a check, it is a check that gets switched off.
+
+**Why the tables are vendored and these questions are not asked of
+`unicodedata`.** No interpreter from 3.10 to 3.14 exposes the Script property,
+the confusables table or Identifier_Status at all, and the Unicode version
+behind `unicodedata` runs from 13.0 to 16.0 across this project's CI matrix. The
+tables under `jamjet_guardrails._unicode` are 16.0.0 on every interpreter, so a
+corpus label means the same thing on every leg. Category, name and
+Default_Ignorable questions stay with `unicodedata`, as `injection-structural`
+already asks them.
 
 **Normalisation is the exception, and it is deliberate.** `skeleton` calls
 `unicodedata.normalize` and `unicodedata.combining` rather than carrying
@@ -28,7 +44,10 @@ and it is disclosed rather than assumed.
 
 **Cost, measured rather than estimated.** `scripts.py` is 45 KiB of source and
 imports in 1.5 ms warm and 7.5 ms cold; `confusables.py` is 176 KiB and imports
-in 2.5 ms warm and 21 ms cold. Warm means the `__pycache__` byte code is
+in 2.5 ms warm and 21 ms cold; `identifiers.py` is 10 KiB and imports in 0.1 ms
+warm and 1.4 ms cold, measured after `jamjet_guardrails._unicode` was already
+imported so that figure is the table alone rather than `scripts.py` again.
+Warm means the `__pycache__` byte code is
 present, which is every run after the first and, because `pip install` compiles
 what it installs, the ordinary case in a deployment too. Cold means it is
 absent and the source is compiled. Medians of nine runs on Python 3.14.5, macOS
@@ -50,11 +69,11 @@ step in between, and a security library's vendored data is a thing people have
 to be able to read. The blob costs that and saves a millisecond on a table
 imported once per process, lazily, by one check.
 
-`confusables.py` is imported inside `skeleton` and not at the top of this
-module, so `script-constraint` pays for `scripts.py` alone. The check modules
-in turn import THIS module inside the methods that need it, so
-`import jamjet_guardrails` pays none of it, and
-`tests/test_unicode.py::test_importing_the_package_loads_neither_unicode_table`
+`confusables.py` is imported inside `skeleton` and `identifiers.py` inside
+`identifier_allowed`, not at the top of this module, so `script-constraint` pays
+for `scripts.py` alone. The check modules in turn import THIS module inside the
+methods that need it, so `import jamjet_guardrails` pays none of it, and
+`tests/test_unicode.py::test_importing_the_package_loads_no_unicode_table`
 holds that.
 
 There is no CI timing gate on any of these numbers, per the performance posture
@@ -64,15 +83,17 @@ a test already reproduces byte for byte.
 
 **Complexity.** `script_set` is two bisections over tables of 979 and 174
 ranges and allocates nothing, so it is constant time in the content and safe to
-call per character. `skeleton` is linear in the length of the content, plus a
-sort of each run of combining marks, which is bounded by how many marks sit on
-one base character and is therefore near-linear overall.
+call per character; `identifier_allowed` is one bisection over 391 ranges and is
+the same. `skeleton` is linear in the length of the content, plus a sort of each
+run of combining marks, which is bounded by how many marks sit on one base
+character and is therefore near-linear overall.
 """
 
 from __future__ import annotations
 
 import unicodedata
 from bisect import bisect_right
+from functools import lru_cache
 
 from jamjet_guardrails._fold import _Folded, compose, fold
 from jamjet_guardrails._unicode.scripts import (
@@ -82,7 +103,7 @@ from jamjet_guardrails._unicode.scripts import (
     UNICODE_VERSION,
 )
 
-__all__ = ["UNICODE_VERSION", "UNKNOWN", "script_set", "skeleton"]
+__all__ = ["UNICODE_VERSION", "UNKNOWN", "identifier_allowed", "script_set", "skeleton"]
 
 # The Script value of every code point the pinned tables do not assign, which is
 # `Scripts.txt`'s own @missing rule. Named rather than spelled at each use, so a
@@ -161,6 +182,61 @@ def script_set(character: str) -> frozenset[str]:
             return _SINGLETON[script]
 
     return _SINGLETON[UNKNOWN]
+
+
+@lru_cache(maxsize=1)
+def _allowed_ranges() -> tuple[tuple[tuple[int, int], ...], tuple[int, ...]]:
+    """The Identifier Profile table and its bisection keys, imported once.
+
+    Cached rather than built at module import, for the reason `skeleton` imports
+    `confusables.py` inside itself: `script-constraint` never asks this question
+    and must not pay 10 KiB of source to compile for it. After the first call the
+    import is a `sys.modules` lookup and this is a cache hit.
+    """
+    from jamjet_guardrails._unicode.identifiers import ALLOWED_RANGES
+
+    return ALLOWED_RANGES, tuple(start for start, _ in ALLOWED_RANGES)
+
+
+def identifier_allowed(character: str) -> bool:
+    """Whether one code point is Identifier_Status=Allowed, per UTS #39 section 3.1.
+
+    UNICODE'S OWN ANSWER TO WHICH CHARACTERS STRINGS ARE WRITTEN IN, and the
+    `confusables` check reads it for exactly that. A confusable prototype is
+    evidence of a spoof only when the string it produces is one a reader could
+    mistake for something real, and a prototype written in phonetic, technical
+    or obsolete letters names nothing anybody registers or reads. Cyrillic small
+    a folds to Latin `a` and Cyrillic small em folds to U+028D LATIN SMALL LETTER
+    TURNED W; both prototypes are Latin, and treating them alike denies every
+    Russian word carrying a Latin brand name.
+
+    The property is UTS #39's rather than this project's, which is the rule for
+    every exemption in this package: the restriction levels in section 5.2 are
+    themselves defined over this set, so a check citing section 5.2 already
+    reaches it. `unicode-data/16.0.0/IdentifierStatus.txt` is the source and
+    `corpora/NOTICE.md` carries its digest.
+
+    Restricted is the DEFAULT, which is what the absence of a range means:
+    `IdentifierStatus.txt` lists the Allowed code points and its own @missing
+    line makes everything else Restricted. So an unassigned code point, and one
+    assigned after this pin, are both Restricted here, and the direction that
+    fails is toward reporting no spoof rather than toward inventing one.
+
+    Refuses a string that is not exactly one code point, for the reason
+    `script_set` does: reading the first character of a longer one silently
+    answers a question the caller did not ask.
+    """
+    if len(character) != 1:
+        raise ValueError(
+            f"identifier_allowed takes one code point, got {len(character)} characters; "
+            "a longer string has a status per character and no single answer"
+        )
+    ranges, starts = _allowed_ranges()
+    position = bisect_right(starts, ord(character)) - 1
+    if position < 0:
+        return False
+    start, end = ranges[position]
+    return start <= ord(character) <= end
 
 
 def _canonical_decomposition(character: str) -> str:

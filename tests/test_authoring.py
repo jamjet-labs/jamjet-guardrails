@@ -497,3 +497,145 @@ def test_a_name_or_version_at_the_ceiling_still_builds_and_runs(field: str) -> N
     assert verdict.decision == "deny"
     recorded = verdict.provenance.detector if field == "name" else verdict.provenance.version
     assert recorded == at_limit
+
+
+# ==========================================================================
+# fold_confusables: the seam a rules engine has next to a confusables check.
+#
+# A banned substring is the exact thing one substituted Cyrillic letter
+# defeats, so a rules engine shipping beside a check that detects those
+# letters has to be able to close its own seam. Every test below was watched
+# to fail against a mutation, with `__pycache__` cleared between runs:
+#
+# - the skeleton dropped from the needle at construction;
+# - the skeleton dropped from the view in `_banned_spans`;
+# - `compose` replaced by the skeleton view alone, so the span indexes the
+#   case-folded view rather than the source;
+# - the refusal of the option with no banned substrings removed.
+# ==========================================================================
+
+# Escapes, never literals: a Cyrillic letter inside a Latin word is invisible
+# here, in the diff and in the review, which is the point of the option.
+_CYRILLIC_I = "\u0456"  # CYRILLIC SMALL LETTER BYELORUSSIAN-UKRAINIAN I
+_CYRILLIC_O = "\u043e"  # CYRILLIC SMALL LETTER O
+_SHARP_S = "\u00df"  # LATIN SMALL LETTER SHARP S
+
+
+def _banned_guard(**options: object) -> PatternGuardrail:
+    return PatternGuardrail(
+        name="rules",
+        version="0.1.0",
+        banned={"PROJECT_CODENAME": ("project bluebird",)},
+        on_match="redact",
+        **options,  # type: ignore[arg-type]
+    )
+
+
+def test_a_banned_word_survives_one_substituted_cyrillic_letter() -> None:
+    """The whole reason the option exists.
+
+    Without it the same content allows, which is the assertion below it: the
+    two together are the before and after, so a fold that silently stopped
+    folding would fail here rather than pass both.
+    """
+    content = f"deck for project blueb{_CYRILLIC_I}rd, internal only"
+    verdict = _banned_guard(fold_confusables=True).check(content, IN)
+    assert verdict.decision == "redact"
+    (finding,) = verdict.findings
+    assert finding.span is not None
+    assert content[finding.span[0] : finding.span[1]] == f"project blueb{_CYRILLIC_I}rd"
+    assert verdict.content == "deck for [REDACTED:PROJECT_CODENAME], internal only"
+
+
+def test_without_the_option_the_substituted_letter_dodges_the_word() -> None:
+    """The false-reject control, and the measurement the option is sold on."""
+    content = f"deck for project blueb{_CYRILLIC_I}rd, internal only"
+    assert _banned_guard().check(content, IN).decision == "allow"
+
+
+def test_the_fold_runs_over_both_sides_and_still_matches_the_plain_word() -> None:
+    """Skeletonising the needle and not the content, or the other way round,
+    breaks the ordinary case while leaving the spoofed one working."""
+    guardrail = _banned_guard(fold_confusables=True)
+    assert guardrail.check("about project bluebird today", IN).decision == "redact"
+    assert guardrail.check("about PROJECT BLUEBIRD today", IN).decision == "redact"
+
+
+def test_the_span_points_at_the_source_even_when_a_fold_changed_the_length() -> None:
+    """Case folding expands the sharp s and the skeleton expands other rows, so
+    the view and the source are different lengths and the offset map is the only
+    thing that makes the span right.
+
+    Mutation-checked: dropping `compose` and searching the skeleton view alone
+    reports a span shifted by one character, and the redaction then leaves a
+    letter of the banned word standing.
+    """
+    guardrail = PatternGuardrail(
+        name="rules",
+        version="0.1.0",
+        banned={"CODENAME": ("strasse",)},
+        on_match="redact",
+        fold_confusables=True,
+    )
+    content = f"the Stra{_SHARP_S}e file"
+    verdict = guardrail.check(content, IN)
+    (finding,) = verdict.findings
+    assert finding.span is not None
+    assert content[finding.span[0] : finding.span[1]] == f"Stra{_SHARP_S}e"
+    assert verdict.content == "the [REDACTED:CODENAME] file"
+
+
+def test_a_needle_that_is_not_already_its_own_skeleton_is_folded_too() -> None:
+    """The needle side of the fold, which an ASCII banned word cannot hold down.
+
+    `project bluebird` is its own skeleton, so skeletonising the needle is a
+    no-op for it and a test built on it says nothing about that half: measured,
+    deleting the needle fold leaves every other test in this file green. A
+    needle carrying a precomposed `e` with an acute accent does hold it: the
+    skeleton decomposes it, so a view built from the content and a needle left
+    alone no longer agree, and the banned word stops matching itself.
+
+    Mutation-checked: dropping the needle fold makes both assertions below
+    allow.
+    """
+    guardrail = PatternGuardrail(
+        name="rules",
+        version="0.1.0",
+        banned={"CODENAME": ("caf\u00e9 noir",)},
+        on_match="redact",
+        fold_confusables=True,
+    )
+    assert guardrail.check("the caf\u00e9 noir project", IN).decision == "redact"
+    # The same word written with a combining acute rather than a precomposed
+    # letter. One skeleton, two spellings, and the corpus for `rules` carries
+    # neither: this is where that equivalence is stated.
+    assert guardrail.check("the cafe\u0301 noir project", IN).decision == "redact"
+
+
+def test_a_different_word_of_the_same_shape_is_not_matched() -> None:
+    """The fold is not a similarity measure. `bluebell` is not `bluebird`."""
+    content = f"deck for pr{_CYRILLIC_O}ject bluebell"
+    assert _banned_guard(fold_confusables=True).check(content, IN).decision == "allow"
+
+
+def test_the_option_is_refused_where_it_would_change_nothing() -> None:
+    """An option that selects nothing reads as protection and buys none.
+
+    Mutation-checked: removing the refusal makes this construct cleanly and
+    then allow every spoofed pattern match, because patterns are deliberately
+    not folded.
+    """
+    with pytest.raises(ValueError, match="no banned substrings"):
+        PatternGuardrail(
+            name="rules",
+            version="0.1.0",
+            patterns={"TICKET_ID": r"\bJIRA-\d{4,}\b"},
+            fold_confusables=True,
+        )
+
+
+def test_the_option_is_off_by_default() -> None:
+    """A fold nobody asked for is a matching rule nobody wrote down."""
+    content = f"deck for project blueb{_CYRILLIC_I}rd"
+    assert _banned_guard().check(content, IN).decision == "allow"
+    assert _banned_guard(fold_confusables=False).check(content, IN).decision == "allow"

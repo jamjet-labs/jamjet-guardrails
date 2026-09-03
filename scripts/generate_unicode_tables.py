@@ -65,6 +65,7 @@ _SECURITY = f"https://www.unicode.org/Public/security/{UNICODE_VERSION}"
 # version literally rather than `latest`, because `latest` is the one URL whose
 # content changes under a pin.
 SOURCES: dict[str, str] = {
+    "IdentifierStatus.txt": f"{_SECURITY}/IdentifierStatus.txt",
     "PropertyValueAliases.txt": f"{_UCD}/PropertyValueAliases.txt",
     "ScriptExtensions.txt": f"{_UCD}/ScriptExtensions.txt",
     "Scripts.txt": f"{_UCD}/Scripts.txt",
@@ -77,12 +78,14 @@ SOURCES: dict[str, str] = {
 # happened to.
 SCRIPTS_INPUTS = ("PropertyValueAliases.txt", "ScriptExtensions.txt", "Scripts.txt")
 CONFUSABLES_INPUTS = ("confusables.txt",)
+IDENTIFIERS_INPUTS = ("IdentifierStatus.txt",)
 
-# Read as `utf-8-sig`, because all four files begin with a UTF-8 BOM. Read as
-# plain `utf-8` the BOM becomes U+FEFF on the front of the first line, the
-# first data line of Scripts.txt parses as the code point `﻿0000`, and
+# Read as `utf-8-sig`, because four of the five files begin with a UTF-8 BOM.
+# Read as plain `utf-8` the BOM becomes U+FEFF on the front of the first line,
+# the first data line of Scripts.txt parses as the code point `﻿0000`, and
 # `int(..., 16)` raises from inside a parser whose error would name the line
-# rather than the encoding.
+# rather than the encoding. `IdentifierStatus.txt` carries no BOM and decodes
+# identically either way, so one encoding covers all five.
 _ENCODING = "utf-8-sig"
 
 
@@ -213,6 +216,33 @@ def extension_ranges(text: str, aliases: dict[str, str]) -> list[tuple[int, int,
         ranges.append((start, end, tuple(sorted(scripts))))
     if not ranges:
         raise ValueError("ScriptExtensions.txt yielded no ranges")
+    return _merged(ranges)
+
+
+def identifier_ranges(text: str) -> list[tuple[int, int, bool]]:
+    """`(start, end, True)` for every Allowed run in `IdentifierStatus.txt`.
+
+    The file lists the Allowed code points and nothing else; its own `@missing`
+    line makes every code point outside them Restricted, so what is emitted is
+    the Allowed set and the absence of a range IS the answer for everything
+    else. Refusing any other status value is what discovers a revision that
+    starts writing `Restricted` rows explicitly, which would otherwise load as
+    Allowed ranges and turn the whole table inside out.
+
+    The third element is a constant `True`, carried only so `_merged` can join
+    adjacent runs the way it does for the script tables: two Allowed ranges that
+    touch are one range, and merging them here rather than emitting both keeps
+    the table the size of the data rather than the size of its presentation.
+    """
+    ranges: list[tuple[int, int, bool]] = []
+    for fields in _fields(text):
+        status = fields[1]
+        if status != "Allowed":
+            raise ValueError(f"IdentifierStatus.txt names status {status!r}, not 'Allowed'")
+        start, end = _range(fields[0])
+        ranges.append((start, end, True))
+    if not ranges:
+        raise ValueError("IdentifierStatus.txt yielded no Allowed ranges")
     return _merged(ranges)
 
 
@@ -419,6 +449,54 @@ def render_confusables(data: Path) -> str:
     return "\n".join(lines)
 
 
+def render_identifiers(data: Path) -> str:
+    """The text of `_unicode/identifiers.py`."""
+    ranges = identifier_ranges((data / "IdentifierStatus.txt").read_text(encoding=_ENCODING))
+    covered = sum(end - start + 1 for start, end, _ in ranges)
+
+    lines = [
+        '"""The UTS #39 Identifier Profile. GENERATED; do not edit.',
+        "",
+        "Written by `scripts/generate_unicode_tables.py` from the file committed under",
+        f"`unicode-data/{UNICODE_VERSION}/`. Regenerate rather than edit: a test rewrites this",
+        "module from that file and compares bytes, so a hand edit fails the build with no",
+        "way for the next reader to tell which of the two was meant.",
+        "",
+        "**What the property is for.** Identifier_Status=Allowed is Unicode's own answer",
+        "to which characters are recommended for identifiers, and UTS #39 section 5.2",
+        "defines every restriction level above Unrestricted over exactly this set. The",
+        "`confusables` check reads it to decide whether a confusable prototype names a",
+        "string anybody could be reading: Cyrillic small a maps to Latin `a`, which is a",
+        "character brands and hostnames are written in, and Cyrillic small em maps to",
+        "U+028D LATIN SMALL LETTER TURNED W, which is a phonetic letter no brand or",
+        "hostname is written in. Both prototypes are Latin; only the first is a spoof.",
+        "",
+        "**Absence is the answer.** `IdentifierStatus.txt` lists the Allowed code points",
+        "and nothing else, and its own @missing line makes every other code point",
+        "Restricted, so a code point inside no range here is Restricted rather than",
+        "unknown. The generator refuses a row carrying any other status for that reason.",
+        "",
+        f"Contents: {len(ranges):,} Allowed ranges covering {covered:,} code points.",
+        "Both counts are held to this table by tests/test_unicode.py, because a number in",
+        "prose that counts a thing in code is a claim.",
+        '"""',
+        "",
+        "from __future__ import annotations",
+        "",
+        f'UNICODE_VERSION = "{UNICODE_VERSION}"',
+        "",
+        "# SHA-256 of the file this module was generated from, as published.",
+        _digests_block(IDENTIFIERS_INPUTS, data),
+        "",
+        "# Sorted by start, disjoint, and looked up by bisection. A code point inside one",
+        "# of these has Identifier_Status=Allowed; every other code point is Restricted.",
+        "ALLOWED_RANGES: tuple[tuple[int, int], ...] = (",
+    ]
+    lines += [f"    (0x{start:04X}, 0x{end:04X})," for start, end, _ in ranges]
+    lines += [")", ""]
+    return "\n".join(lines)
+
+
 def download(data: Path) -> int:
     """Refetch every pinned file. The ONLY thing here that touches the network."""
     data.mkdir(parents=True, exist_ok=True)
@@ -431,11 +509,12 @@ def download(data: Path) -> int:
 
 
 def generate(data: Path, target: Path) -> int:
-    """Rewrite both modules from the committed files. No network."""
+    """Rewrite all three modules from the committed files. No network."""
     target.mkdir(parents=True, exist_ok=True)
     for name, text in (
         ("scripts.py", render_scripts(data)),
         ("confusables.py", render_confusables(data)),
+        ("identifiers.py", render_identifiers(data)),
     ):
         # newline="\n" and never the platform default. `scripts/sample_nemotron.py`
         # pins its write for the same reason: a CRLF checkout would regenerate a
