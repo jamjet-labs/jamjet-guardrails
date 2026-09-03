@@ -12,6 +12,10 @@ from jamjet_guardrails.detectors.injection_structural import (
 from jamjet_guardrails.detectors.pii import PII_TYPES, PiiGuardrail
 from jamjet_guardrails.detectors.rules import RULES_TYPES, build_rules
 from jamjet_guardrails.detectors.secrets import SECRET_TYPES, SecretsGuardrail
+from jamjet_guardrails.detectors.url_exfiltration import (
+    URL_EXFILTRATION_TYPES,
+    UrlExfiltrationGuardrail,
+)
 from jamjet_guardrails.errors import GuardrailUnavailableError
 from jamjet_guardrails.protocol import Guardrail
 from jamjet_guardrails.types import Direction
@@ -21,6 +25,7 @@ AVAILABLE: dict[str, Callable[..., Guardrail]] = {
     "pii": PiiGuardrail,
     "rules": build_rules,
     "secrets": SecretsGuardrail,
+    "url-exfiltration": UrlExfiltrationGuardrail,
 }
 
 # The finding types each registered check can report, keyed by registry name.
@@ -44,6 +49,7 @@ TYPES: dict[str, frozenset[str]] = {
     "pii": PII_TYPES,
     "rules": RULES_TYPES,
     "secrets": SECRET_TYPES,
+    "url-exfiltration": URL_EXFILTRATION_TYPES,
 }
 
 # The directions a Context can actually carry, listed literally and deliberately
@@ -277,6 +283,7 @@ __all__ = [
     "InjectionStructuralGuardrail",
     "PiiGuardrail",
     "SecretsGuardrail",
+    "UrlExfiltrationGuardrail",
     "build",
     "build_chain",
     "build_rules",
