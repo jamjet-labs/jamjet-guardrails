@@ -55,6 +55,12 @@ TYPES: dict[str, frozenset[str]] = {
 # construction, until someone has taught the chain to run it.
 _RUNNABLE_DIRECTIONS: frozenset[Direction] = frozenset({"input", "output"})
 
+# The same ceiling `chain._CALLER_STRING_LIMIT` holds, spelled here because
+# `detectors` imports `chain` and not the other way round, and because this is a
+# message bound rather than a refusal: `build` reports which guardrail it
+# refused, and a name is the only way to say that.
+_NAME_LIMIT = 200
+
 
 def build(name: str, **options: object) -> Guardrail:
     """Construct one guardrail by name, or refuse to hand one back at all.
@@ -172,10 +178,20 @@ def build(name: str, **options: object) -> Guardrail:
             f"the chain would raise the same TypeError mid-run"
         ) from exc
     if not runnable:
+        # Neither the name nor the declared directions are quoted. Both are
+        # values the guardrail chose, `directions` is read from caller code that
+        # can run after the caller has content in hand, and `chain._refusal`
+        # records what a message that quotes either one costs: a
+        # two-million-character declaration produced a message of the same size,
+        # and a declaration that IS the content puts the content into whatever
+        # log wraps the configuration seam. The name is bounded because it is
+        # what tells a reader WHICH check was refused; the directions are
+        # counted, because their values add nothing a count does not.
         raise GuardrailUnavailableError(
-            f"guardrail {guardrail.name!r} declares no direction it can run in "
-            f"({guardrail.directions!r}); every context would skip it, so it would be "
-            f"configured and silent. Expected at least one of {sorted(_RUNNABLE_DIRECTIONS)}"
+            f"guardrail {str(guardrail.name)[:_NAME_LIMIT]!r} declares "
+            f"{len(list(guardrail.directions))} direction(s), none of which it can run in; "
+            f"every context would skip it, so it would be configured and silent. "
+            f"Expected at least one of {sorted(_RUNNABLE_DIRECTIONS)}"
         )
     return guardrail
 

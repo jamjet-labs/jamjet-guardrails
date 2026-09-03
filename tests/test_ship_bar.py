@@ -29,6 +29,7 @@ package and a corpus that ships with it.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import re
@@ -43,12 +44,14 @@ from training.fetch import load_sources, sha256_of
 from training.ship_bar import (
     FLOOR_PLACES,
     PUBLISHED_FINDING_LEVEL_RECALL,
+    STRUCTURAL_CORPUS_VERSION,
     STRUCTURAL_LEVEL,
     ShipBarError,
     distinct_models,
     f1,
     harness,
     required_minimum,
+    structural_corpus_version,
     structural_floor,
     why_the_structural_side_exists,
 )
@@ -71,7 +74,105 @@ ARTIFACTS = ROOT / "training" / "artifacts"
 #: a commitment made before the result, and a commitment that can be edited
 #: after the result is none, so any edit to that file from here on fails here
 #: whatever else in the suite still passes.
-SHIP_BAR_SHA256 = "74fb86231e6ef98813d09433041d032989ce7ed1512fb6c03d00d7e672eb2ae0"
+#:
+#: Moved once, on 2026-09-03, from
+#: 74fb86231e6ef98813d09433041d032989ce7ed1512fb6c03d00d7e672eb2ae0, to record
+#: the structural corpus's own version digest beside its path
+#: (`structural_floor_detail.corpus_version` and
+#: `structural_floor_rederived.version_pin_added`). The file's disclosure key
+#: says what moved and why, so the two halves of the change are one diff.
+#:
+#: That a documented change moves this constant is the hole in it, and
+#: `SHIP_BAR_CORE_SHA256` below is what closes it: the semantic registration is
+#: digested separately and has never moved, so no disclosure key, however
+#: plausibly worded, can cover an edit to the number the bar actually is.
+SHIP_BAR_SHA256 = "462fab954db14b18ce7836d12f54031a3f89bb1470d7ed92570033a72f91ddc0"
+
+#: What the whole file digested to when `training/artifacts/ship_check.json` was
+#: written, so that verdict's own record of the bar it was judged against still
+#: resolves to something. Kept as its own constant rather than left in the
+#: verdict alone, because a recorded verdict may never be back-filled and a
+#: constant nobody can find is a record nobody can check.
+SHIP_BAR_SHA256_AT_VERDICT = "74fb86231e6ef98813d09433041d032989ce7ed1512fb6c03d00d7e672eb2ae0"
+
+#: sha256 over a canonical serialisation of the fields that were registered
+#: BEFORE any model existed, and that nothing may ever re-derive.
+#:
+#: The whole-file digest above answers "has this file changed", which is the
+#: right question and the wrong granularity: the structural side is DEFINED as
+#: decision-level recall measured on a corpus that ships with the library, so it
+#: re-derives when that corpus legitimately grows, and a whole-file digest that
+#: must move for that reason can also be moved for a reason nobody would accept.
+#: The distinction is not editorial. The semantic side is the bar. It was
+#: recorded against external references at pinned revisions, measured here, and
+#: there is no circumstance in which re-deriving it is correct.
+#:
+#: Computed over `sorted` keys with compact separators rather than over the
+#: file's own bytes, because the bytes of these keys sit inside a file whose
+#: other keys are allowed to move, and reformatting the file must not read as a
+#: tampered bar.
+SHIP_BAR_CORE_SHA256 = "69d6c65ffde2df7d2f2a35802892a651b0eb73984ab6c3cf86aeb552dc9a24c1"
+
+#: The keys that digest covers. Listed literally, because deriving it as "every
+#: key except the structural ones" would silently admit a key added later to the
+#: side that is allowed to move, which is the direction that loses the guard.
+#:
+#: A literal list has the mirror hole: a key added later to the side that may NOT
+#: move is silently outside the digest. `SHIP_BAR_STRUCTURAL_KEYS` below closes
+#: it. The two lists partition the file, and
+#: `test_every_key_in_the_bar_is_on_exactly_one_side_of_the_digest` refuses a key
+#: that is on neither, so a field added to the bar is a decision about which side
+#: it belongs to rather than a field nobody digested.
+#:
+#: `clears_the_bar` is here after an adversarial review found it on neither list
+#: and therefore outside the digest. It is the file's own statement of the pass
+#: rule, in prose, beside `our_minimum` and `our_minimum_comparison` which state
+#: it as values. Both value forms were covered and the prose form was not, so
+#: `> our_minimum` could be relaxed to `>= our_minimum` in the sentence that
+#: describes the rule while every digest still matched: two tables that must
+#: agree, with only one of them pinned. It re-derives nothing (it is built from
+#: constants) so it belongs on this side.
+SHIP_BAR_CORE_KEYS = (
+    "metric",
+    "metric_definition",
+    "reference_model",
+    "reference_revision",
+    "reference_score",
+    "reference_measured_by",
+    "reference_models",
+    "reference_disagreement",
+    "held_out_corpus",
+    "harness",
+    "our_minimum",
+    "our_minimum_comparison",
+    "our_minimum_basis",
+    "contamination",
+    "authorises",
+    "recorded_utc",
+    "recorded_before_any_model_existed",
+    "rationale",
+    "clears_the_bar",
+)
+
+#: The keys that MAY move, and the only ones. Every one of them is the structural
+#: side, which this file defines as decision-level recall re-derived from a corpus
+#: that ships with the library, so it moves when that corpus legitimately grows.
+#: A move is disclosed in `structural_floor_rederived` and moves `SHIP_BAR_SHA256`
+#: in the same commit.
+#:
+#: `published_finding_level_recall` and `structural_floor_note` are here because
+#: they carry the finding-level number, which moved from 0.870 to 0.873 with the
+#: same corpus growth. `structural_floor_level` is a constant and is here because
+#: it describes the structural side and belongs with it.
+SHIP_BAR_STRUCTURAL_KEYS = (
+    "structural_floor",
+    "structural_floor_level",
+    "structural_floor_detail",
+    "structural_floor_note",
+    "structural_floor_rederived",
+    "published_finding_level_recall",
+    "why_the_structural_side_exists",
+)
 
 #: The instant every committed artifact under `training/artifacts/` records, by
 #: file name, so each one can be ordered against the bar.
@@ -96,6 +197,19 @@ INSTANT_OF = {
 def bar() -> dict[str, Any]:
     loaded: dict[str, Any] = json.loads(SHIP_BAR.read_text(encoding="utf-8"))
     return loaded
+
+
+def _core_digest(recorded: dict[str, Any]) -> str:
+    """The digest of the half of the bar that is never re-derived.
+
+    A missing key is a KeyError here rather than a shorter digest, deliberately.
+    Digesting `{k: recorded[k] for k in KEYS if k in recorded}` would let a
+    DELETED registration field produce a digest, and the whole point of this
+    constant is that no edit to these fields can produce one that matches.
+    """
+    core = {key: recorded[key] for key in SHIP_BAR_CORE_KEYS}
+    canonical = json.dumps(core, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def test_the_bar_exists_and_names_every_field_the_stage_promised() -> None:
@@ -410,9 +524,14 @@ def test_the_bar_was_recorded_before_any_model_existed() -> None:
     claim has not changed and neither has its strength. It is now carried by two
     things that go on holding after a model is trained:
 
-    - **the bar cannot have been edited.** Its bytes are pinned by
-      `SHIP_BAR_SHA256`, taken at the commit that recorded it, before any
-      training run in this repository.
+    - **the bar cannot have been edited.** Its SEMANTIC registration, which is
+      the bar, is pinned by `SHIP_BAR_CORE_SHA256` and has never moved. The
+      whole file is pinned by `SHIP_BAR_SHA256`, which has moved once, for the
+      structural corpus version pin disclosed inside the file; the two digests
+      exist separately because the structural side is defined as re-derived from
+      a corpus that ships with the library, so a single whole-file digest would
+      have to be movable for a legitimate reason, and anything movable for one
+      reason is movable for another.
     - **the bar predates every model.** Each run record carries `trained_utc`,
       and the bar carries `recorded_utc`. Both are instants rather than dates,
       because the first model was fitted on the same day the bar was written
@@ -427,9 +546,14 @@ def test_the_bar_was_recorded_before_any_model_existed() -> None:
     assert recorded["recorded_utc"].endswith("+00:00"), (
         f"recorded_utc is {recorded['recorded_utc']!r}, which is not UTC"
     )
+    assert _core_digest(recorded) == SHIP_BAR_CORE_SHA256, (
+        "the semantic registration in training/ship_bar.json has changed; the bar is a "
+        "commitment made before the result, and this half of it is never re-derived"
+    )
     assert sha256_of(SHIP_BAR) == SHIP_BAR_SHA256, (
-        "training/ship_bar.json has changed since it was recorded; a bar edited after the "
-        "model it judges is not a commitment made before the result"
+        "training/ship_bar.json has changed since it was last recorded; if the change is "
+        "a legitimate re-derivation of the structural side, disclose it in "
+        "structural_floor_rederived and move SHIP_BAR_SHA256 in the same commit"
     )
 
     written = datetime.fromisoformat(recorded["recorded_utc"])
@@ -637,3 +761,87 @@ def test_the_structural_side_records_what_a_semantic_classifier_scored_there() -
             f"{entry['id']} now reaches recall {entry['recall']} on the structural corpus "
             f"against the structural check's {floor}; the finding no longer holds"
         )
+
+
+def test_the_structural_floor_names_the_corpus_version_it_was_measured_on() -> None:
+    """A path is a moving target. The floor is defined on whatever is at it.
+
+    `structural_floor` is decision-level recall measured on
+    `corpora/injection-structural/in-repo.jsonl`, so work that legitimately
+    grows that corpus moves the floor by definition. That happened once: the
+    check widened to run on output, the corpus gained 8 cases, and the floor
+    went from 0.885 to 0.891. Nothing was wrong with the move; what was wrong is
+    that nothing in the file could tell it from a silent relabelling, because a
+    path was the only thing recorded and a path does not change when its
+    contents do.
+
+    `Corpus.version` digests every case's id, text, direction, expected decision
+    and expected findings, so it moves on a relabelling too, which is the edit
+    most worth making dishonestly: changing an expectation to match whatever the
+    check currently does is the cheapest way to turn a failing gate green.
+
+    From here, a corpus that moves fails this test until the move is disclosed
+    in `structural_floor_rederived` and both the pin and the digest are moved in
+    the same commit, which is one reviewable diff.
+
+    Mutation-checked: relabelling one case in the corpus from `deny` to `allow`
+    makes this fail, and so does changing STRUCTURAL_CORPUS_VERSION.
+    """
+    recorded = bar()
+    derived = structural_corpus_version()
+    assert derived == STRUCTURAL_CORPUS_VERSION, (
+        f"corpora/injection-structural/in-repo.jsonl now digests to {derived} and the "
+        f"ship bar was registered against {STRUCTURAL_CORPUS_VERSION}; if the corpus "
+        "moved for a reason, re-derive the floor and disclose it in "
+        "structural_floor_rederived"
+    )
+    assert recorded["structural_floor_detail"]["corpus_version"] == STRUCTURAL_CORPUS_VERSION
+    assert recorded["structural_floor_rederived"]["current"]["corpus_version"] == derived
+    # The corpus that preceded the pin was never digested, and the record says
+    # so with a null rather than with a value nobody measured.
+    assert recorded["structural_floor_rederived"]["previous"]["corpus_version"] is None
+    # And the derivation reads the FILE rather than quoting the pin, or the
+    # whole guard would agree with itself no matter what is on disk.
+    assert structural_floor(harness())["corpus_version"] == derived
+
+
+def test_every_key_in_the_bar_is_on_exactly_one_side_of_the_digest() -> None:
+    """A key on neither list is a key nothing digests.
+
+    `SHIP_BAR_CORE_KEYS` is a literal list, argued for in its own comment: a
+    derived one would silently admit a key added later to the side that is
+    allowed to move. The mirror hole is the reason this test exists. Before it,
+    adding `"our_minimum_tolerance": 0.05` to the bar left the core digest
+    matching, because the digest is taken over the listed keys and a key nobody
+    listed is a key nobody covers. An adversarial review found `clears_the_bar`
+    already sitting in that gap: the file's own prose statement of the pass rule,
+    beside two value forms of the same rule that WERE covered, so `> our_minimum`
+    could be relaxed to `>= our_minimum` in the sentence describing the rule with
+    every digest still green.
+
+    The two lists partition the file. A new key fails here until somebody decides
+    which side it belongs to, which is the decision the digest is made of.
+
+    `tests/test_ship_check.py` applies the same pattern to the structural record:
+    "a key added later that nobody thought about fails here rather than
+    disappearing into a subset match".
+
+    Mutation-checked: adding a key to the bar and to neither list fails here;
+    moving `our_minimum` from the core list to the structural list fails the
+    ordering test, whose digest then no longer covers it.
+    """
+    recorded = bar()
+    core = set(SHIP_BAR_CORE_KEYS)
+    structural = set(SHIP_BAR_STRUCTURAL_KEYS)
+    assert core & structural == set(), sorted(core & structural)
+    undigested = sorted(set(recorded) - core - structural)
+    assert undigested == [], (
+        f"{undigested} are in training/ship_bar.json and on neither digest list; a key "
+        "nobody listed is a key nobody covers"
+    )
+    absent = sorted((core | structural) - set(recorded))
+    assert absent == [], f"{absent} are digested and not in the file"
+    # The pass rule is stated twice in this file, as values and as prose, and
+    # both statements are now inside the digest that never moves.
+    for key in ("our_minimum", "our_minimum_comparison", "clears_the_bar"):
+        assert key in core

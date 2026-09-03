@@ -4,7 +4,7 @@ from typing import cast
 import pytest
 
 from jamjet_guardrails import build_chain
-from jamjet_guardrails.chain import GuardrailChain
+from jamjet_guardrails.chain import GuardrailChain, _Identity
 from jamjet_guardrails.detectors import AVAILABLE, build
 from jamjet_guardrails.errors import GuardrailChainError, GuardrailUnavailableError
 from jamjet_guardrails.eval.fixtures import options_for
@@ -375,14 +375,33 @@ def test_the_two_orders_of_the_same_two_guardrails_agree() -> None:
         }, text
 
 
-def test_a_redact_the_chain_cannot_locate_raises_rather_than_reporting_a_rewrite() -> None:
-    """The no-content assertion, one step over.
+def test_a_redact_the_chain_cannot_locate_becomes_a_synthesised_deny() -> None:
+    """CHANGED from `test_a_redact_the_chain_cannot_locate_raises_rather_than_
+    reporting_a_rewrite`, which asserted `GuardrailChainError` out of `run`.
 
     The chain rewrites from spans. A redact carrying no finding, or a finding
     with no span, gives it nothing to place, so keeping the content as it stood
     would report `redact` over a string nothing rewrote: the same fail-open the
     no-content case exists to stop, arriving after the type system rather than
-    before it.
+    before it. That much is unchanged and is why neither shape may be allowed.
+
+    What changed is the answer. Both shapes are reachable from an ordinary
+    `Guardrail` implementation, because `Verdict` allows a finding with no span
+    (a classifier emits none) and nothing required a redact to carry findings at
+    all, so they are detector contract violations rather than assertions about
+    this library. Raising made them the one remaining shape in which a single
+    misbehaving detector cost the WHOLE run its audit record: no `ChainResult`,
+    and no verdict for any guardrail that had already run. `_verified` now
+    refuses both the way it refuses every other lie, and the run continues.
+
+    The content is not forwarded either way, so this trades nothing away: an
+    exception out of `run` is a deny by the caller-facing contract, and the deny
+    adds the record of which guardrail broke its contract and how.
+
+    Mutation-checked: deleting either branch in `_verified` (the `if not
+    rebuilt` and the `any(finding.span is None ...)`) makes this test fail with
+    `GuardrailChainError` from `_spans_of`, which is the exact behaviour it
+    replaces.
     """
 
     class Unlocatable:
@@ -401,9 +420,45 @@ def test_a_redact_the_chain_cannot_locate_raises_rather_than_reporting_a_rewrite
         chain = GuardrailChain([Unlocatable(findings)])
         if findings and findings[0].span is not None:
             assert chain.run("secret", OUT).content == "[REDACTED:TOK]et"
-        else:
-            with pytest.raises(GuardrailChainError, match="rewrites from spans"):
-                chain.run("secret", OUT)
+            continue
+        result = chain.run("secret", OUT)
+        # The run survives, which is the whole change.
+        (verdict,) = result.verdicts
+        assert result.decision == "deny"
+        assert verdict.decision == "deny"
+        assert verdict.error is not None
+        assert "rewrites from spans" in verdict.error
+        # A deny never carries the content forward, and the audit copy is the
+        # ORIGINAL rather than the "REDACTED" string the detector claimed.
+        assert result.content == "secret"
+        assert verdict.content is None
+        # The provenance is the chain's copy of what the guardrail declared, not
+        # anything the rejected verdict said about itself.
+        assert verdict.provenance.detector == "unlocatable"
+
+
+def test_a_redact_the_chain_cannot_locate_still_raises_when_spans_of_is_called_directly() -> None:
+    """The other half: `_spans_of` keeps its refusals, now as real assertions.
+
+    They are unreachable through `run`, because `_verified` grades both shapes
+    first. They stay because `_spans_of` is callable directly against any
+    `Verdict` a test or a future caller constructs, and because for a caller who
+    has bypassed the grading, raising is the only honest answer: returning no
+    spans would leave the decision at `redact` over content nothing rewrote.
+
+    Mutation-checked: deleting either `raise` in `_spans_of` makes this fail.
+    """
+    identity = _Identity(
+        name="unlocatable",
+        version="0.1.0",
+        kind="constraint",
+        directions=frozenset({"output"}),
+        named="unlocatable",
+    )
+    for findings in ([], [Finding(type="TOK")]):
+        verdict = Verdict("redact", "REDACTED", findings, _prov("unlocatable"), saw("secret"))
+        with pytest.raises(GuardrailChainError, match="rewrites from spans"):
+            GuardrailChain._spans_of(verdict, identity, "secret")
 
 
 @pytest.mark.parametrize("span", [(-3, 4), (0, 0), (4, 2), (2, 99), (99, 200)])
@@ -419,11 +474,11 @@ def test_a_span_that_does_not_index_into_the_content_becomes_a_synthesised_deny(
     every finding of every decision before `_spans_of` is ever called, so a
     `redact` with an out-of-range span is caught there first and turned into a
     synthesised `deny` -- the run keeps its audit record rather than losing it
-    to an exception. `_spans_of` still raises for a redact with no findings or
-    an unspanned finding
-    (`test_a_redact_the_chain_cannot_locate_raises_rather_than_reporting_a_rewrite`),
-    because those are not out of range, they are unlocatable, and no decision
-    the chain could stamp would be honest about what happened to the content.
+    to an exception. A redact with no findings or an unspanned finding takes the
+    same route now
+    (`test_a_redact_the_chain_cannot_locate_becomes_a_synthesised_deny`), so no
+    detector behaviour abandons a run at all; `_spans_of` keeps those two
+    refusals as assertions reachable only by calling it directly.
 
     A negative start is the one that leaks rather than merely mislabels:
     `content[cursor:-3]` is measured from the END, so the slice emitted in front
@@ -1084,13 +1139,30 @@ def test_a_guardrail_declaring_an_unknown_kind_is_refused_when_the_chain_is_buil
 
 
 def test_a_two_million_character_name_cannot_grow_the_audit_record() -> None:
-    """Attack 6, first half. The name was interpolated up to four times.
+    """Attack 6, first half. CHANGED: the chain now refuses the name outright.
 
-    A 2,000,000-character name produced a 4,000,073-character `error`, which is
-    a cost every log line, trace and database column downstream of a
-    `ChainResult` then pays. The name is the one caller-supplied string a
-    message still carries, because it is what tells a reader WHICH check
-    misbehaved, so it is carried bounded.
+    A 2,000,000-character name produced a 4,000,073-character `error`, because
+    the name was interpolated up to four times into one message, and that is a
+    cost every log line, trace and database column downstream of a `ChainResult`
+    pays. Bounding the message closed that half.
+
+    It did not close the other half, and this test used to assert the gap as
+    though it were the design: `provenance.detector` was stamped with the full
+    name on EVERY verdict that guardrail ever produced. The old comment argued
+    the identity is "one reference to the caller's own string", which is true in
+    memory and false everywhere a `ChainResult` is serialised, where the cost is
+    paid once per verdict rather than once per failure.
+
+    Truncating the stored copy was rejected: a truncated name is a record that
+    does not say what the guardrail declared, and `_verified` grades a returned
+    `provenance.detector` against this copy, so the honest guardrail returning
+    its own full name would be the one recorded as lying. So the name is refused
+    when the chain is built, which is where the mistake is.
+    `tests/test_chain_identity.py` holds the ceiling and the false-reject
+    control at exactly the ceiling.
+
+    Mutation-checked: deleting the length loop in `_identity_of` makes the
+    refusal below not fire.
     """
     huge = "N" * 2_000_000
 
@@ -1100,7 +1172,7 @@ def test_a_two_million_character_name_cannot_grow_the_audit_record() -> None:
         kind: Kind = "constraint"
         directions: frozenset[Direction] = frozenset({"input", "output"})
 
-        def check(self, content: str, context: Context) -> Verdict:
+        def check(self, content: str, context: Context) -> Verdict:  # pragma: no cover
             return Verdict(
                 "allow",
                 None,
@@ -1109,16 +1181,13 @@ def test_a_two_million_character_name_cannot_grow_the_audit_record() -> None:
                 saw(content),
             )
 
-    result = GuardrailChain([HugeName()]).run(CONTENT, OUT)
-    (verdict,) = result.verdicts
-    assert verdict.decision == "deny"
-    assert verdict.error is not None
-    assert len(verdict.error) < 500
-    assert "N" * 201 not in verdict.error
-    # The record still names the guardrail the caller configured, in full: the
-    # bound is on the MESSAGE, which repeats the name, and not on the identity,
-    # which is one reference to the caller's own string.
-    assert verdict.provenance.detector == huge
+    with pytest.raises(GuardrailUnavailableError) as raised:
+        GuardrailChain([HugeName()])
+    # The refusal is itself a message, so it is held to the same rule: it names
+    # the guardrail by POSITION, which is the chain's own knowledge, and never
+    # quotes the name it is refusing.
+    assert len(str(raised.value)) < 500
+    assert "N" * 201 not in str(raised.value)
 
 
 def test_no_error_message_repeats_a_string_the_detector_chose() -> None:
@@ -1172,17 +1241,15 @@ def test_no_error_message_repeats_a_string_the_detector_chose() -> None:
         def check(self, content: str, context: Context) -> Verdict:
             return Verdict("redact", "x", [Finding(type=marker)], _prov("leaky3"), saw(content))
 
-    for guardrail in (NotAVerdict(), MarkerFindingType()):
+    # All three deny now. The unlocatable redact was the third path and the only
+    # one that raised; it became a synthesised deny with the rest, so the rule
+    # is checked in one loop instead of a loop plus an exception case.
+    for guardrail in (NotAVerdict(), MarkerFindingType(), MarkerUnlocatableRedact()):
         result = GuardrailChain([guardrail]).run(marker, OUT)
         (verdict,) = result.verdicts
         assert verdict.decision == "deny"
         assert verdict.error is not None
         assert marker not in verdict.error
-
-    # The same rule on the one path that still raises rather than denying.
-    with pytest.raises(GuardrailChainError) as raised:
-        GuardrailChain([MarkerUnlocatableRedact()]).run(marker, OUT)
-    assert marker not in str(raised.value)
 
 
 def test_a_name_that_changes_between_reads_records_the_one_the_chain_validated() -> None:
@@ -1640,13 +1707,39 @@ def test_a_declared_direction_that_is_not_an_exact_str_cannot_force_a_run() -> N
         def check(self, content: str, context: Context) -> Verdict:  # pragma: no cover
             return Verdict("deny", None, [], _prov("sideways"), saw(content))
 
+    class SidewaysAndReal:
+        """The same hostile member, beside one direction that is genuine."""
+
+        name: str = "sideways-and-real"
+        version: str = "0.1.0"
+        kind: Kind = "constraint"
+        directions: frozenset[Direction] = frozenset(
+            {cast(Direction, CollidingStr("sideways")), "input"}
+        )
+
+        def check(self, content: str, context: Context) -> Verdict:  # pragma: no cover
+            return Verdict("deny", None, [], _prov("sideways-and-real"), saw(content))
+
     # The double is hostile, asserted rather than assumed.
     assert "output" in Sideways.directions
+    assert "output" in SidewaysAndReal.directions
 
-    result = GuardrailChain([Sideways()]).run(CONTENT, OUT)
-    assert result.verdicts == ()
-    assert result.decision == "allow"
-    assert result.content == CONTENT
+    # CHANGED. This used to assert that the run was silent: the coercion dropped
+    # the lying member, nothing was left, and the guardrail was skipped in every
+    # context. Dropping every member is exactly the inert shape `_identity_of`
+    # now refuses, so the silence is a refusal.
+    with pytest.raises(GuardrailUnavailableError, match="none of which it can run in"):
+        GuardrailChain([Sideways()])
+
+    # The coercion is what this test is actually about, so it is asserted where
+    # it can still be seen: one genuine direction keeps the guardrail alive, and
+    # the hostile member still buys nothing. `"output" in directions` is True on
+    # the double's own frozenset above and False on the chain's copy of it, so
+    # this guardrail runs on input and is skipped on output.
+    alive = GuardrailChain([SidewaysAndReal()])
+    assert alive.run(CONTENT, OUT).verdicts == ()
+    assert alive.run(CONTENT, OUT).decision == "allow"
+    assert [v.provenance.detector for v in alive.run(CONTENT, IN).verdicts] == ["sideways-and-real"]
 
 
 # ==========================================================================

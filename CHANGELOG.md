@@ -39,6 +39,75 @@ a number that changes quietly is a number nobody can rely on.
 - `tests/test_workflows.py` keeps them pinned. It reads every workflow file git
   tracks rather than a list of names, parses each with PyYAML, and fails on any
   `uses:` that is not a 40-hex commit SHA carrying a version comment.
+- `GuardrailChain` refuses, at construction, a guardrail whose declared
+  `directions` hold none the runtime can carry. `build` and `build_chain`
+  already refused this on the registry door; `GuardrailChain` did not, and it is
+  a supported door, because the chain's own documentation tells a caller who
+  wants no checks to construct `GuardrailChain([])` directly. Such a guardrail
+  is inert: it is skipped in every context, so alone it produced the empty
+  chain's output, which is `allow` with the content untouched and no verdicts,
+  and beside a live detector it made the chain quieter than the configuration
+  said while raising nothing to report it. The test is intersection with the
+  runnable set rather than emptiness, so `{"inptu"}` and `{"stream"}` are
+  refused with `frozenset()`. **Potentially breaking**: a configuration holding
+  an inert guardrail stops building instead of running quietly without it.
+- `GuardrailChain` refuses a declared `name` or `version` longer than 200
+  characters, the ceiling every other caller-supplied string in an audit record
+  was already held to. Both are copied into the `Provenance` of every verdict
+  that guardrail produces, and they were bounded only where they reached an
+  error message, so a two-million-character name cost one truncated error string
+  and an unbounded `provenance.detector` in every verdict of every run.
+  Truncating the stored copy was rejected: a truncated name is a record that
+  does not say what the guardrail declared, and the chain grades a returned
+  `provenance.detector` against that copy, so the honest guardrail returning its
+  own full name would be the one recorded as lying. **Potentially breaking**: a
+  deployment whose detector name is longer than that stops building its chain on
+  upgrade. `authoring.PatternGuardrail` holds the same ceiling, so a check built
+  through the documented path now fails at its own constructor rather than two
+  seams later at the chain.
+- Neither refusal quotes the values it refuses. `directions` is data the
+  guardrail declares, read from caller code that runs after the caller has
+  content in hand, so a declared direction can be the content; both refusals now
+  report how many directions were declared and name the guardrail by position.
+  The first draft of the chain's refusal interpolated the set whole, which an
+  adversarial review found, and it is the defect the module's own `_bounded_str`
+  exists to close, reached from a third side. `detectors.build` carried the same
+  unbounded message and now bounds it too.
+- The five copies of the runnable-direction set are held to `Direction` and to
+  each other. `types._DIRECTIONS` and `authoring._RUNNABLE` were outside the
+  first version of that guard, and `types._DIRECTIONS` is the copy whose drift
+  fails OPEN: growing it alone lets a `Context` carry a direction no guardrail
+  declares, so every guardrail is skipped and the run reports `allow` over
+  content nothing checked. That mutation passed the entire suite.
+
+### Changed
+
+- A `redact` the chain cannot locate, meaning no findings or a finding carrying
+  no span, is now a synthesised `deny` instead of a `GuardrailChainError` out of
+  `run`. It was the last shape in which one misbehaving detector cost the whole
+  run its audit record, including the verdicts of every guardrail that had
+  already run. Both shapes are reachable from an ordinary `Guardrail`
+  implementation, because a `Verdict` may carry a finding with no span and
+  nothing required a `redact` to carry findings at all, which makes them
+  detector contract violations rather than assertions about this library. The
+  content is not forwarded either way. `GuardrailChain._spans_of` keeps the same
+  refusals for a direct caller, where they are now genuinely unreachable through
+  `run`.
+- `training/ship_bar.json` records the structural corpus's own version digest
+  beside its path. The recorded floor is defined as decision-level recall
+  measured on the corpus at that path, so unrelated work that legitimately grows
+  that corpus moves the floor; with only a path recorded, nothing could tell a
+  re-derivation from a silent edit. A test now re-derives the digest and fails
+  until a move is disclosed in `structural_floor_rederived`.
+- The bar's digest is split in two. The semantic registration, which is what the
+  bar actually is, is digested on its own and has never moved; the whole file's
+  digest moves with a disclosed re-derivation of the structural side.
+  `clears_the_bar`, the file's prose statement of the same pass rule its values
+  state, was on neither side of that split until an adversarial review found it,
+  so the rule could be relaxed from `>` to `>=` in the sentence describing it
+  with every digest still green. A test now refuses any key on neither side, so
+  a field added later is a decision about which side it belongs to rather than a
+  field nobody digests.
 
 ## [0.3.0]
 

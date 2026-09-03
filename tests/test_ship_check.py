@@ -27,7 +27,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from test_ship_bar import SHIP_BAR_SHA256
+from test_ship_bar import (
+    SHIP_BAR_CORE_SHA256,
+    SHIP_BAR_SHA256_AT_VERDICT,
+    _core_digest,
+)
 from training.decide import EXPORT_RECORD, METRICS, SHIPPED, verdict
 from training.evalset import EVAL_SOURCE
 from training.fetch import load_sources, sha256_of
@@ -35,6 +39,7 @@ from training.ship_bar import (
     COMPARISON,
     FLOOR_PLACES,
     SHIP_BAR,
+    STRUCTURAL_CORPUS_VERSION,
     f1,
     harness,
     structural_floor,
@@ -126,15 +131,31 @@ def test_the_structural_side_is_re_derived_from_the_shipped_corpus() -> None:
     counts have to be what the artifact says they were.
     """
     recomputed = structural_floor(harness())
-    assert check()["structural"] == recomputed, (
+    recorded_structural = check()["structural"]
+    # Compared on the keys the ARTIFACT carries, and the delta is asserted
+    # rather than ignored. `structural_floor` grew `corpus_version` on
+    # 2026-09-03, after this verdict was recorded; back-filling it into
+    # `ship_check.json` would edit a record of what was measured, which is the
+    # one thing a recorded verdict may never do. Naming the allowed delta is
+    # what keeps this a total comparison: a key added later that nobody thought
+    # about fails here rather than disappearing into a subset match.
+    assert set(recomputed) - set(recorded_structural) == {"corpus_version"}, (
+        "structural_floor produces keys this recorded verdict does not carry; a verdict "
+        "is a record of what was measured and is not back-filled"
+    )
+    assert {key: recomputed[key] for key in recorded_structural} == recorded_structural, (
         "the structural side of the verdict is not what the shipped corpus scores today"
     )
+    # And the corpus is the same one, which is the claim `corpus_version` exists
+    # to make and the only reason the comparison above is still about one thing.
+    assert recomputed["corpus_version"] == STRUCTURAL_CORPUS_VERSION
     recorded = check()["verdict"]["structural"]
     # The floor compared against is the recall it was DERIVED from, not the
     # three-decimal rendering the bar also carries. `round(0.8909090909, 3)` is
     # 0.891, which is ABOVE the value it renders, so the rendering fails an
     # untouched structural layer by 0.00009. Both numbers are in the bar,
-    # byte-pinned by `SHIP_BAR_SHA256`; the verdict records which one it used.
+    # whose semantic half is byte-pinned by `SHIP_BAR_CORE_SHA256` and whose
+    # structural half is re-derived above; the verdict records which one it used.
     floor = float(bar()["structural_floor_detail"]["recall"])
     published = float(bar()["structural_floor"])
     assert recorded["floor"] == floor
@@ -321,7 +342,21 @@ def test_the_verdict_was_taken_against_the_bar_as_it_was_recorded() -> None:
     not against a copy that was different at the time.
     """
     judged = check()["judged_against"]
-    assert judged["sha256"] == sha256_of(SHIP_BAR) == SHIP_BAR_SHA256
+    # The bar's bytes moved once after this verdict was taken, to record the
+    # structural corpus's version digest beside its path; the file discloses
+    # that in `structural_floor_rederived.version_pin_added`. So the verdict's
+    # recorded digest is held to what the bar was AT THE VERDICT, and the claim
+    # that the verdict still stands is carried by the half of the bar that has
+    # never moved: `SHIP_BAR_CORE_SHA256` over the semantic registration, which
+    # is the side this verdict was decided on. The classifier failed the
+    # semantic side by 0.367 against a required 0.900, so nothing about the
+    # structural pin could reach the outcome, and `structural_floor_rederived.
+    # verdict_unaffected` in the bar makes that argument in full.
+    assert judged["sha256"] == SHIP_BAR_SHA256_AT_VERDICT
+    assert _core_digest(bar()) == SHIP_BAR_CORE_SHA256, (
+        "the semantic registration this verdict was judged against has changed; the "
+        "verdict no longer describes a comparison anyone can reproduce"
+    )
     assert judged["recorded_utc"] == bar()["recorded_utc"]
     assert judged["our_minimum"] == float(bar()["our_minimum"])
     assert judged["structural_floor"] == float(bar()["structural_floor"])

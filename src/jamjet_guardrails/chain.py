@@ -31,7 +31,43 @@ from jamjet_guardrails.types import (
 # length. A returned claim is not merely unbounded, it is chosen after the
 # detector has seen the content: a class name or a finding type can BE the
 # content, so bounding one only shortens the leak. See `_verified`.
-_ERROR_TYPE_LIMIT = 200
+#
+# Renamed from `_ERROR_TYPE_LIMIT` because it stopped being about error text.
+# `_identity_of` now REFUSES a declared name or version longer than this, which
+# is a different operation from truncating one. `Provenance.detector` is copied
+# into every verdict a guardrail ever produces and was bounded only where it
+# reached a message, so a two-million-character name cost one bounded error
+# string and an unbounded field in every audit record of every run: the larger
+# of the two by the number of verdicts. Truncating the stored copy was
+# rejected. A truncated name is a record that does not say what the guardrail
+# declared, and `_verified` compares a returned `provenance.detector` against
+# this copy, so an honest guardrail returning its own full name would then be
+# recorded as having lied. Refusing at construction keeps the record exact and
+# puts the failure at the mistake.
+_CALLER_STRING_LIMIT = 200
+
+# The directions a `Context` can actually carry. Listed literally and
+# deliberately NOT derived from `get_args(Direction)`, for the reason `_KINDS`
+# and `_DECISIONS` give below and `types.py` gives at its own copy.
+#
+# One value, declared in FIVE places in this package, and the count is written
+# here because the first draft of this comment said three and a maintainer
+# following it would have missed two:
+#
+#   chain._RUNNABLE_DIRECTIONS          this line
+#   detectors._RUNNABLE_DIRECTIONS      refuses a guardrail declaring none of it
+#   types._DIRECTIONS                   refuses a Context outside it
+#   authoring._RUNNABLE                 refuses a PatternGuardrail outside it
+#   eval.corpus._DIRECTIONS             refuses a corpus row outside it
+#
+# This module cannot import any of them, because `detectors/__init__.py` imports
+# this module and the rest import `types`. A re-declared value drifts and every
+# side reads correctly alone, so `tests/test_chain_identity.py` holds all five
+# to `get_args(Direction)` and to each other. The direction that fails OPEN is
+# `types._DIRECTIONS` growing alone: a `Context` would then carry a direction no
+# guardrail declares, every guardrail would be skipped, and the run would report
+# allow over content nothing checked.
+_RUNNABLE_DIRECTIONS: frozenset[str] = frozenset({"input", "output"})
 
 # The two kinds and the three decisions, as this module's OWN string objects.
 # Every comparison against a caller-supplied value puts one of these on the left
@@ -48,7 +84,7 @@ _DECISIONS: tuple[Decision, ...] = ("allow", "redact", "deny")
 
 
 def _bounded_str(value: str) -> str:
-    """Truncate one caller-supplied string to `_ERROR_TYPE_LIMIT`.
+    """Truncate one caller-supplied string to `_CALLER_STRING_LIMIT`.
 
     Shared by `_bounded`, directly below, and by `_Identity`: an exception's
     type name and a guardrail's declared name are two strings with the same
@@ -57,7 +93,7 @@ def _bounded_str(value: str) -> str:
     one message produced a 4,000,073-character `error`, which every log, trace
     and database column downstream of a `ChainResult` then pays for.
     """
-    return value[:_ERROR_TYPE_LIMIT]
+    return value[:_CALLER_STRING_LIMIT]
 
 
 def _bounded(exc: BaseException) -> str:
@@ -160,6 +196,22 @@ def _identity_of(guardrail: Guardrail, position: int) -> _Identity:
     comparison an `isinstance` check admits. A subclass is not acceptable here
     for the same reason: the whole attack class is subclasses with lying
     dunders, and the exact type is the only property that cannot be faked.
+
+    Six refusals. The last one, an inert ``directions``, is the fifth refusal
+    ``detectors.build`` already made on the registry door while this
+    constructor, which is public and reachable without the registry, did not:
+    such a guardrail is skipped in every context, so it is configured, silent,
+    and indistinguishable from a working check in every artifact this library
+    emits.
+
+    The length refusal has NO registry parity, and saying otherwise would be a
+    contract that lies: ``detectors.build`` makes no length check. A ``name`` or
+    ``version`` above ``_CALLER_STRING_LIMIT`` characters is refused here, and
+    refused rather than truncated, because both are copied into the
+    ``Provenance`` of every verdict this guardrail produces and were bounded
+    only where they reached a message. ``authoring.PatternGuardrail`` holds the
+    same ceiling at ITS constructor, so a check built through the documented
+    path fails where the mistake is rather than at the chain.
     """
     try:
         # One read each, into a local. Every check and every stored copy below
@@ -181,6 +233,31 @@ def _identity_of(guardrail: Guardrail, position: int) -> _Identity:
         raise GuardrailUnavailableError(_refusal(position, "declares a name that is not a str"))
     if type(version) is not str:
         raise GuardrailUnavailableError(_refusal(position, "declares a version that is not a str"))
+    # Length, and refused rather than truncated. Both of these are copied into
+    # the `Provenance` of every verdict this guardrail ever produces, and they
+    # were bounded only on the path into an error MESSAGE: `named` below is a
+    # bounded copy for messages, and `name` itself went into the record whole.
+    # So a guardrail declaring a two-million-character name produced a bounded
+    # error string and an unbounded `provenance.detector` in every verdict of
+    # every run, which every log, trace and database column downstream then
+    # pays for once per verdict rather than once per failure.
+    #
+    # A real detector name is a short registry slug and a real version is a
+    # semver string, so the ceiling is generous by three orders of magnitude
+    # against anything legitimate. Truncating instead would put a name the
+    # guardrail did not declare into the record, and `_verified` grades a
+    # returned `provenance.detector` against this copy, so the honest guardrail
+    # returning its own full name would be the one recorded as lying.
+    for field, value in (("name", name), ("version", version)):
+        if len(value) > _CALLER_STRING_LIMIT:
+            raise GuardrailUnavailableError(
+                _refusal(
+                    position,
+                    f"declares a {field} of {len(value)} characters, above the "
+                    f"{_CALLER_STRING_LIMIT}-character ceiling every caller-supplied "
+                    "string in an audit record is held to",
+                )
+            )
     # `str.__eq__(ours, theirs)`, not `ours == theirs`. The unbound method is
     # `str`'s own comparison, so a subclass's `__eq__` is never consulted and
     # reflected priority never applies; it returns NotImplemented rather than
@@ -196,18 +273,68 @@ def _identity_of(guardrail: Guardrail, position: int) -> _Identity:
         raise GuardrailUnavailableError(
             _refusal(position, f"declares a kind that is not one of {list(_KINDS)}")
         )
+    # Frozen here, over exact strings only. A `directions` that is a generator,
+    # that changes between construction and run, or whose `__contains__`
+    # answers for itself is no longer consulted at all: the chain runs the
+    # guardrails its configuration named, decided against a set this module
+    # built. A member that is not an exact `str` is dropped rather than kept,
+    # because it could not name a direction a `Context` carries and a lying one
+    # would claim to name all of them.
+    directions = frozenset(str(d) for d in declared_directions if type(d) is str)
+    # The fifth refusal `detectors.build` already makes, made here too, because
+    # `GuardrailChain` is public and reachable without the registry: the chain's
+    # own docstring tells a caller who wants no checks to construct
+    # `GuardrailChain([])` directly, so direct construction is a supported door
+    # and it was the unguarded one.
+    #
+    # A guardrail declaring `frozenset()`, or `{"inptu"}`, or `{"stream"}`, is
+    # inert: `run` skips it in every context, so it is configured, silent, and
+    # indistinguishable from a working check in every artifact the library
+    # produces. Beside a live detector it makes the chain quieter than the
+    # caller asked for while raising nothing to say so, and alone it produces
+    # exactly the output `build_chain` refuses to build from an empty list:
+    # allow, content untouched, no verdicts.
+    #
+    # Tested for INTERSECTION with `_RUNNABLE_DIRECTIONS` rather than for
+    # emptiness. `{"inptu"}` is a non-empty set that no `Context` can ever
+    # match, which is the same silence reached by a typo instead of by an
+    # omission, and an emptiness test passes it.
+    if not (directions & _RUNNABLE_DIRECTIONS):
+        # COUNTED, never quoted, and this line is the second draft. The first
+        # interpolated `sorted(directions)` whole, which is the guardrail's own
+        # declared data and therefore the exact class of string `_bounded_str`
+        # exists to keep out of a message: a guardrail declaring one
+        # two-million-character direction produced a two-million-character
+        # refusal, and fifty of them produced five million. Worse, a
+        # `directions` property is caller code that runs after the caller has
+        # content in hand, so a declared direction can BE the content, and a
+        # refusal quoting it puts the content into whatever log the
+        # configuration seam writes.
+        #
+        # `_refusal`'s own docstring already said this and the clause broke it:
+        # the guardrail is named by POSITION "because the thing being refused
+        # is precisely the guardrail's account of itself". Reporting how many
+        # directions were declared says everything a reader needs, and the
+        # expected set is this module's own literal.
+        raise GuardrailUnavailableError(
+            _refusal(
+                position,
+                f"declares {len(directions)} direction(s), none of which it can run in; "
+                f"every context would skip it, so it would be configured and silent. "
+                f"Expected at least one of {sorted(_RUNNABLE_DIRECTIONS)}",
+            )
+        )
     return _Identity(
         name=str(name),
         version=str(version),
         kind=checked_kind,
-        # Frozen here, over exact strings only. A `directions` that is a
-        # generator, that changes between construction and run, or whose
-        # `__contains__` answers for itself is no longer consulted at all: the
-        # chain runs the guardrails its configuration named, decided against a
-        # set this module built. A member that is not an exact `str` is dropped
-        # rather than kept, because it could not name a direction a `Context`
-        # carries and a lying one would claim to name all of them.
-        directions=frozenset(str(d) for d in declared_directions if type(d) is str),
+        directions=directions,
+        # Equal to `name` by construction now that the length refusal above
+        # runs first, and kept anyway. The bound belongs where a caller-supplied
+        # string enters a message, so that this module's message path stays
+        # correct on its own terms rather than only in combination with a rule
+        # enforced twenty lines earlier. `_spans_of` keeps its own bounds check
+        # for the same reason and records it in the same words.
         named=_bounded_str(str(name)),
     )
 
@@ -437,7 +564,7 @@ def _verified(returned: object, identity: _Identity, digest: str, content: str) 
                 digest,
                 f"guardrail {identity.named!r} returned a finding whose type is not a str",
             )
-        if len(finding_type) > _ERROR_TYPE_LIMIT:
+        if len(finding_type) > _CALLER_STRING_LIMIT:
             # `finding.type` is the one detector-chosen string this library lets
             # reach the rewrite AT ALL, by design: a redaction placeholder has to
             # NAME what claimed the region, so `[REDACTED:EMAIL]` is `EMAIL` read
@@ -457,7 +584,7 @@ def _verified(returned: object, identity: _Identity, digest: str, content: str) 
                 identity,
                 digest,
                 f"guardrail {identity.named!r} returned a finding whose type "
-                f"exceeds {_ERROR_TYPE_LIMIT} characters",
+                f"exceeds {_CALLER_STRING_LIMIT} characters",
             )
         if confidence is not None and (
             type(confidence) not in (float, int) or not math.isfinite(confidence)
@@ -517,6 +644,54 @@ def _verified(returned: object, identity: _Identity, digest: str, content: str) 
                 confidence=rebuilt_confidence,
             )
         )
+
+    # A `redact` the chain cannot LOCATE, graded here rather than left to
+    # `_spans_of`. Both shapes reach this point from a detector that looks
+    # entirely well behaved from every other angle: `Verdict` allows a finding
+    # with no span, because a classifier emits none, and nothing above requires
+    # a redact to carry any findings at all. So
+    #
+    #     Verdict("redact", "REDACTED", [], prov, saw(content))
+    #     Verdict("redact", "REDACTED", [Finding(type="TOK")], prov, saw(content))
+    #
+    # both cleared every check in this function and then raised
+    # `GuardrailChainError` out of `_spans_of`, which sits outside `run`'s try
+    # by design. That was the one remaining shape in which a detector took a
+    # whole run down: no `ChainResult`, no audit record, and no verdict for any
+    # guardrail that had already run, over a contract violation no worse than
+    # the dozen above that each become a deny.
+    #
+    # The argument for leaving it a raise was that `_spans_of`'s errors are
+    # assertions about this library's own consistency rather than detector
+    # failures, and swallowing a library bug in a verdict would bury it. That
+    # argument is sound and it did not apply here: both shapes are reachable
+    # from an ordinary `Guardrail` implementation, which makes them detector
+    # contract violations, and they are now refused where every other one is.
+    # `_spans_of` keeps its raises, which are unreachable from `run` once these
+    # two run first, so the assertion stays an assertion.
+    #
+    # A deny is strictly safer than the raise it replaces. The content is not
+    # forwarded either way, because the caller-facing contract says any
+    # exception out of `run` is a deny; what the deny adds is the audit record
+    # naming which guardrail broke its contract and how, which is the record
+    # this library exists to produce.
+    if decision == "redact":
+        if not rebuilt:
+            return _synthesised_deny(
+                identity,
+                digest,
+                f"guardrail {identity.named!r} returned a redact with no findings; the "
+                "chain rewrites from spans, so it has nothing to place and would report "
+                "a redact over content nothing changed",
+            )
+        if any(finding.span is None for finding in rebuilt):
+            return _synthesised_deny(
+                identity,
+                digest,
+                f"guardrail {identity.named!r} returned a redact whose finding carries "
+                "no span; the chain rewrites from spans, so it cannot apply this "
+                "redaction",
+            )
 
     try:
         return Verdict(
@@ -599,7 +774,7 @@ class GuardrailChain:
     region it replaces, so the type is read straight out of the finding that
     redacted it -- that is what ``EMAIL`` in ``[REDACTED:EMAIL]`` is. What is
     bounded is its length, not its content: a type longer than
-    ``_ERROR_TYPE_LIMIT`` characters is a contract violation, refused like any
+    ``_CALLER_STRING_LIMIT`` characters is a contract violation, refused like any
     other over-long caller string in this module, because unbounded it stops
     being a label and becomes a channel -- a finding whose type IS the content
     it redacted reproduces that content, verbatim, inside a string this
@@ -665,15 +840,17 @@ class GuardrailChain:
     the false one the verdict returned, and an ``error`` naming which clause
     broke and nothing else. See ``_verified``.
 
-    ``run`` raises in one case: ``GuardrailChainError`` if a guardrail returns a
-    redact the chain cannot LOCATE, meaning no findings or a finding without a
-    span. The chain rewrites from spans, so an unlocatable redact would leave
-    the decision at ``redact`` over a string nothing rewrote, telling the caller
-    to forward content that was never rewritten. Nothing else abandons a run. A
-    malformed or out-of-range span does not reach it, because ``_verified``
-    checks every finding's span over every decision first; nor does a redact
-    carrying no content, which is a rebuild ``_verified`` refuses and therefore
-    a synthesised deny like any other.
+    **No detector behaviour abandons a run.** A redact the chain cannot LOCATE,
+    meaning no findings or a finding without a span, used to raise
+    ``GuardrailChainError`` out of ``run`` from ``_spans_of``, which was the one
+    remaining shape in which one misbehaving detector cost the whole run its
+    audit record. Both shapes are reachable from an ordinary ``Guardrail``
+    implementation, because ``Verdict`` allows a finding with no span and
+    nothing required a redact to carry findings at all, so they are detector
+    contract violations and ``_verified`` now turns them into a synthesised
+    ``deny`` like every other one. ``_spans_of`` keeps the same refusals, which
+    are unreachable through ``run`` and remain as assertions for a direct
+    caller.
 
     **A caller must treat any exception out of ``run`` as a deny.** That case
     abandons the run, so there is no ``ChainResult`` and no audit record, which
@@ -683,7 +860,10 @@ class GuardrailChain:
 
     Raises ``GuardrailUnavailableError`` from ``__init__``, not from ``run``,
     for a guardrail that cannot declare a usable ``name``, ``version`` or
-    ``kind``, or whose ``directions`` cannot be read. Nothing has been checked
+    ``kind``; whose ``directions`` cannot be read; whose ``directions`` read
+    perfectly well and contain none the runtime carries, which makes it inert;
+    or whose declared ``name`` or ``version`` exceeds the ceiling every
+    caller-supplied string in an audit record is held to. Nothing has been checked
     at that point and nothing has been allowed, so refusing to build is the
     cheapest possible failure and the only one that arrives before a caller has
     content in hand.
@@ -753,6 +933,16 @@ class GuardrailChain:
         a redact the chain cannot perform, and performing it partially or not at
         all while still reporting ``redact`` tells the caller to forward a string
         that was not rewritten.
+
+        None of them is reachable through ``run`` any more. ``_verified`` grades
+        all four conditions first and turns each into a synthesised ``deny``, so
+        what survives here are assertions about this library's own consistency,
+        which is what they were always described as and what only two of them
+        actually were. They stay because this method is callable directly
+        against any ``Verdict`` a test or a future caller constructs, and
+        because raising is the correct answer for a caller who has bypassed the
+        grading: the alternative, returning no spans, would leave the decision
+        at ``redact`` over content nothing rewrote.
 
         The bounds check is not defensive padding. Spans arrive from a
         ``Guardrail`` implementation, which is caller-supplied code, and
