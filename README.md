@@ -37,6 +37,8 @@ ones run where.
 pip install jamjet-guardrails
 ```
 
+Coming from llm-guard, archived in July 2026? [docs/migrating-from-llm-guard.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/docs/migrating-from-llm-guard.md) maps every scanner in its final release onto this library, one row each, marked mapped, partial or gap.
+
 ## What it catches
 
 | Name | Catches | Looks like |
