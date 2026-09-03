@@ -791,64 +791,64 @@
       "detector_version": "0.1.0",
       "corpus_name": "secrets/in-repo",
       "corpus_source": "in-repo",
-      "corpus_version": "e9e0ed70dc37",
-      "cases": 39,
-      "precision": 0.9565,
-      "recall": 0.88,
-      "f1": 0.9167,
-      "true_positives": 22,
-      "false_positives": 1,
-      "false_negatives": 3,
-      "decision_mismatches": 4,
+      "corpus_version": "337e35f03cad",
+      "cases": 160,
+      "precision": 0.8807,
+      "recall": 0.8727,
+      "f1": 0.8767,
+      "true_positives": 96,
+      "false_positives": 13,
+      "false_negatives": 14,
+      "decision_mismatches": 8,
       "per_type": {
         "ANTHROPIC_KEY": {
-          "precision": 1.0,
-          "recall": 1.0,
-          "true_positives": 2,
-          "false_positives": 0,
-          "false_negatives": 0
+          "precision": 0.9,
+          "recall": 0.8182,
+          "true_positives": 9,
+          "false_positives": 1,
+          "false_negatives": 2
         },
         "AWS_ACCESS_KEY": {
-          "precision": 1.0,
+          "precision": 0.96,
           "recall": 1.0,
-          "true_positives": 6,
-          "false_positives": 0,
-          "false_negatives": 0
-        },
-        "GITHUB_TOKEN": {
-          "precision": 1.0,
-          "recall": 0.75,
-          "true_positives": 3,
-          "false_positives": 0,
-          "false_negatives": 1
-        },
-        "JWT": {
-          "precision": 1.0,
-          "recall": 0.6667,
-          "true_positives": 2,
-          "false_positives": 0,
-          "false_negatives": 1
-        },
-        "OPENAI_KEY": {
-          "precision": 1.0,
-          "recall": 1.0,
-          "true_positives": 3,
-          "false_positives": 0,
-          "false_negatives": 0
-        },
-        "PRIVATE_KEY": {
-          "precision": 0.75,
-          "recall": 1.0,
-          "true_positives": 3,
+          "true_positives": 24,
           "false_positives": 1,
           "false_negatives": 0
         },
-        "SLACK_TOKEN": {
-          "precision": 1.0,
-          "recall": 0.75,
-          "true_positives": 3,
-          "false_positives": 0,
+        "GITHUB_TOKEN": {
+          "precision": 0.85,
+          "recall": 0.7727,
+          "true_positives": 17,
+          "false_positives": 3,
+          "false_negatives": 5
+        },
+        "JWT": {
+          "precision": 0.8462,
+          "recall": 0.8462,
+          "true_positives": 11,
+          "false_positives": 2,
+          "false_negatives": 2
+        },
+        "OPENAI_KEY": {
+          "precision": 0.8571,
+          "recall": 0.9231,
+          "true_positives": 12,
+          "false_positives": 2,
           "false_negatives": 1
+        },
+        "PRIVATE_KEY": {
+          "precision": 0.7857,
+          "recall": 1.0,
+          "true_positives": 11,
+          "false_positives": 3,
+          "false_negatives": 0
+        },
+        "SLACK_TOKEN": {
+          "precision": 0.9231,
+          "recall": 0.75,
+          "true_positives": 12,
+          "false_positives": 1,
+          "false_negatives": 4
         }
       },
       "failures": [
@@ -877,6 +877,30 @@
           "predicted": "redact"
         },
         {
+          "case_id": "sec-0109",
+          "kind": "decision_mismatch",
+          "expected": "redact",
+          "predicted": "allow"
+        },
+        {
+          "case_id": "sec-0110",
+          "kind": "decision_mismatch",
+          "expected": "redact",
+          "predicted": "allow"
+        },
+        {
+          "case_id": "sec-0158",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "redact"
+        },
+        {
+          "case_id": "sec-0159",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "redact"
+        },
+        {
           "case_id": "sec-0020",
           "kind": "false_negative",
           "expected": "GITHUB_TOKEN@(4, 97)",
@@ -895,10 +919,148 @@
           "predicted": "nothing"
         },
         {
+          "case_id": "sec-0090",
+          "kind": "false_negative",
+          "expected": "GITHUB_TOKEN@(0, 40)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "sec-0091",
+          "kind": "false_negative",
+          "expected": "SLACK_TOKEN@(0, 45)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "sec-0091",
+          "kind": "false_negative",
+          "expected": "SLACK_TOKEN@(45, 90)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "sec-0092",
+          "kind": "false_negative",
+          "expected": "OPENAI_KEY@(0, 35)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "sec-0093",
+          "kind": "false_negative",
+          "expected": "ANTHROPIC_KEY@(0, 45)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "sec-0093",
+          "kind": "false_negative",
+          "expected": "ANTHROPIC_KEY@(45, 90)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "sec-0094",
+          "kind": "false_negative",
+          "expected": "JWT@(0, 183)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "sec-0095",
+          "kind": "false_negative",
+          "expected": "GITHUB_TOKEN@(6, 50)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "sec-0107",
+          "kind": "false_negative",
+          "expected": "GITHUB_TOKEN@(0, 40)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "sec-0109",
+          "kind": "false_negative",
+          "expected": "GITHUB_TOKEN@(12, 106)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "sec-0110",
+          "kind": "false_negative",
+          "expected": "SLACK_TOKEN@(14, 69)",
+          "predicted": "nothing"
+        },
+        {
           "case_id": "sec-0034",
           "kind": "false_positive",
           "expected": "nothing",
           "predicted": "PRIVATE_KEY@(14, 41)"
+        },
+        {
+          "case_id": "sec-0090",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "GITHUB_TOKEN@(0, 43)"
+        },
+        {
+          "case_id": "sec-0091",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "SLACK_TOKEN@(0, 90)"
+        },
+        {
+          "case_id": "sec-0092",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "OPENAI_KEY@(0, 37)"
+        },
+        {
+          "case_id": "sec-0093",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "ANTHROPIC_KEY@(0, 90)"
+        },
+        {
+          "case_id": "sec-0094",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "JWT@(0, 219)"
+        },
+        {
+          "case_id": "sec-0094",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "JWT@(37, 322)"
+        },
+        {
+          "case_id": "sec-0095",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "GITHUB_TOKEN@(6, 53)"
+        },
+        {
+          "case_id": "sec-0098",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "AWS_ACCESS_KEY@(0, 20)"
+        },
+        {
+          "case_id": "sec-0099",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "OPENAI_KEY@(17, 52)"
+        },
+        {
+          "case_id": "sec-0107",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "GITHUB_TOKEN@(0, 60)"
+        },
+        {
+          "case_id": "sec-0158",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "PRIVATE_KEY@(9, 36)"
+        },
+        {
+          "case_id": "sec-0159",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "PRIVATE_KEY@(36, 66)"
         }
       ]
     }

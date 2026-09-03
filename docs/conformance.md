@@ -439,7 +439,9 @@ scoring that pairing would publish a number for a run that never happens.
 ## The injection-structural constraint
 
 `pii` and `secrets` are patterns over what a document says, and the sections above are enough to port them:
-their type names are the labels their corpora use, and their bar is the score on those corpora. This check
+their type names are the labels their corpora use, and their bar is the score on those corpora. The
+section on `secrets` below adds no requirement to that; it discloses which cases sit behind that check's
+published score. This check
 constrains how a document is ENCODED rather than what it says, and reproducing its numbers is not the same
 as reproducing it. 33 of its 99 `allow` cases stop allowing when one of the exemptions or exclusions below
 is switched off, and neither an exemption nor an exclusion is visible in a precision figure.
@@ -587,6 +589,127 @@ otherwise assume closed, pulled out because they are the ones that surprise.
   measured encoder for each. **No minimum cost for getting a payload past this
   check is published**, and the absence is deliberate: a minimum is a claim
   about every possible encoding, and a measurement only ever exhibits one.
+
+## The secrets constraint
+
+`secrets` matches credentials on their ISSUER PREFIX and scores no entropy at
+all. That is the whole of its reach, and it is the first thing a port needs:
+this row is reproduced by reproducing the pattern table, not by finding keys. A
+credential family the table has no shape for is invisible to this check however
+random it looks, and three such families are in the corpus below costing recall.
+
+Its `kind` is `constraint`, so the invariant above applies unchanged: no finding
+it produces carries a `confidence`. Its corpus is
+`corpora/secrets/in-repo.jsonl`, and a corpus directory name is the name the
+guardrail is built under, by the rule at the end of this document.
+
+**The asymmetry the section above states applies here too.** A case labelled
+`allow` binds a port in both directions, because denying it is a false positive
+and a wrong decision, so it is contract. A case labelled `redact` that this
+implementation allows binds a port in one direction only: a port that redacts it
+matches the label better than this implementation does, and conforms by scoring
+higher.
+
+### Seven finding types
+
+`ANTHROPIC_KEY`, `AWS_ACCESS_KEY`, `GITHUB_TOKEN`, `JWT`, `OPENAI_KEY`,
+`PRIVATE_KEY` and `SLACK_TOKEN`. Each is a label the corpus uses, so each is
+what a prediction is matched against by name.
+
+### A span covers the credential, not the run it sits in
+
+Every span is half-open over code points, as every span in this document is.
+Two credentials with nothing between them are TWO findings over two spans, not
+one finding over the run, and a credential butted against a PEM envelope is two
+placeholders rather than one, because `_merge` collapses spans that overlap and
+leaves spans that merely touch alone. `sec-0100` is the worked pair: an AWS
+access key id joined directly to a `-----BEGIN PRIVATE KEY-----` block, labelled
+`AWS_ACCESS_KEY` over the first twenty characters and `PRIVATE_KEY` over the
+block, and this implementation produces exactly that.
+
+That is what the corpus asks for everywhere. It is not what this implementation
+always delivers, and the next subsection is the list.
+
+### Where this implementation falls short of its own corpus
+
+Neither published figure is 1.0 and the gap is deliberate. Every case behind it
+sits in the corpus labelled with what SHOULD happen, so each one costs precision
+or recall rather than scoring as a success. Eight classes, one input each. The
+first five are span arithmetic and none of them leaks: the credential is
+redacted in full and the AUDIT RECORD is what is wrong. The last three change
+what reaches the caller.
+
+- **A greedy body runs on into the next credential's prefix.** `GITHUB_TOKEN`
+  and `OPENAI_KEY` bodies stop at the first character outside their character
+  class, and where a second credential of the same family is joined directly on
+  the end that character is a few positions INSIDE the second one's prefix. In
+  `sec-0090`, `ghp_` and a 36-character body twice over with nothing between
+  them, the corpus labels `[0, 40)` and `[40, 80)` and this implementation
+  reports `[0, 43)` and `[40, 80)`: the first span carries three characters of
+  the second token's prefix. `sec-0092` is the same defect on `OPENAI_KEY` at
+  two characters, `sec-0095` on a same-shape decoy at three, and `sec-0107` is
+  the widest of them, a `ghs_` token whose body swallows an AWS access key id
+  joined to its end and reports `[0, 60)` where the corpus labels `[0, 40)`.
+
+- **Two credentials of one type joined directly are reported as one finding.**
+  Where the body class can contain the whole of the second credential, which is
+  true of `SLACK_TOKEN`'s `[A-Za-z0-9-]` and of `ANTHROPIC_KEY`'s
+  `[A-Za-z0-9\-_]`, the first match covers both and `_scan` drops the second as
+  contained in one already kept. `sec-0091` is two `xoxb-` tokens with nothing
+  between them, labelled `[0, 45)` and `[45, 90)` and reported as a single
+  `SLACK_TOKEN` over `[0, 90)`; `sec-0093` is the same on `sk-ant-api03-`. Both
+  redact correctly. What is lost is the COUNT: an audit record that says one
+  credential leaked where two did.
+
+- **Two JWTs joined directly produce three findings across the join.** A JWT's
+  own payload segment begins `eyJ`, so a run of two tokens offers start
+  positions the bounded three-segment pattern can satisfy in more ways than one.
+  `sec-0094` labels `[0, 183)` and `[183, 366)` and this implementation reports
+  `[0, 219)`, `[37, 322)` and `[183, 366)`.
+
+- **A decoy sharing a fixed-length prefix produces a phantom key.**
+  `AWS_ACCESS_KEY` is `AKIA` or `ASIA` plus exactly sixteen characters and has
+  no word boundary on either side, deliberately, because a boundary anchor is
+  what lets one character of padding hide a whole key. The cost is the other
+  direction: in `sec-0098`, `AKIASHORTAKIAIOSFODNN7EXAMPLE`, the decoy's prefix
+  plus the first eleven characters of the real key is itself a well-formed
+  match, so this implementation reports two keys, `[0, 20)` and `[9, 29)`, where
+  the corpus labels the one real key at `[9, 29)`.
+
+- **An Anthropic key whose own body contains `sk-` is also reported as an
+  OpenAI key.** `sec-0099`, `sk-ant-api03-sk-` plus 32 alphanumerics, is one
+  credential and gets two findings, `ANTHROPIC_KEY` over `[4, 52)` and
+  `OPENAI_KEY` over `[17, 52)`. They share the right edge, so they merge into
+  one placeholder naming both types and nothing is under-redacted; the second
+  finding is a false positive in the record and not in the output.
+
+- **A credential family the table has no shape for is a complete miss.** Three
+  are in the corpus, labelled `redact` so that they cost recall rather than
+  passing as clean text: `github_pat_` fine-grained personal access tokens,
+  which are GitHub's modern default (`sec-0020`, `sec-0109`), `xapp-` Slack
+  app-level tokens (`sec-0021`), and `xoxe-` Slack refresh tokens (`sec-0110`).
+  None of them is close enough to a pattern here to be caught by accident. A
+  port that matches them scores higher than this implementation and conforms.
+
+- **A JWT over the header bound is a complete miss, not a shorter match.** The
+  three segments are bounded at 4096, 65536 and 8192 characters, which is what
+  keeps the scan linear on adversarial input. A token past any of the three
+  matches nothing at all. `sec-0022` carries a header of 4137 characters, past
+  the 4096 bound and longer than the two-certificate `x5c` chain that bound was
+  measured against, and it allows.
+
+- **A PEM header in prose is redacted on its own.** The private-key walk anchors
+  on the header and always claims it, so a sentence that merely names
+  `-----BEGIN PRIVATE KEY-----` produces a `PRIVATE_KEY` finding over those 27
+  characters and a `redact` decision. `sec-0034`, `sec-0158` and `sec-0159` are
+  labelled `allow` and score as three of this corpus's false positives. Nothing
+  is disclosed by the redaction, since the redacted text is the public marker
+  itself, and the behaviour is kept rather than fixed because the alternative
+  fails open: a header whose body this walk does not accept would then produce
+  no finding and no signal at all.
+
+`corpora/NOTICE.md` names every one of these cases by id and states what grew
+when the corpus did.
 
 ## The rules constraint
 

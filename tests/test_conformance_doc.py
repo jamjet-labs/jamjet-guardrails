@@ -772,6 +772,31 @@ def test_the_count_of_allow_cases_riding_on_an_exemption_is_the_measured_union()
     )
 
 
+SECRETS = "## The secrets constraint"
+
+
+def test_the_secrets_section_lists_every_type_that_check_can_produce() -> None:
+    """Derived from `SECRET_TYPES`, for the reason the injection version gives.
+
+    A type is contract by the rule this document already states: a finding
+    `type` has to match the label the corpus uses, because that is what a
+    prediction is matched against. The heading counts them, so a type added to
+    the check and left out of here makes the document understate the check and
+    the heading wrong at the same time, and both directions matter.
+    """
+    from jamjet_guardrails.detectors.secrets import SECRET_TYPES
+
+    documented = set(
+        re.findall(r"`([A-Z][A-Z_]+)`", _subsection(SECRETS, "### Seven finding types"))
+    )
+    assert documented == set(SECRET_TYPES), (
+        f"the document lists {sorted(documented)}; the check produces {sorted(SECRET_TYPES)}"
+    )
+    assert len(SECRET_TYPES) == 7, (
+        f"the heading says seven finding types and the check declares {len(SECRET_TYPES)}"
+    )
+
+
 def test_the_conformance_document_prints_the_fixture_the_row_was_measured_under() -> None:
     """A configuration quoted in prose is a claim, and this one is the whole
     meaning of the rules row. A fixture that changed without this section

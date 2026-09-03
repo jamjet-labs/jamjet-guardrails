@@ -33,7 +33,7 @@ so in-repo and third-party numbers can never be merged into one score.
 
 ## First-party corpora
 
-The three `in-repo` files were written for this repository and are covered by
+The four `in-repo` files were written for this repository and are covered by
 its own Apache-2.0 licence. Every value in them is invented or is a published test
 value: `AKIAIOSFODNN7EXAMPLE` is AWS's own documentation example, `4111 1111
 1111 1111` is the universally published test PAN, and `example.com` and
@@ -41,14 +41,14 @@ value: `AKIAIOSFODNN7EXAMPLE` is AWS's own documentation example, `4111 1111
 internationalised addresses use that same `example` label under a Cyrillic and a
 Devanagari TLD.
 
-No real credential and no real person's data is in any of the three. The GitHub,
+No real credential and no real person's data is in any of the four. The GitHub,
 OpenAI, Anthropic and Slack tokens carry `EXAMPLEONLY` or `notarealtoken` inside
 their own bodies; the JWTs are a standard HS256 header with an invented payload
 and a signature of random bytes, so they verify against nothing; and the PEM
 bodies are base64 of random bytes rather than DER, so no tool can load one as a
 key.
 
-That sentence used to stop at these three files, and two credential-shaped
+That sentence used to stop at these corpus files, and two credential-shaped
 strings outside them were covered by nothing: a canonical Slack bot token with a
 random 24-character secret, and a 36-character GitHub token body, each written
 into a docstring in `src/` to show a defect that string had caused. Both shipped
@@ -115,6 +115,105 @@ labelled `redact` with a `LENGTH_LIMIT` finding at `[2000, 2001]`.
 the numbers depend on the rules, so a corpus somebody else wrote would measure
 their rules through our engine. The row is self-graded in the same way the
 secrets row is.
+
+### `corpora/secrets/in-repo.jsonl`
+
+Written for this repository and covered by its Apache-2.0 licence. Every
+credential in it is invented or is a published example value, and the rule the
+file follows is that a reader must be able to tell that from the value itself.
+The GitHub, OpenAI, Anthropic and Slack bodies spell `EXAMPLEONLY`,
+`EXAMPLE_ONLY`, `notarealtoken` or `notarealkey` inside themselves, which is the
+repository-wide rule
+`tests/test_packaging.py::test_no_credential_shaped_literal_in_the_repository_reads_as_a_live_one`
+enforces. Every AWS access key id written into the file is either Amazon's own
+published `AKIAIOSFODNN7EXAMPLE` and `ASIAIOSFODNN7EXAMPLE` or an `AKIA` or
+`ASIA` prefix over a body spelling `EXAMPLEONLY`; where this check draws a span
+across the join between one of those and its neighbour, as it does in
+`sec-0098`, that span is a fragment of them and not some third value. The JWTs
+carry a standard HS256 header and an invented payload over a signature of random
+bytes, so they verify against nothing, and the PEM bodies are base64 of random
+bytes rather than DER, so no tool can load one as a key.
+
+**It grew from 39 cases to 160 on 2026-09-03, and the published figures moved
+with it.** The 39 were 23 `redact` and 16 `allow`, all of them on the `output`
+direction; the 160 are 95 `redact` and 65 `allow`, 112 `output` and 48 `input`.
+Precision went from 0.957 to 0.881 and recall from 0.880 to 0.873, over 4 wrong
+decisions before and 8 now. **Nothing about the detector changed.** The old
+figures were measured on 39 examples, which is too few to carry a published
+number, and the classes the new ones are measured over are the ones a
+credential detector is actually wrong about:
+
+- two credentials of one type joined directly, with nothing between them, for
+  all six of the prefix families;
+- a decoy of the same shape immediately in front of a real credential, both
+  where the decoy is itself well-formed and where it is not;
+- a credential butted against a PEM envelope on either side, and a credential
+  adjacent to an email address or to a card number, which is where a chain's
+  merged placeholder gets exercised;
+- every declared type at several body lengths, from each pattern's own minimum
+  upward, and in eight surroundings: bare, in prose, in a shell export, as a
+  YAML value, inside a JSON string, inside a URL, inside a code fence, and at
+  each end of the content;
+- the hard negatives precision is made of, which the old file carried 16 of and
+  this one carries 65: SHA-1, SHA-256 and MD5 digests, a git short SHA,
+  UUIDs in both cases, npm and Go integrity hashes, base64 blobs and a data
+  URI, `CERTIFICATE`, `PUBLIC KEY` and `CERTIFICATE REQUEST` envelopes, an
+  `ssh-rsa` public key, high-entropy tokens carrying no issuer prefix, keys
+  masked with asterisks and elided with an ellipsis, environment variable names
+  with no value, a JSON schema naming key fields, issuer prefixes quoted in prose, and
+  credentials truncated under their pattern's bound;
+- both directions, where the old file measured only one.
+
+A number that improved because the corpus got easier would be worse than one
+that dropped because the corpus got honest, so the drop is the point and the
+old figure is recorded beside it in `CHANGELOG.md`.
+
+**What the 39 could not see, measured rather than argued.** `_scan` in
+`src/jamjet_guardrails/_spans.py` tries every start position instead of resuming
+at the end of each match, and its docstring records why: with `finditer`
+semantics a decoy joined in front of a real credential leaves a whole 36-character
+token body standing behind a publicly known prefix. That resume rule was put
+back to `finditer` and both corpora were scored against the result. **The 39
+cases scored 0.957 precision, 0.880 recall and 4 wrong decisions, which is
+exactly what they score against the correct implementation**: the shape the
+Critical is about was in none of them. The 160 score 0.884 and 0.827, five
+findings lost. A corpus that cannot tell a fixed detector from the bug it was
+fixed for is not measuring the fix.
+
+**The disclosed misses: seventeen cases, and every one of them is labelled with
+what SHOULD happen.** `docs/conformance.md` groups them into eight classes and
+gives one worked input per class; they are named here by id so that a case
+cannot quietly leave the file, and
+`tests/test_corpora.py::test_a_case_that_records_a_miss_is_not_labelled_with_what_the_detector_does`
+is what stops one being relabelled onto the detector's own output.
+
+- **Span arithmetic, five classes, nine cases.** A greedy body running on into
+  the next credential's prefix: `sec-0090`, `sec-0092`, `sec-0095`, `sec-0107`.
+  Two credentials of one type reported as one finding over the run: `sec-0091`,
+  `sec-0093`. Two JWTs joined producing three findings across the join:
+  `sec-0094`. A decoy sharing the fixed-length AWS prefix producing a phantom
+  second key: `sec-0098`. An Anthropic key whose own body contains `sk-` also
+  reported as an OpenAI key: `sec-0099`. **None of these leaks.** In every one
+  the credential is redacted in full and the audit record is what is wrong,
+  which is why they are scored rather than described: a corpus that counted
+  coverage instead of findings would report all nine as successes.
+- **Complete misses, five cases.** `github_pat_` fine-grained tokens
+  (`sec-0020`, `sec-0109`), `xapp-` Slack app-level tokens (`sec-0021`) and
+  `xoxe-` Slack refresh tokens (`sec-0110`) are shapes the pattern table has
+  none of, so each allows. They are the same category as the
+  `injection-structural` corpus's balanced overrides: outside the boundary
+  rather than failures inside it. `sec-0022` is a JWT whose header is 4137
+  characters, past the 4096 bound, and a token past any of the three bounds
+  matches nothing at all rather than matching short.
+- **False positives, three cases.** `sec-0034`, `sec-0158` and `sec-0159` each
+  mention `-----BEGIN PRIVATE KEY-----` in a sentence with no key behind it, and
+  the private-key walk claims the header on its own. They are labelled `allow`
+  and cost precision. The behaviour is kept rather than fixed because the
+  alternative fails open, and that argument is in `docs/conformance.md`.
+
+**There is no third-party corpus for this check.** The screen and what it found
+are under [What is deliberately absent, and
+why](#what-is-deliberately-absent-and-why).
 
 ## How to read the numbers these corpora produce
 
@@ -577,6 +676,34 @@ evaluation corpus this stage has.
 found, so the secrets numbers are measured on our own corpus only and are
 self-graded. That is stated rather than left for a reader to notice from a
 missing row.
+
+The screen was run again on 2026-09-03, against the standard `training/screen.py`
+states: an allowlist of SPDX identifiers, everything else refused, and an
+Apache tag downstream does not cure a share-alike or unverified upstream. Every
+candidate failed, on one of four grounds: a licence outside the allowlist, an
+access gate, real credentials in the rows, or not being a labelled corpus at
+all. What was checked, and which ground each fell on:
+
+| Candidate | Refused because |
+|---|---|
+| `mazen160/secrets-patterns-db` | CC-BY-SA-4.0 on the repository itself, which is share-alike and outside the allowlist. It is also a file of regular expressions rather than labelled text, so it could not be scored on either way |
+| SecretBench (Basak et al., MSR 2023) and its FPSecretBench companion | the data deposit is tagged "Other (Open)", which is not an allowlisted identifier; access needs a signed data-protection agreement; and the rows are real secrets harvested from live public repositories, which this repository will not carry under any licence |
+| PassFinder (ICSE 2022) | the annotated set was never published, by the authors' own statement, for the same live-credential reason |
+| `bigcode/bigcode-pii-dataset` | no licence declared, gated, and its terms of use forbid sharing the dataset or any modified version. `bigcode/pii-annotated-toloka` is gated and its licence could not be read at all |
+| `Podric/prowl-secrets-corpus` | CC-BY-NC-4.0, non-commercial |
+| CommonLeak / TrustedFalseSecrets | CC-BY-NC-ND-4.0, non-commercial and no derivatives, and only its negative rows are published |
+| `CyCraftAI/TraceSafe` | Apache-2.0 and synthetic, which clears both halves of the screen, and gated behind accepting access terms. A corpus a reader cannot fetch cannot reproduce a published number |
+| `Samsung/CredData` | the repository is tagged Apache-2.0 and its own README says each file keeps the licence of the project it came from, across 297 upstream repositories, none of them verified against the allowlist. This is the shape `training/screen.py` was written about |
+| `trufflesecurity/trufflehog` | AGPL-3.0, and it publishes no benchmark corpus |
+| `Yelp/detect-secrets` and `gitleaks/gitleaks` test data | Apache-2.0 and MIT respectively, which pass, and both are a handful of regression fixtures rather than a corpus. Nothing here could carry a published precision figure |
+| GitGuardian's public sample repository | no licence file at all, which the allowlist refuses by construction |
+| NIST SARD and the Juliet suite | a US government work and so effectively unrestricted, and its hardcoded-credential cases are generic passwords rather than the issuer-prefixed shapes this check matches |
+
+Two of those are worth separating, because they failed for opposite reasons and
+between them describe the gap. `CyCraftAI/TraceSafe` is the right shape under
+the right licence and cannot be fetched without accepting terms. `Yelp/detect-secrets`
+can be fetched under a licence that passes and is not a corpus. Nothing found so
+far is both.
 
 **The structural-injection check counts 3,773 invisible characters on Unicode
 16.0.0, and the rule that picks them is derived rather than chosen.** The count
