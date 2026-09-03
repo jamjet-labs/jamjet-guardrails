@@ -8,7 +8,7 @@ A published precision or recall figure is part of the interface here. A release
 that moves one says so in its entry, with the old value and the new one, because
 a number that changes quietly is a number nobody can rely on.
 
-## [Unreleased]
+## [0.3.0]
 
 ### Security
 
@@ -70,6 +70,31 @@ a number that changes quietly is a number nobody can rely on.
   declared kind, that guardrail used to turn the chain's own fail-closed path
   into an exception, so an honest verdict or a raising `check` took the entire
   run down with it.
+
+### Upgrading from 0.2.0
+
+Every refusal below is new, and each one turns a shape that used to work into a
+`deny` or a refusal to build. None of them affects the four bundled checks. If
+you have written or installed a custom check, read this list against it.
+
+- **A `Verdict` SUBCLASS is refused.** The chain tests `type(verdict) is Verdict`,
+  because a subclass is how an object lies about itself: `isinstance` consults
+  `__class__`, which a caller sets. If you subclassed `Verdict` to carry extra
+  fields, return a plain `Verdict` and keep your own data beside it.
+- **A guardrail declaring a `kind` outside `constraint` and `classifier` is
+  refused when the chain is built**, not when it runs. It used to work if its
+  verdicts were honest.
+- **The verdict you return is not the verdict that is recorded.** The chain
+  rebuilds it, so `ChainResult.verdicts[i] is your_verdict` is now False and any
+  field the chain does not rebuild is not carried. Compare by value.
+- **A finding `type` longer than 200 characters is refused**, and a
+  non-finite `threshold` or `confidence` is refused.
+- **A `Verdict` you return with `error` set is refused.** That field belongs to
+  the chain.
+
+A check that returns a plain `Verdict` whose `saw` is the digest of the content
+it was given, whose provenance names itself, and whose spans index into that
+content, is unaffected. That is what every bundled check already did.
 
 ### Changed
 
@@ -182,6 +207,7 @@ First release.
   changes are in [corpora/NOTICE.md](corpora/NOTICE.md). The wheel contains code
   only.
 
-[Unreleased]: https://github.com/jamjet-labs/jamjet-guardrails/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/jamjet-labs/jamjet-guardrails/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/jamjet-labs/jamjet-guardrails/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/jamjet-labs/jamjet-guardrails/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/jamjet-labs/jamjet-guardrails/releases/tag/v0.1.0
