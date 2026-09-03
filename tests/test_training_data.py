@@ -24,7 +24,6 @@ import json
 import math
 import os
 import re
-import subprocess
 from collections.abc import Iterable
 from dataclasses import dataclass, fields, replace
 from pathlib import Path
@@ -33,6 +32,7 @@ from typing import Any
 import pytest
 import yaml
 
+from _tracked import tracked as shipped
 from training.backbone import (
     BACKBONE,
     BACKBONES,
@@ -1068,9 +1068,7 @@ def test_every_external_identifier_in_this_tree_is_accounted_for() -> None:
     # exist on a machine that has trained but not in CI, so the same text was
     # green here and red there. What the repository ships is what a reader can
     # see, and that is the tracked tree.
-    tracked = subprocess.run(
-        ["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True
-    ).stdout.splitlines()
+    tracked = shipped()
     prefixes = frozenset(name.split("/", 1)[0].lstrip(".") for name in tracked)
     accounted = set(DENYLIST_BASES) | set(ATTRIBUTION_BASES)
     accounted |= {base_id(model.model_id) for model in REFERENCE_MODELS}

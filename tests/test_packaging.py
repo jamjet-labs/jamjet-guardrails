@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 import jamjet_guardrails
+from _tracked import tracked as shipped
 
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE_DATA = ROOT / "template-data"
@@ -178,6 +179,11 @@ def _built_sdist_names() -> list[str]:
             return archive.getnames()
 
 
+@pytest.mark.skipif(
+    not (ROOT / "packages").is_dir(),
+    reason="packages/ is excluded from the source distribution, so there is nothing "
+    "here for it to exclude; the checkout is where this guard has a question to ask",
+)
 def test_the_sdist_carries_nothing_from_the_adapter_packages() -> None:
     """The exclusion in pyproject.toml, held against the artifact it describes.
 
@@ -462,12 +468,19 @@ def test_the_built_wheel_carries_no_raw_unicode_data(built: tuple[Path, Path]) -
         )
     )
     assert stowaways == [], f"the wheel carries {stowaways}"
-    for expected in (
-        "jamjet_guardrails/_unicode/__init__.py",
-        "jamjet_guardrails/_unicode/scripts.py",
-        "jamjet_guardrails/_unicode/confusables.py",
-    ):
-        assert expected in names, f"the wheel does not carry {expected}"
+    # DERIVED from the package directory, not listed. The list was written when
+    # there were two generated tables and `_unicode/identifiers.py` arrived with
+    # the confusables check; a wheel built without it passed both halves of this
+    # test, passed the release workflow's two wheel assertions, installed,
+    # imported, and answered `allow` on ordinary text until the first spoof.
+    # "No raw Unicode data in the wheel" is also true of a wheel that lost the
+    # tables, which is what this half exists to say, and a hand list says it
+    # about whichever files its author had open.
+    source = ROOT / "src" / "jamjet_guardrails" / "_unicode"
+    expected = sorted(f"jamjet_guardrails/_unicode/{path.name}" for path in source.glob("*.py"))
+    assert len(expected) >= 3, f"{source} holds {expected}; this guard would prove nothing"
+    missing = [name for name in expected if name not in names]
+    assert missing == [], f"the wheel does not carry {missing}"
 
 
 def test_the_declared_licence_names_unicode_while_unicode_data_ships(
@@ -707,11 +720,8 @@ def _tracked_text() -> list[tuple[str, str]]:
     files its author had open, and this repository has produced that defect more
     than any other. A file added later is covered without anyone remembering.
     """
-    import subprocess
 
-    names = subprocess.run(
-        ["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True
-    ).stdout.split()
+    names = shipped()
     out = []
     for name in names:
         try:

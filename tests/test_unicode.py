@@ -73,6 +73,8 @@ from types import ModuleType
 
 import pytest
 
+from _tracked import tracked as shipped
+
 # The package itself, and two of its members. CodeQL's py/import-and-import-from
 # flagged reaching for the package again inside a test body with `import
 # jamjet_guardrails._unicode as package`: two spellings of one module in one
@@ -124,9 +126,7 @@ def test_the_pinned_files_and_the_generator_are_committed() -> None:
     for name in ("__init__.py", "scripts.py", "confusables.py", "identifiers.py"):
         assert (GENERATED / name).is_file(), f"{GENERATED / name} is missing"
 
-    tracked = subprocess.run(
-        ["git", "ls-files", "unicode-data"], cwd=ROOT, capture_output=True, text=True, check=True
-    ).stdout.split()
+    tracked = shipped("unicode-data")
     assert len(tracked) == 5, (
         f"unicode-data/ tracks {tracked}; the sdist ships what git tracks, so an "
         "untracked raw file is evidence nobody downstream receives"
