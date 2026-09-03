@@ -8,6 +8,105 @@ A published precision or recall figure is part of the interface here. A release
 that moves one says so in its entry, with the old value and the new one, because
 a number that changes quietly is a number nobody can rely on.
 
+## [0.3.0]
+
+### Security
+
+- `GuardrailChain` no longer trusts anything a guardrail returns. It reads each
+  field of a returned `Verdict` once, checks it against what the chain itself
+  knows, and then BUILDS a new verdict from those reads: `saw` is the chain's own
+  digest over the content it passed to `check`, `provenance` carries the identity
+  the chain holds for that guardrail, and the findings are fresh objects with
+  their own strings and plain integer spans. Nothing a detector returned reaches
+  `ChainResult.verdicts`, the combined decision or the rewrite AS THE OBJECT it
+  arrived in. Previously a `check` that returned successfully could report any
+  detector name, version and kind, hash text it was never given, and carry a
+  finding's span past the end of the content, and all of it was recorded
+  unexamined. Verifying that verdict and then keeping it was not enough either: a
+  `str` subclass whose `__eq__` returns True passes every comparison, an object
+  whose `__class__` says `Verdict` passes `isinstance` and can answer a property
+  honestly while it is being checked and falsely while it is being recorded, and
+  an `int` subclass passes `0 <= start < end <= len(content)` and then slices as
+  a negative number, which emitted a prefix of the ORIGINAL content in front of a
+  redaction placeholder under a `redact` decision. Every strictness check reads
+  `type(x) is T`, never `isinstance`, because a subclass with a lying `__eq__` or
+  `__str__` walks straight through the comparison or the coercion `isinstance`
+  would still allow.
+- A finding's `type` is bounded to the same length every other caller-chosen
+  string in an error message already was. It is still, by design, the one
+  detector-chosen string that reaches `ChainResult.content`: a redaction
+  placeholder has to name what claimed the region, so `EMAIL` in
+  `[REDACTED:EMAIL]` is a finding's `type`. Unbounded, a `redact` whose
+  finding's type IS the content it redacted reproduced that content, verbatim,
+  inside a string this library calls safe to forward, and a type running to
+  millions of characters inflated the audit record by the same amount for one
+  finding. The bound stops the second failure, not the first: a short type
+  equalling a short secret is not new, and is not what the bound closes.
+- `provenance.threshold` and a finding's `confidence` are checked for
+  finiteness, not only type. Both are `float | None`, and NaN and infinity are
+  both a `float`, so the type check alone let either one reach the audit
+  record. A non-finite value is now a contract violation like any other.
+- A malformed finding span no longer abandons the run. A span of `(1, 2, 3)`,
+  `("a", "b")` or `5` raised out of `run` from validation that sat outside the
+  try, losing the whole run's audit record and every guardrail after the one
+  that misbehaved. It is now a synthesised `deny` like any other failed check.
+- An error message never repeats a value a detector chose: not a claimed
+  provenance, not a finding's type, not the class name of whatever was returned,
+  not a span. A detector's returned values are picked after it has seen the
+  content, so a detector whose class name or finding type IS the content used to
+  write the content into the audit record through the message. Messages name the
+  clause that failed, and name the guardrail from the chain's own bounded copy
+  of the name it declared; a 2,000,000-character name produced a
+  4,000,073-character `error` before that bound.
+- `GuardrailChain.__init__` reads each guardrail's `name`, `version`, `kind` and
+  `directions` once, checks them, and uses those copies for every verdict
+  afterwards, refusing a guardrail that cannot declare a usable identity with
+  `GuardrailUnavailableError` -- the error `build` and `build_chain` already
+  raise for a configuration that would check less than it claims. A `name` that
+  answered one way while it was being validated and another way while it was
+  being recorded is no longer read twice. A guardrail declaring a `kind` this
+  library does not know is refused at construction rather than raising
+  `ValueError` from inside `run`: because provenance is stamped from the
+  declared kind, that guardrail used to turn the chain's own fail-closed path
+  into an exception, so an honest verdict or a raising `check` took the entire
+  run down with it.
+
+### Upgrading from 0.2.0
+
+Every refusal below is new, and each one turns a shape that used to work into a
+`deny` or a refusal to build. None of them affects the four bundled checks. If
+you have written or installed a custom check, read this list against it.
+
+- **A `Verdict` SUBCLASS is refused.** The chain tests `type(verdict) is Verdict`,
+  because a subclass is how an object lies about itself: `isinstance` consults
+  `__class__`, which a caller sets. If you subclassed `Verdict` to carry extra
+  fields, return a plain `Verdict` and keep your own data beside it.
+- **A guardrail declaring a `kind` outside `constraint` and `classifier` is
+  refused when the chain is built**, not when it runs. It used to work if its
+  verdicts were honest.
+- **The verdict you return is not the verdict that is recorded.** The chain
+  rebuilds it, so `ChainResult.verdicts[i] is your_verdict` is now False and any
+  field the chain does not rebuild is not carried. Compare by value.
+- **A finding `type` longer than 200 characters is refused**, and a
+  non-finite `threshold` or `confidence` is refused.
+- **A `Verdict` you return with `error` set is refused.** That field belongs to
+  the chain.
+
+A check that returns a plain `Verdict` whose `saw` is the digest of the content
+it was given, whose provenance names itself, and whose spans index into that
+content, is unaffected. That is what every bundled check already did.
+
+### Changed
+
+- A `redact` carrying no content, and a `redact` whose span does not index into
+  the content, no longer raise `GuardrailChainError` out of `run`. Both are
+  verdicts the chain will not rebuild, so both become a synthesised `deny` and
+  the run keeps its audit record. One shape still abandons a run: a `redact` the
+  chain cannot locate, meaning no findings or a finding without a span.
+- A `Verdict` returned with `error` set is refused. `error` is the chain's own
+  field, set on a verdict the chain synthesised, and a detector writing its own
+  prose there put an unbounded, detector-chosen string into the audit record.
+
 ## [0.2.0]
 
 ### Added
@@ -108,6 +207,7 @@ First release.
   changes are in [corpora/NOTICE.md](corpora/NOTICE.md). The wheel contains code
   only.
 
-[Unreleased]: https://github.com/jamjet-labs/jamjet-guardrails/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/jamjet-labs/jamjet-guardrails/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/jamjet-labs/jamjet-guardrails/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/jamjet-labs/jamjet-guardrails/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/jamjet-labs/jamjet-guardrails/releases/tag/v0.1.0

@@ -263,22 +263,28 @@ def test_a_guardrail_whose_directions_cannot_be_tested_for_membership_is_refused
         build("nodirs")
 
 
-def test_the_chain_raises_the_typeerror_that_refusal_predicts() -> None:
-    """The refusal predicts the chain here too, not just for the container shapes.
+def test_the_chain_refuses_the_directions_that_refusal_predicts() -> None:
+    """CHANGED from `test_the_chain_raises_the_typeerror_that_refusal_predicts`,
+    which asserted CPython's own `TypeError: argument of type 'NoneType' is not
+    iterable` out of `run`.
 
-    Kept executable so the two cannot drift: `build` refuses exactly the
-    `directions` the chain would raise on, and the raise is from the direction
-    test, which sits outside the try that makes a broken detector fail closed.
+    The refusal predicts the chain here too, not just for the container shapes,
+    and this is kept executable so the two cannot drift: `build` refuses exactly
+    the `directions` the chain refuses. What changed is the shape of the chain's
+    half. The direction test used to read `guardrail.directions` on every run,
+    outside the try that makes a broken detector fail closed, so a malformed one
+    surfaced as a bare `TypeError` mid-run and walked straight past a caller's
+    `except GuardrailUnavailableError`. The chain now reads `directions` once
+    when it is built and refuses what it cannot read, in the contract's own
+    error type, before any content has been checked.
 
-    The pattern matches only the part of CPython's message that is stable across
-    the versions we support. 3.14 says "is not a container or iterable" where
-    3.10 through 3.13 say "is not iterable", so matching the longer phrase
-    asserted a message that exists on exactly one interpreter and made both CI
-    legs red. What this test is about is WHICH type raised, not how CPython
-    words it.
+    Nothing here depends on how CPython words its message any more, which was
+    its own maintenance problem: 3.14 says "is not a container or iterable"
+    where 3.10 through 3.13 say "is not iterable", and matching the longer
+    phrase once made both CI legs red.
     """
-    with pytest.raises(TypeError, match=r"argument of type 'NoneType' is not"):
-        GuardrailChain([cast(Guardrail, NoneDirections())]).run("anything", OUT)
+    with pytest.raises(GuardrailUnavailableError, match="position 0 in the chain"):
+        GuardrailChain([cast(Guardrail, NoneDirections())])
 
 
 def test_a_name_that_is_not_a_string_is_refused_by_name() -> None:
@@ -425,16 +431,25 @@ def test_the_chain_an_inert_guardrail_produces_is_the_one_build_chain_refuses() 
     assert [v.provenance.detector for v in result.verdicts] == ["pii"]
 
 
-def test_the_chain_does_not_fail_closed_on_a_half_built_guardrail() -> None:
-    """Why the protocol check is not cosmetic, kept executable.
+def test_the_chain_refuses_a_half_built_guardrail_before_it_checks_anything() -> None:
+    """CHANGED from `test_the_chain_does_not_fail_closed_on_a_half_built_guardrail`,
+    which asserted a bare `AttributeError` out of `run`.
 
-    `chain.run` tests `context.direction not in guardrail.directions` OUTSIDE
-    the try that turns a detector bug into a deny, so a missing `directions`
-    aborts the whole run rather than denying one guardrail. Nothing downstream
-    of it in the chain runs either.
+    Why the protocol check is not cosmetic, kept executable. A guardrail missing
+    `directions` used to abort a whole run with `AttributeError`, from a
+    direction test that sat outside the try, and nothing downstream of it ran
+    either: an error type outside the contract, at the worst possible moment,
+    with content already in hand.
+
+    The chain now reads `name`, `version`, `kind` and `directions` once, when it
+    is built, and a guardrail that cannot supply them is refused there with
+    `GuardrailUnavailableError` -- the same error `build` raises for the same
+    object, which is what makes one `except GuardrailUnavailableError` cover
+    both doors into this room. `build`'s refusal is still the one a caller meets
+    first; this is the backstop for a guardrail that never went through it.
     """
-    with pytest.raises(AttributeError, match="directions"):
-        GuardrailChain([cast(Guardrail, Half())]).run("anything", OUT)
+    with pytest.raises(GuardrailUnavailableError, match="position 0 in the chain"):
+        GuardrailChain([cast(Guardrail, Half())])
 
 
 def test_a_factory_returning_a_half_built_object_is_refused(

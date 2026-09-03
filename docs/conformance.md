@@ -192,18 +192,126 @@ message is the natural place for the value it choked on, so this implementation
 records the exception type and a fixed sentence and drops the message. The
 wording is not fixed by this document; not echoing the content is.
 
+**A conforming chain rebuilds the verdict rather than trusting the one it was
+returned.** Returning without raising is not evidence that the return value is
+honest, only that the call finished, and a `Verdict` a detector builds for
+itself is a claim about what happened, not a record of it. The chain is the only
+party positioned to grade that claim: it is the one that computed `saw` and
+passed `content` to `check`, so it alone can tell an audit record that describes
+this run from one that describes something else. A guardrail attesting to its
+own provenance is marking its own homework, and the failure is silent everywhere
+else -- a false record and a true one look identical in shape, and only the
+party holding the original content and the original digest can tell them apart.
+
+Grading is necessary and it is not sufficient. Checking a returned object and
+then continuing to use that same object is a hole rather than a check, because
+the object is the detector's and it stays the detector's: a `str` subclass whose
+`__eq__` returns True passes any comparison and then reports something else
+downstream, an object whose `__class__` attribute names `Verdict` passes a type
+test and can answer a property differently on the read that validates it and the
+read that records it, and an `int` subclass passes `0 <= start < end <=
+len(content)` and then indexes as a negative number. A conforming implementation
+therefore reads each field ONCE, checks the read strictly, and constructs a new
+verdict from those reads. Nothing a detector returned reaches the audit record,
+the combined decision or the rewrite AS THE OBJECT it arrived in -- every field
+is copied into a value this implementation built.
+
+One field is copied through ON PURPOSE rather than replaced: a finding's
+`type`. A redaction placeholder has to name what claimed the region it
+replaces, so the type a detector reports is the one detector-chosen string
+this document requires in `ChainResult.content` at all -- `EMAIL` in
+`[REDACTED:EMAIL]` is a finding's `type`, read straight out of the finding
+that redacted it. What is fixed is its LENGTH, not its content: a `type`
+longer than **200 characters** is a failed check, refused like any other
+over-long caller string (`_ERROR_TYPE_LIMIT` in this implementation, shared
+with the bound its own error messages already used), because unbounded it
+stops being a label: a `redact` whose finding's type IS the content it
+redacted reproduces that content, verbatim, inside a string this document
+calls safe to forward, and a type of a few million characters inflates every
+audit record downstream by the same amount for one finding. The bound does
+not, and cannot, stop a SHORT type from equalling a short secret -- a real
+type name is a short constant such as `INVISIBLE_TAG_CHARS`, and 200
+characters is generous next to one.
+
+Read once, then check:
+
+- **The returned value is exactly a `Verdict`.** Not a subclass, not something
+  that claims to be one. A `check` is free to return anything.
+- **Its `decision` is exactly one of `allow`, `redact`, `deny`**, and a `redact`
+  carries content.
+- **`verdict.saw` equals the digest the chain itself computed** over the
+  content it gave `check`.
+- **`verdict.provenance.kind`, `.detector` and `.version` equal the
+  guardrail's own declared `kind`, `name` and `version`** -- the identity the
+  chain already knows the guardrail by, not anything the verdict claims about
+  itself.
+- **Every finding's span, on every decision and not only `redact`, is a pair of
+  plain integers satisfying `0 <= start < end <= len(content)`.** A `None` span
+  stays legal: a classifier finding carries no span at all, and that is not the
+  same failure as one that fails the bound. A span that is not a pair, or not a
+  pair of integers, is a failed check and not an exception: `(1, 2, 3)`,
+  `("a", "b")` and `5` are shapes a chain must refuse without abandoning the
+  run.
+- **Every finding's `type` is no longer than 200 characters.** Not a claim
+  about content, only about length -- see above.
+- **`provenance.threshold` and a finding's `confidence`, where either is
+  present, are finite.** Both are numbers a caller may threshold or sort
+  against, and NaN and infinity are both a `float`, so a type check alone
+  admits them. A value that walks through a comparison-based guard is this
+  library's own hole once already: every comparison against NaN is false, so a
+  bound spelled as one more comparison treats NaN as though it had passed.
+- **`error` is not set.** It is the chain's field, and it says the chain
+  synthesised this verdict.
+
+Then rebuild: a fresh verdict whose `saw` is the chain's digest, whose
+`provenance` carries the identity the chain holds for that guardrail, and whose
+findings are fresh objects built from the checked reads. Where a value the chain
+can verify and the detector's claim about it agree, the chain records its own.
+
+A verdict that fails any check is replaced exactly as a raised exception is: a
+synthesised `deny` carrying the guardrail's own DECLARED provenance -- never the
+false one the verdict returned -- and an `error` naming which check failed. Not
+raised, for the same reason a raising `check` does not abandon the run either:
+raising would lose the audit record entirely, and a synthesised deny keeps both
+the fail-closed decision and the evidence that a check misbehaved.
+
+**An error message must not repeat a value the detector chose**: not a claimed
+provenance, not a finding's type, not the class name of whatever was returned,
+not a span. This is the rule about `error` never quoting the content, arriving
+from the return side rather than from an exception's message. The values a
+detector returns are chosen after it has seen the content, so a detector whose
+class name or finding type IS the content writes the content into the audit
+record through the message, and bounding the value only shortens the leak. Name
+the clause that failed. The guardrail's own declared name may be named, bounded:
+it is what tells a reader which check misbehaved, and interpolating an unbounded
+one several times per message is how a 2,000,000-character name became a
+4,000,073-character `error`.
+
 Continuing is safe precisely because the decision cannot weaken. A later
 guardrail may deny too, and its verdict belongs in the audit record.
 
-Three shapes abandon the run instead of producing a `ChainResult`: a `redact`
-carrying no content, a `redact` the chain cannot locate (no findings, a finding
-without a span, or a span that does not index into the content the guardrail was
-given), and a guardrail whose `check` raised while declaring a `kind` this
-library does not know. The second is the first arriving one step later: a chain
+**The identity is read once, when the chain is built.** A conforming chain reads
+each guardrail's `name`, `version`, `kind` and `directions` a single time at
+construction, checks them, and uses its own copies for every verdict afterwards.
+Two failures close together here. A `name` read once to validate a claim and
+again to stamp the record can differ between the two reads, and both reads look
+right where they stand. And a `kind` this library does not know cannot be
+stamped onto anything, so discovering it per verdict puts the failure inside the
+chain's own fail-closed path: the synthesised deny is unbuildable and the whole
+run is lost at the moment a detector misbehaved. A guardrail that cannot declare
+a usable identity is refused when the chain is built, before any content has
+been checked, with the same error a registry raises for a check that would not
+check.
+
+One shape abandons the run instead of producing a `ChainResult`: a `redact` the
+chain cannot locate, meaning no findings or a finding without a span. A chain
 that rewrites from spans and is given none would report `redact` over a string
-nothing rewrote. **A caller must treat any exception out of a chain run as a
-deny.** There is no audit record in any of the three cases, which is acceptable
-only because nothing was allowed through.
+nothing rewrote. Nothing else does. An out-of-range or malformed span is caught
+by the checks above, on every decision, before a `redact` ever reaches this
+point; a `redact` carrying no content is a verdict the chain will not rebuild,
+which makes it a synthesised `deny` like any other lie. **A caller must treat
+any exception out of a chain run as a deny.** There is no audit record when a
+run is abandoned, which is acceptable only because nothing was allowed through.
 
 ## The saw hash
 

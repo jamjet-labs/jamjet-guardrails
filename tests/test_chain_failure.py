@@ -9,6 +9,7 @@ from typing import cast
 import pytest
 
 from jamjet_guardrails.chain import GuardrailChain
+from jamjet_guardrails.errors import GuardrailUnavailableError
 from jamjet_guardrails.protocol import saw
 from jamjet_guardrails.types import Context, Direction, Finding, Kind, Provenance, Verdict
 
@@ -248,14 +249,26 @@ def test_keyboard_interrupt_is_not_swallowed() -> None:
         GuardrailChain([Interrupter()]).run("hello", OUT)
 
 
-def test_a_guardrail_lying_about_its_kind_raises_rather_than_being_recorded_wrongly() -> None:
-    """Pin the one exception `run` still lets out, and why it is the right one.
+def test_a_guardrail_declaring_an_unknown_kind_is_refused_when_the_chain_is_built() -> None:
+    """CHANGED from `test_a_guardrail_lying_about_its_kind_raises_rather_than_being
+    _recorded_wrongly`, which asserted `ValueError: unknown provenance kind` out
+    of `run`.
 
-    Synthesising provenance means trusting `guardrail.kind`. A guardrail that
-    declares a kind the library does not know cannot be given one: any fallback
-    would write a kind into the audit record that the detector never claimed.
-    Verdict rejects it, that ValueError propagates, and nothing is allowed --
-    loud and closed rather than quiet and wrong.
+    The argument it pinned still holds: synthesising provenance means using
+    `guardrail.kind`, and a guardrail declaring a kind the library does not know
+    cannot be given one, because any fallback writes a kind into the audit
+    record that the detector never claimed. What changed is WHEN that is
+    discovered. Deciding it per verdict meant the failure landed inside the
+    chain's own fail-closed path: the `Verdict` the chain builds to record the
+    failure was itself unbuildable, so a guardrail declaring `kind="heuristic"`
+    and returning a perfectly honest verdict took the whole run down, audit
+    record included, and a guardrail whose `check` merely raised did the same.
+
+    The kind is read and checked once, at construction, so the refusal now
+    arrives before any content has been checked, as `GuardrailUnavailableError`,
+    which is the contract error a caller already wraps `build` and `build_chain`
+    in. Nothing was allowed through then either, and now nothing was measured
+    against a chain that could not describe its own decisions.
     """
 
     class LyingExploder:
@@ -267,8 +280,37 @@ def test_a_guardrail_lying_about_its_kind_raises_rather_than_being_recorded_wron
         def check(self, content: str, context: Context) -> Verdict:
             raise RuntimeError("detector is broken")
 
-    with pytest.raises(ValueError, match="unknown provenance kind"):
-        GuardrailChain([LyingExploder()]).run("hello", OUT)
+    with pytest.raises(GuardrailUnavailableError, match="declares a kind that is not one of"):
+        GuardrailChain([LyingExploder()])
+
+
+def test_a_guardrail_declaring_an_unknown_kind_can_still_be_constructed_alone() -> None:
+    """The refusal above is the CHAIN's, and it is the chain that needs it.
+
+    Without this, the test above passes for a reason it does not claim: that
+    such a guardrail cannot exist at all. It can, and calling it directly is
+    fine, because a caller holding one guardrail reads the verdict it returns
+    rather than a record the chain stamped. What the chain cannot do is describe
+    that guardrail's decisions, which is why the refusal is at chain
+    construction and nowhere else.
+    """
+
+    class OddKind:
+        name: str = "odd"
+        version: str = "0.1.0"
+        kind: Kind = cast(Kind, "heuristic")
+        directions: frozenset[Direction] = frozenset({"output"})
+
+        def check(self, content: str, context: Context) -> Verdict:
+            return Verdict(
+                "allow",
+                None,
+                [],
+                Provenance(kind="constraint", detector="odd", version="0.1.0"),
+                saw(content),
+            )
+
+    assert OddKind().check("hello", OUT).decision == "allow"
 
 
 # ==========================================================================
