@@ -272,13 +272,14 @@ a number that changes quietly is a number nobody can rely on.
 
 ### Fixed
 
-- `scripts/mutate.py` no longer mangles a whole-file selector.
-  `node_id` asked only whether the string contained `::`, so
-  `tests/test_my_check.py`, which is a perfectly good node id, became
-  `tests/test_training_data.py::tests/test_my_check.py`. pytest exits non-zero
-  on a selector it cannot collect and this harness reads non-zero as the
-  mutation having been CAUGHT, so every whole-file entry a contributor wrote
-  would have reported a kill with nothing run. The test is now the filesystem.
+- `scripts/mutate.py` no longer mangles a whole-file selector. `node_id` asked
+  only whether the string contained `::`, so a bare path such as
+  `tests/test_pii.py`, which is a perfectly good node id, was prefixed with the
+  one module the tool used to assume and became a selector naming nothing.
+  pytest exits non-zero on a selector it cannot collect and this harness reads
+  non-zero as the mutation having been CAUGHT, so every whole-file entry a
+  contributor wrote would have reported a kill with nothing run. The test is now
+  whether the path resolves to a file.
 - `scripts/mutate.py` refuses a selector that collected no test, rather than
   reporting it as a failure. That is the single most common way a mutation
   check lies, it was hit three times by hand during phase 3, and it was live in
