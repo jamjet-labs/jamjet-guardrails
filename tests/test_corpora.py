@@ -409,6 +409,27 @@ _RECORDS_A_MISS = {
         "sec-0158",  # a PEM header in prose, second shape
         "sec-0159",  # a PEM header in prose, third shape
     ),
+    # ADDED WHEN THE PUBLISHED ROW WAS FOUND TO COST NOTHING FOR IT.
+    # `docs/conformance.md` lists four places `script-constraint` falls short of
+    # its own corpus and the row beside that list read 1.000 / 1.000 with zero
+    # decision mismatches, because the one case naming a shortfall was labelled
+    # with the two spans the detector emits rather than with the one span the
+    # redaction needs. The label now says what should happen -- one finding over
+    # `Приве́т`, so the combining acute is not left standing between two
+    # placeholders -- and the row moved to 0.960 / 0.980.
+    "script-constraint": ("sc-0020",),  # a combining mark splitting a disallowed run
+    # The confusables shortfalls, for the same reason: each is labelled with the
+    # deny the check owes and each is currently allowed. `cnf-0050` is NOT here
+    # because it was fixed rather than recorded, which is what the note above
+    # says to do when a miss stops being one.
+    "confusables": (
+        "cnf-0044",  # a two-character token with no majority script
+        "cnf-0045",  # a spoofed host written with no scheme
+        "cnf-0046",  # the same whole-script word in a sentence
+        "cnf-0047",  # Cyrillic en, whose prototype is outside the identifier profile
+        "cnf-0048",  # Cyrillic te, the same shape
+        "cnf-0049",  # two Cyrillic and two Latin letters, so no majority
+    ),
 }
 
 

@@ -511,7 +511,12 @@ def test_a_name_or_version_at_the_ceiling_still_builds_and_runs(field: str) -> N
 # - the skeleton dropped from the view in `_banned_spans`;
 # - `compose` replaced by the skeleton view alone, so the span indexes the
 #   case-folded view rather than the source;
-# - the refusal of the option with no banned substrings removed.
+# - the refusal of the option with no banned substrings removed;
+# - the unfolded needle dropped from the two views `_banned_spans` searches;
+# - `_find_folded` made unconditionally plain, so the trailing marks are
+#   matched contiguously rather than as a subsequence;
+# - both of the last two at once, which is the only mutation the 112-mark
+#   sweep sees, because the two are redundant for the shape it sweeps.
 # ==========================================================================
 
 # Escapes, never literals: a Cyrillic letter inside a Latin word is invisible
@@ -639,3 +644,146 @@ def test_the_option_is_off_by_default() -> None:
     content = f"deck for project blueb{_CYRILLIC_I}rd"
     assert _banned_guard().check(content, IN).decision == "allow"
     assert _banned_guard(fold_confusables=False).check(content, IN).decision == "allow"
+
+
+# --------------------------------------------------------------------------
+# The option turned a deny into an allow, which is the worst thing it could do.
+# --------------------------------------------------------------------------
+
+_TILDE_OVERLAY = "\u0334"  # COMBINING TILDE OVERLAY, canonical combining class 1
+_ACUTE = "\u0301"  # COMBINING ACUTE ACCENT, class 230
+_CYRILLIC_IE = "\u0435"  # CYRILLIC SMALL LETTER IE, which folds to Latin `e`
+
+
+def _cafe_guard(fold_confusables: bool) -> PatternGuardrail:
+    return PatternGuardrail(
+        name="rules",
+        version="0.1.0",
+        banned={"PROJECT_CODENAME": ("caf\u00e9",)},
+        on_match="deny",
+        fold_confusables=fold_confusables,
+    )
+
+
+def test_enabling_the_fold_never_turns_a_deny_into_an_allow() -> None:
+    """The law the option's own documentation states, asserted as a law.
+
+    ``skeleton(x + y) != skeleton(x) + skeleton(y)`` at a combining-mark
+    boundary: the needle is skeletonised alone and the content whole, the
+    skeleton ends in an NFD pass, and NFD's canonical ordering is a stable sort
+    over a combining SEQUENCE. So a mark of lower combining class following the
+    banned word sorts in front of the word's own mark and lands INSIDE the
+    needle's skeleton, and ``find`` misses.
+
+    Measured before the fix: 50 of the 112 marks in U+0300..U+036F flipped
+    ``deny`` to ``allow`` after ``café``, and every one of them after
+    ``résumé``. The two skeletons print identically in a repr, so a reviewer
+    diffing them saw two identical-looking strings.
+
+    Swept over the whole block rather than the one mark that was found first,
+    because a single mark is a sample and the property is about all of them.
+
+    MUTATION-CHECKED, AND THE FIRST TWO RECORDS WRITTEN HERE WERE BOTH WRONG.
+    Neither half of the fix kills this on its own: with the reordering tolerance
+    forced off, the unfolded needle still finds `café` in the source; with the
+    unfolded needle dropped, the tolerance still finds it in the skeleton.
+    Removing BOTH fails here at U+030D, the first mark in the sweep that
+    reorders. Two redundant mechanisms look like one working mechanism to any
+    mutation that removes one of them, which is the trap this note exists to
+    stop the next reader falling into. Each has its own test for the shape only
+    it reaches: `test_a_needle_laundered_both_ways_at_once_is_still_matched` for
+    the tolerance, `test_a_needle_whose_own_marks_reorder_is_still_matched_verbatim`
+    for the unfolded needle.
+    """
+    plain = _cafe_guard(False)
+    folded = _cafe_guard(True)
+    flipped = [
+        hex(point)
+        for point in range(0x0300, 0x0370)
+        if plain.check(f"caf\u00e9{chr(point)}", IN).decision == "deny"
+        and folded.check(f"caf\u00e9{chr(point)}", IN).decision != "deny"
+    ]
+    assert flipped == [], f"{len(flipped)} marks turn the deny into an allow: {flipped[:8]}"
+
+
+def test_a_needle_laundered_both_ways_at_once_is_still_matched() -> None:
+    """The case only the reordering tolerance catches, and why it is there.
+
+    Searching the unfolded needle as well makes the option a superset of itself
+    with the option off, which is the law above. It does NOT catch a needle
+    laundered twice: one substituted Cyrillic letter, which only the folded view
+    sees, plus one added mark, which reorders inside the folded needle. Matching
+    the needle's trailing marks as a subsequence of the marks that follow the
+    match is exactly the freedom canonical ordering takes and nothing more.
+
+    The span covers the interleaved mark, which is what the redaction needs.
+
+    Mutation-checked: forcing ``_find_folded``'s ``tolerant`` argument to False
+    fails the third assertion here and leaves the first two passing, which is
+    the whole reason this test is separate from the sweep above.
+    """
+    content = f"the caf{_CYRILLIC_IE}{_TILDE_OVERLAY}{_ACUTE} is closed"
+    assert _cafe_guard(False).check(content, IN).decision == "allow"
+    assert "caf\u00e9" not in content
+    assert _cafe_guard(True).check(content, IN).decision == "deny"
+
+    redactor = PatternGuardrail(
+        name="rules",
+        version="0.1.0",
+        banned={"PROJECT_CODENAME": ("caf\u00e9",)},
+        on_match="redact",
+        fold_confusables=True,
+    )
+    assert redactor.check(content, IN).content == "the [REDACTED:PROJECT_CODENAME] is closed"
+
+
+def test_a_needle_whose_own_marks_reorder_is_still_matched_verbatim() -> None:
+    """The residual the tolerance cannot reach, and why the plain view is searched.
+
+    ``_find_folded``'s tolerance covers the needle's TRAILING marks. A needle
+    whose skeleton BEGINS with combining marks has the mirror problem and no
+    tolerance for it: a mark from the text before it can sort into the middle of
+    its leading run, and no rule about what follows the match can see that.
+
+        needle  U+0301 U+0334 b, whose skeleton NFD-sorts to U+0334 U+0301 b
+        content x U+0316 U+0301 U+0334 b, which CONTAINS the needle verbatim
+                and whose skeleton sorts to x U+0334 U+0316 U+0301 b
+
+    U+0316 lands between the needle's two marks and the folded search misses.
+    Searching the unfolded needle as well is what makes the option a superset by
+    CONSTRUCTION rather than by an argument about canonical ordering, which is
+    the difference between a property and a claim.
+
+    Mutation-checked: dropping the ``(view, needle, False)`` row from the two
+    searches in ``_banned_spans`` fails here. It fails nothing else in this
+    file, which is the honest statement of what that row buys: the sweep above
+    is carried by the tolerance alone.
+    """
+    needle = "\u0301\u0334b"
+    content = "x\u0316\u0301\u0334b"
+    assert needle in content
+
+    for fold_confusables in (False, True):
+        guardrail = PatternGuardrail(
+            name="rules",
+            version="0.1.0",
+            banned={"PROJECT_CODENAME": (needle,)},
+            on_match="deny",
+            fold_confusables=fold_confusables,
+        )
+        verdict = guardrail.check(content, IN)
+        assert verdict.decision == "deny", f"fold_confusables={fold_confusables}"
+        assert [f.span for f in verdict.findings] == [(2, 5)]
+
+
+def test_one_match_is_one_finding_even_when_both_views_find_it() -> None:
+    """Two views, one claim. The plain word is in both, and it is one finding.
+
+    Without the deduplication the audit record reports the same span twice for
+    one occurrence, which is a count a corpus scores and a reader believes.
+    """
+    verdict = _cafe_guard(True).check("caf\u00e9 and caf\u00e9", IN)
+    assert [(f.type, f.span) for f in verdict.findings] == [
+        ("PROJECT_CODENAME", (0, 4)),
+        ("PROJECT_CODENAME", (9, 13)),
+    ]

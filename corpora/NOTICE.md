@@ -356,8 +356,8 @@ else wrote would be labelled against their constraint. The row is self-graded in
 the same way the secrets row is.
 ### `corpora/confusables/in-repo.jsonl`
 
-Written for this repository and covered by its Apache-2.0 licence. 109 cases,
-50 labelled `deny` and 59 labelled `allow`, in both directions.
+Written for this repository and covered by its Apache-2.0 licence. 115 cases,
+54 labelled `deny` and 61 labelled `allow`, in both directions.
 
 **The negatives are the point of this corpus and they outnumber the positives.**
 A confusables check that keeps one half of either of its two rules passes almost
@@ -382,7 +382,16 @@ is the same rule the injection corpus follows and it is stronger here: the whole
 subject of this corpus is characters that are invisible as differences, so a raw
 diff of a case would show a reviewer two identical-looking lines.
 
-**The disclosed misses, by name.** Seven cases labelled `deny` are allowed here.
+**Six cases carry a laundered spoof**, and they are here because a claim this
+file made about the other seven was false. `cnf-0110` puts a soft hyphen on both
+sides of the substituted letter, `cnf-0111` a variation selector, `cnf-0112` a
+left-to-right mark inside a URL host label and `cnf-0113` a zero-width space
+inside an email domain. `cnf-0114` and `cnf-0115` are the negatives that keep
+the rule honest: hyphenated prose carrying soft hyphens, and three keycap
+emoji, neither of which may become a finding. See the correction under the
+misses below.
+
+**The disclosed misses, by name.** Six cases labelled `deny` are allowed here.
 
 - `cnf-0045` and `cnf-0046`: a whole-script spoof outside a URL, an email domain
   or a handle. `cnf-0045` is a spoofed hostname written with no scheme;
@@ -398,11 +407,32 @@ diff of a case would show a reviewer two identical-looking lines.
 - `cnf-0044` and `cnf-0049`: a token with no majority. Two Cyrillic letters and
   two Latin ones tie, the tie-break takes the first code point's script, and the
   Latin half becomes the minority.
-- `cnf-0050`: a spoof laundered with a zero-width space, which ends the token
-  and leaves two single-script tokens. `injection-structural` reports that code
-  point and denies by default, so a chain running both still denies. This check
-  alone does not, and the disjointness that makes the two checks partition the
-  code space is what costs it.
+`cnf-0050` WAS A SEVENTH AND IS NOT ANY MORE, AND THE ENTRY THAT STOOD HERE FOR
+IT WAS WRONG IN THE WAY THAT MATTERS MOST. It read: "a spoof laundered with a
+zero-width space, which ends the token and leaves two single-script tokens.
+`injection-structural` reports that code point and denies by default, so a chain
+running both still denies. This check alone does not, and the disjointness that
+makes the two checks partition the code space is what costs it."
+
+A reader was being pointed at a compensating control that does not exist, which
+is worse than the miss it was excusing. Measured on this repository, in two
+independent ways:
+
+- The two sets are DISJOINT, not a partition. This check treated 4,174
+  default-ignorable code points as token boundaries; `injection-structural`
+  reports 3,773 of them. 401 -- all 260 variation selectors, U+00AD, U+061C,
+  U+200E, U+200F, the bidi embeddings and isolates, and the 128 tag characters --
+  split a spoofed token here and were reported by nothing.
+- Even inside the 3,773, that check reports a code point only once five of them
+  are present or two are adjacent. One zero-width space is under both bounds.
+
+So `https://p<U+00AD>а<U+00AD>ypal.com/login` was ALLOWED by a chain running
+both checks, and it is the same pixels as the string that chain denies. The
+token rule is corrected, `cnf-0050` is an ordinary positive, and `cnf-0110`
+through `cnf-0113` carry the other laundering forms. The disjointness is gone
+with it: a span from this check may now cover a code point
+`injection-structural` also claims, and the chain's span merge collapses the two
+into one region naming both types.
 
 **The disclosed false positives, by name.** Three cases labelled `allow` are
 denied here.

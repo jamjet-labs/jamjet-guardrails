@@ -37,6 +37,9 @@ the default-ignorable exclusion down.
 
 from __future__ import annotations
 
+import re
+import time
+
 import pytest
 
 from jamjet_guardrails.detectors import build
@@ -48,9 +51,11 @@ from jamjet_guardrails.detectors.confusables import (
     _is_token_character,
     _mixed_script_spans,
     _tokens,
+    _urls,
     _whole_script_spans,
 )
 from jamjet_guardrails.detectors.injection_structural import (
+    _DEFAULT_IGNORABLE,
     _EMBED_CLOSE,
     _EMBED_OPEN,
     _ISOLATE_CLOSE,
@@ -87,6 +92,12 @@ ZWSP = "\u200b"
 # changes no verdict on any input built from U+200B.
 GRAPHEME_JOINER = "\u034f"  # COMBINING GRAPHEME JOINER, Mn
 HANGUL_FILLER = "\u115f"  # HANGUL CHOSEONG FILLER, Lo
+# The three families `injection-structural` deliberately does NOT report, which
+# is what made them the laundering channel this check now closes. One sample
+# each, and the sweep below covers the whole table rather than these three.
+SOFT_HYPHEN = "\u00ad"  # excluded there by name: it RENDERS, at a line break
+LEFT_TO_RIGHT_MARK = "\u200e"  # excluded there as a directional format character
+VARIATION_SELECTOR_15 = "\ufe0e"  # one of the 260 excluded by name
 
 # `paypal` written entirely in Cyrillic: the whole-script confusable this check
 # reports inside a host label and deliberately does not report in prose.
@@ -365,75 +376,165 @@ def test_an_apostrophe_and_a_hyphen_end_a_token() -> None:
     assert _tokens(f"iPhone'{ending}") == [(0, 6), (7, 9)]
 
 
-def test_a_default_ignorable_code_point_ends_a_token() -> None:
-    """The disjointness requirement, from the token scan's side.
+def test_a_default_ignorable_code_point_does_not_end_a_token() -> None:
+    """The fail-open this replaced, from the token scan's side.
 
-    A token that ran ACROSS a zero-width space would report a span containing
-    it, and a contiguous span containing that code point shares it with
-    `ZERO_WIDTH_SMUGGLING`.
+    Ending a token here was the shipped behaviour and it was a bypass: one
+    character a reader cannot see split a spoofed token in two, each half then
+    read as one script, and the check reported nothing. The comment beside
+    `_IGNORABLE` records the measurement.
 
-    Mutation-checked: admitting default-ignorable code points into tokens makes
-    the span below one run of eight rather than two of one and seven, and makes
-    `test_this_check_claims_no_code_point_any_structural_signal_claims`
-    meaningless.
+    The span starts and ends on a token character, so a TRAILING run of
+    ignorables stays outside it. That is the second assertion, and it is why
+    `_tokens` tracks `end` separately from its cursor.
+
+    Mutation-checked: restoring the old boundary rule (`while ... and
+    _is_token_character(content[index])`) makes the first three spans two runs
+    each and fails here; dropping the `end` bookkeeping and appending
+    `(start, index)` fails the fourth.
     """
-    assert _tokens(f"{CYRILLIC_A}{GRAPHEME_JOINER}pple") == [(0, 1), (2, 6)]
-    assert _tokens(f"{CYRILLIC_A}{HANGUL_FILLER}pple") == [(0, 1), (2, 6)]
-    assert _tokens(f"{CYRILLIC_A}{ZWSP}pple") == [(0, 1), (2, 6)]
-    assert decision(f"Sign in at {CYRILLIC_A}{GRAPHEME_JOINER}pple support") == "allow"
+    assert _tokens(f"{CYRILLIC_A}{GRAPHEME_JOINER}pple") == [(0, 6)]
+    assert _tokens(f"{CYRILLIC_A}{HANGUL_FILLER}pple") == [(0, 6)]
+    assert _tokens(f"{CYRILLIC_A}{ZWSP}pple") == [(0, 6)]
+    assert _tokens(f"{CYRILLIC_A}pple{ZWSP}{ZWSP} rest") == [(0, 5), (8, 12)]
+    assert decision(f"Sign in at {CYRILLIC_A}{GRAPHEME_JOINER}pple support") == "deny"
 
 
-def test_this_check_claims_no_code_point_any_structural_signal_claims() -> None:
-    """Pairwise against all three `injection-structural` signals.
+def test_no_default_ignorable_code_point_can_split_a_spoof() -> None:
+    """The whole table, not a sample, and it is the guard that was missing.
 
-    A finding from this check and a finding from that one must never cover the
-    same code point, or a merged placeholder would name two checks for one
-    character and the two corpora would be scoring overlapping claims. The
-    property holds because every code point either signal there reports is
-    default-ignorable, and `_IGNORABLE` is IMPORTED from that module rather than
-    restated, so the two cannot drift apart.
+    The shipped check treated 4,174 code points as token boundaries while
+    `injection-structural` reported only 3,773 of them, and the 273 non-tag
+    characters in the gap -- U+00AD, U+061C, U+200E, U+200F, the bidi
+    embeddings and isolates, and all 260 variation selectors -- were a laundering
+    channel no check in this package reported. The test that stood here asserted
+    only that the two SETS do not overlap, which was true and was not the
+    property that mattered.
 
-    Asserted over the sets rather than over an input, for the reason that module
-    asserts its own three: a run of inputs that happened to work is not the
-    invariant.
+    Every code point in the table is inserted into one spoof, and every one of
+    them must still deny. Derived from the imported table, so a code point added
+    there is swept on the same commit.
+
+    THE CHARACTER GOES ON BOTH SIDES OF THE SUBSTITUTED LETTER, and the first
+    version of this test put it on one side only. That version passed under the
+    mutation it exists to catch: splitting `p<c>аypal` still leaves `аypal`,
+    which is mixed and fires anyway, so the sweep proved nothing. Isolating the
+    Cyrillic letter is what the laundering has to do to work, and it is what the
+    test has to do to see it.
+
+    Mutation-checked: restoring the old boundary rule fails this at U+00AD, the
+    first code point in the table.
     """
+    table = [chr(point) for low, high in _DEFAULT_IGNORABLE for point in range(low, high + 1)]
+    assert len(table) > 4000, "the table emptied; this test would prove nothing"
+
+    guardrail = ConfusablesGuardrail()
+    allowed = [
+        hex(ord(character))
+        for character in table
+        if guardrail.check(f"Sign in at p{character}{CYRILLIC_A}{character}ypal now", IN).decision
+        != "deny"
+    ]
+    assert allowed == [], (
+        f"{len(allowed)} default-ignorable code points hide a spoof: {allowed[:8]}"
+    )
+
+
+def test_the_two_checks_partition_the_default_ignorable_table() -> None:
+    """The partition the old design claimed as a compensating control.
+
+    `corpora/NOTICE.md` and `docs/conformance.md` both said a spoof laundered
+    with an ignorable code point was covered because `injection-structural`
+    reports that code point, so a chain running both still denies. That was
+    false in two independent ways -- 401 of the 4,174 are reported by no
+    structural signal at all, and a code point that IS reported needs five of
+    them or two adjacent before the bound fires -- and no test looked, because
+    the one that existed asserted disjointness rather than coverage.
+
+    What replaces it is a partition of responsibility with no compensating
+    control in it: every code point either check treats as ignorable is
+    transparent HERE, so this check never needs the other one to have run.
+
+    Mutation-checked: narrowing `_IGNORABLE` to `_ZERO_WIDTH` leaves the 401 out
+    and fails the first assertion.
+    """
+    table = {chr(point) for low, high in _DEFAULT_IGNORABLE for point in range(low, high + 1)}
     tags = {chr(point) for point in range(_TAG_START, _TAG_END + 1)}
     bidi = set(_EMBED_OPEN) | set(_ISOLATE_OPEN) | {_EMBED_CLOSE, _ISOLATE_CLOSE}
-    zero_width = set(_ZERO_WIDTH)
 
-    # Non-vacuous on both sides: an empty set is disjoint from everything.
+    # Non-vacuous on both sides: an empty set is a subset of everything.
     assert (len(tags), len(bidi)) == (128, 9)
-    assert len(zero_width) > 3000
-    assert len(_IGNORABLE) > 4000
+    assert len(_ZERO_WIDTH) > 3000
+    assert len(table) > 4000
 
-    # Derived from `_is_token_character` itself, not from a second copy of its
-    # rule: a test that re-implements the thing it guards cannot see the thing
-    # it guards change. Measured, the `- _IGNORABLE` spelling passed with the
-    # exclusion deleted from the function.
+    # Every code point this check treats as ignorable is the whole table, and
+    # every code point any structural signal claims is inside that table. The
+    # gap the old design left is the difference the second assertion closes.
+    assert _IGNORABLE == table
+    assert (set(_ZERO_WIDTH) | tags | bidi) <= _IGNORABLE
+    assert not (_IGNORABLE - set(_ZERO_WIDTH)) <= (tags | bidi), (
+        "the gap this test exists for emptied; the two sets would now agree and "
+        "the sweep above would prove nothing new"
+    )
+
+
+def test_no_default_ignorable_code_point_carries_a_script_into_a_token() -> None:
+    """What the disjointness assertion here used to hold, and what replaced it.
+
+    The old assertion was that no span this check reports can cover a code point
+    a structural signal reports. It held because ignorable code points ended a
+    token, and that boundary was the bypass; a span here may now cover one, and
+    `_spans._merge` collapses the two claims into one region whose placeholder
+    names both types. That is the cost, it is cosmetic, and it is paid on
+    purpose.
+
+    What still has to hold is narrower and is what the token scan actually
+    needs: an ignorable code point contributes NO SCRIPT. Four of them are `Lo`
+    or `Mn` and carry a real script -- U+3164 is Hangul, U+115F and U+1160 are
+    Hangul, U+180B..U+180F are Mongolian, U+17B4 and U+17B5 are Khmer -- so a
+    scan that admitted them into the token's TEXT rather than only into its SPAN
+    would resolve a token's script off a character nobody can see.
+
+    Derived from `_is_token_character` itself, not from a second copy of its
+    rule: a test that re-implements the thing it guards cannot see it change.
+    Measured, the `- _IGNORABLE` spelling passed with the exclusion deleted from
+    the function.
+
+    Mutation-checked: deleting `and character not in _IGNORABLE` from
+    `_is_token_character` fails here, and separately makes
+    `_visible(f"{HANGUL_FILLER}{CYRILLIC_A}pple")` resolve as Hangul.
+    """
     claimable = {chr(point) for point in range(0x110000) if _is_token_character(chr(point))}
     assert len(claimable) > 100_000, "the claimable set emptied; this test would prove nothing"
+    assert len(_IGNORABLE) > 4000
 
-    assert not claimable & tags
-    assert not claimable & bidi
-    assert not claimable & zero_width
+    assert not claimable & _IGNORABLE
 
 
-def test_every_span_this_check_reports_lies_inside_a_token_or_a_label() -> None:
-    """The property the assertion above rests on, checked on real content.
+def test_every_span_this_check_reports_begins_and_ends_on_a_visible_character() -> None:
+    """The spans really do come from the token scan, and they are trimmed.
 
-    Sets are the proof; this is the run that says the spans really do come from
-    the token scan and not from somewhere that never consulted it.
+    An interior ignorable code point is INSIDE the span on purpose: it is what
+    the token was laundered with, and a redaction that stopped short of it would
+    leave the laundering standing in the output. A leading or trailing one is
+    not, because it is not part of the token and a placeholder covering it names
+    a character that was never part of the spoof.
     """
     content = (
         f"Sign in at p{CYRILLIC_A}ypal or https://{CYRILLIC_PAYPAL}.com "
-        f"and re{GRAPHEME_JOINER}ad thi{HANGUL_FILLER}s{ZWSP * 4} line."
+        f"and re{GRAPHEME_JOINER}ad thi{HANGUL_FILLER}s{ZWSP * 4} line "
+        f"then p{SOFT_HYPHEN}{CYRILLIC_A}ypal again."
     )
     verdict = ConfusablesGuardrail().check(content, IN)
     assert verdict.findings
+    laundered = 0
     for finding in verdict.findings:
         assert finding.span is not None
         run = content[finding.span[0] : finding.span[1]]
-        assert not set(run) & _IGNORABLE, f"{run!r} covers a default-ignorable code point"
+        assert run[0] not in _IGNORABLE, f"{run!r} opens on a default-ignorable code point"
+        assert run[-1] not in _IGNORABLE, f"{run!r} closes on a default-ignorable code point"
+        laundered += bool(set(run) & _IGNORABLE)
+    assert laundered == 1, "the laundered token is the one that must be reported whole"
 
 
 def test_ordinary_ascii_prose_reaches_neither_signal() -> None:
@@ -445,6 +546,171 @@ def test_ordinary_ascii_prose_reaches_neither_signal() -> None:
     """
     assert _mixed_script_spans("The quick brown fox jumps over the lazy dog.") == []
     assert decision("SELECT * FROM users WHERE id = 42;", OUT) == "allow"
+
+
+# ==========================================================================
+# The URL scan: what it finds, and what it costs.
+# ==========================================================================
+
+# The pattern `_urls` replaced, kept here as the ORACLE and nowhere else. It is
+# quadratic, which is why it is not in the module any more, and over the short
+# strings below that costs nothing.
+_OLD_URL = re.compile(r"[A-Za-z][A-Za-z0-9+.\-]*://([^\s/?#]*)")
+
+
+def _old_urls(content: str) -> list[tuple[tuple[int, int], tuple[int, int]]]:
+    return [(m.span(), (m.start(1), m.end(1))) for m in _OLD_URL.finditer(content)]
+
+
+def test_the_linear_url_scan_agrees_with_the_regular_expression_it_replaced() -> None:
+    """Differential, against the pattern itself rather than against a restatement.
+
+    The rewrite is a performance fix and it must not be a behaviour change, so
+    the old pattern is the oracle: the shapes below are the ones where a
+    hand-written scan and a backtracking regex part company -- a scheme run that
+    opens with a digit, two separators close enough that the second is inside
+    the first match, an empty authority, a separator with no scheme in front of
+    it, and a scheme run interrupted by a character outside the class.
+
+    Mutation-checked: dropping the `while start < separator and content[start]
+    not in _SCHEME_LETTERS` walk fails on `"1ab://host"`; letting `cursor` stay
+    at `separator + 1` rather than `end` fails on `"a://b://c"`.
+    """
+    cases = [
+        "",
+        "://",
+        "a://",
+        "a://host",
+        "1ab://host",
+        "123://host",
+        "+-.://host",
+        "a://b://c",
+        "http://a.example/ http://b.example/",
+        "see http://x.example?q=1#f and mailto:a@b.example",
+        "x-y+z.1://Host:8080/path?a#b",
+        " ://a  b://  c://d ",
+        "http://a\u200bb.example/",
+        f"https://{CYRILLIC_PAYPAL}.com/verify",
+        "word http://" + "a" * 40 + ".example/x",
+        "aaa" + "://" * 3 + "bbb",
+    ]
+    for case in cases:
+        assert _urls(case) == _old_urls(case), case
+
+
+def test_the_authority_stops_where_the_regex_stopped() -> None:
+    r"""`[^\s/?#]` was the class, and `str.isspace` is what replaced its `\s`.
+
+    The two agree on every one of the 1,114,112 code points, which is a fact
+    about this interpreter rather than about this module, so it is measured here
+    rather than asserted in a comment.
+    """
+    whitespace = re.compile(r"\s")
+    disagreements = [
+        hex(point)
+        for point in range(0x110000)
+        if bool(whitespace.match(chr(point))) != chr(point).isspace()
+    ]
+    assert disagreements == []
+
+
+def test_a_long_run_of_scheme_characters_is_not_quadratic() -> None:
+    r"""Regression guard: no URL is needed to pay for the URL scan.
+
+    `[A-Za-z][A-Za-z0-9+.\-]*://` consumed to the end of a run and backtracked
+    one character at a time looking for the separator, at every start position
+    in the run. Measured on the shipped file, `check("a" * n)` cost 0.057 s at
+    8 KB, 0.225 s at 16 KB, 0.904 s at 32 KB and 3.583 s at 64 KB -- 4x per 2x --
+    which extrapolates to about sixteen minutes for the one megabyte
+    `docs/performance.md` publishes as 186 ms. After the rewrite the same call
+    costs 4.8 ms at 64 KB and 77 ms at one megabyte.
+
+    The budget is roughly 200x the measured time and under a third of what the
+    old pattern took at this size, so it is loose enough not to flake on a
+    loaded runner and still fails outright if the scan ever backtracks again.
+    """
+    payload = "a" * 64000
+
+    start = time.perf_counter()
+    verdict = ConfusablesGuardrail().check(payload, IN)
+    elapsed = time.perf_counter() - start
+
+    assert verdict.decision == "allow"
+    assert elapsed < 1.0, f"the URL scan took {elapsed:.2f}s on {len(payload)} characters"
+
+
+def test_an_at_sign_beside_many_urls_is_not_quadratic() -> None:
+    """Regression guard: the URL-containment test was a scan, once per `@`.
+
+    `any(start <= index < end for start, end in urls)` is O(at-signs x URLs).
+    Measured on the shipped file, `check("http://a.example/ @ " * n)` cost
+    0.25 s at 64 KB, 3.95 s at 256 KB and 65.06 s at 1 MB. `_urls` returns
+    non-overlapping spans in increasing order, so `bisect_right` answers the
+    same question; the same call costs 60 ms at 256 KB and 246 ms at 1 MB.
+
+    256 KB RATHER THAN 64 KB, AND THAT IS THE MUTATION TALKING. Written at
+    64 KB first, this test PASSED with the linear scan put back: 3,200 URLs
+    against 3,200 at-signs is ten million iterations of a generator expression,
+    which is 0.36 s and inside any budget loose enough to survive a loaded
+    runner. Quadratic growth is only visible where the quadratic term dominates,
+    so the size is part of the guard and not a detail. At 256 KB the same
+    mutation costs 4.6 s against a budget of 1.5 s.
+    """
+    payload = "http://a.example/ @ " * 12800
+    assert len(payload) == 256000
+
+    start = time.perf_counter()
+    verdict = ConfusablesGuardrail().check(payload, IN)
+    elapsed = time.perf_counter() - start
+
+    assert verdict.decision == "allow"
+    assert elapsed < 1.5, f"the containment test took {elapsed:.2f}s on {len(payload)} characters"
+
+
+def test_a_laundered_host_label_is_still_a_host_label() -> None:
+    """The whole-script rule used to SKIP a label carrying an ignorable code point.
+
+    That skip is the same fail-open as the token boundary and it hid the rule
+    this check exists for: `аррӏе.com` is denied and one soft hyphen inside it
+    was enough to allow it. An email domain and an `@handle` are the other two
+    contexts, and an invisible character has to keep the atom run together in
+    both of them.
+
+    Mutation-checked: restoring `any(character in _IGNORABLE for character in
+    characters)` to `_whole_script_spans` fails the first three; dropping
+    `character in _IGNORABLE` from `_is_atom` fails the fourth and fifth.
+    """
+    host = f"https://{CYRILLIC_PAYPAL[:2]}{SOFT_HYPHEN}{CYRILLIC_PAYPAL[2:]}.com/verify"
+    assert decision(host) == "deny"
+    assert (
+        decision(f"https://{CYRILLIC_PAYPAL[:2]}{VARIATION_SELECTOR_15}{CYRILLIC_PAYPAL[2:]}.com")
+        == "deny"
+    )
+    assert (
+        decision(f"https://{CYRILLIC_PAYPAL[:2]}{LEFT_TO_RIGHT_MARK}{CYRILLIC_PAYPAL[2:]}.com")
+        == "deny"
+    )
+    assert (
+        decision(f"write to billing@{CYRILLIC_PAYPAL[:2]}{ZWSP}{CYRILLIC_PAYPAL[2:]}.com") == "deny"
+    )
+    assert (
+        decision(f"ping @{CYRILLIC_PAYPAL[:2]}{SOFT_HYPHEN}{CYRILLIC_PAYPAL[2:]} about it")
+        == "deny"
+    )
+
+
+def test_an_ordinary_hyphenated_word_is_not_a_confusable() -> None:
+    """The negative half of the pair, and the population the transparency risks.
+
+    A soft hyphen is in every hyphenated ebook, which is why
+    `injection-structural` refuses to report it. Making it transparent here must
+    not turn ordinary text into a finding: the visible text of each token below
+    is ASCII, so the fast path takes it before the vendored tables are asked
+    anything at all.
+    """
+    assert decision(f"co{SOFT_HYPHEN}operate with the sub{SOFT_HYPHEN}committee") == "allow"
+    assert decision(f"Read the doc{SOFT_HYPHEN}umentation at https://example.com/x") == "allow"
+    assert _mixed_script_spans(f"un{SOFT_HYPHEN}remark{SOFT_HYPHEN}able") == []
 
 
 # ==========================================================================

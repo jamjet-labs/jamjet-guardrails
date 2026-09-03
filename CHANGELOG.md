@@ -10,7 +10,6 @@ a number that changes quietly is a number nobody can rely on.
 
 ## [Unreleased]
 
-
 ### Added
 
 - Both adapter READMEs now say that the framework they install reaches the
@@ -341,7 +340,66 @@ a number that changes quietly is a number nobody can rely on.
   check and was not in the list, so a wheel built without it passed both halves
   of the guard, passed the release workflow's two wheel assertions, installed,
   imported, and answered `allow` until the first spoof.
-
+- **`confusables` no longer lets an invisible character split a spoofed token,
+  and the compensating control three documents pointed a reader at did not
+  exist.** Default-ignorable code points ended a token, so
+  `https://p<U+00AD>а<U+00AD>ypal.com/login` was ALLOWED, in either direction,
+  by a chain running every bundled check, while the same string without the two
+  soft hyphens is denied. `corpora/NOTICE.md`, `docs/conformance.md` and the
+  design comment in the module all said the miss was covered because
+  `injection-structural` reports that code point and denies by default. It does
+  not: 401 of the 4,174 default-ignorable code points -- all 260 variation
+  selectors, U+00AD, U+061C, U+200E, U+200F, the bidi embeddings and isolates,
+  and the 128 tag characters -- are reported by no structural signal at all, and
+  a code point that IS reported needs five of them present or two adjacent
+  before that check's bounds fire, so one zero-width space is reported by
+  nothing either. Those code points are now transparent inside a token and
+  inside a host label, an email domain and a handle: they carry no script and
+  they cannot end a run. A span from this check may now cover a code point
+  `injection-structural` also claims, and the chain's span merge collapses the
+  two into one region naming both types, which is the cost and is cosmetic.
+  `corpora/confusables/in-repo.jsonl` grew four laundered positives and two
+  negatives, and `cnf-0050` stopped being a disclosed miss.
+  **Published row: 0.936 precision and 0.863 recall over 109 cases becomes
+  0.942 and 0.891 over 115.**
+- **`confusables` was quadratic in two independent places while
+  `docs/performance.md` published it as linear**, and the seeded input that row
+  is measured on carries neither `://` nor `@`, so neither site was reachable
+  from it. One megabyte of `"http://a.example/ @ "` took **65.1 seconds**
+  against a published 186 ms, and a single unbroken 64 KB word with no URL in it
+  anywhere took 3.58 seconds, extrapolating to about sixteen minutes for a
+  megabyte. The scheme pattern `[A-Za-z][A-Za-z0-9+.-]*://` backtracked one
+  character at a time at every start position in a run, and the URL-containment
+  test was a linear scan of every URL run once per `@`. The scan now finds
+  `://` with `str.find` and walks the scheme backwards from it, and the
+  containment test is a binary search over non-overlapping spans. The same two
+  inputs now cost 246 ms and 77 ms per megabyte. That rewrite also made the
+  published row faster: **p50 at one megabyte moves from 185.595 ms to
+  146.850 ms, and the rate from 5.4 to 7.1 megabytes per second**;
+  `docs/performance.md` carries the whole new row set.
+- **`fold_confusables=True` could turn a deny into an allow**, which is the
+  worst thing the option that exists to stop a banned word being dodged could
+  do. The needle was skeletonised alone and the content whole, and
+  `skeleton(x + y) != skeleton(x) + skeleton(y)` at a combining-mark boundary,
+  because the skeleton ends in an NFD pass whose canonical ordering is defined
+  over a combining sequence. With `banned={"BAN": ["café"]}`, the content `café`
+  followed by U+0334 COMBINING TILDE OVERLAY denied with the option off and
+  allowed with it on; 50 of the 112 marks in U+0300..U+036F do it, and so does
+  every one of them after `résumé`. The unfolded needle is now searched
+  alongside the folded one, so the option can only ADD matches to what it finds
+  with the option off, and the folded search tolerates canonical reordering in
+  the needle's trailing combining marks, which closes a needle laundered both
+  ways at once. No published number moves.
+- **`sc-0020` was labelled with the two spans the detector emits rather than the
+  one the redaction needs**, so the shortfall `docs/conformance.md` describes for
+  it -- a combining mark splitting a disallowed run, leaving the mark standing
+  between two placeholders -- cost the published row nothing, and all four
+  shortfalls listed there sat beside a 1.000 / 1.000. The label now says what
+  should happen and the case is recorded in
+  the `_RECORDS_A_MISS` table in `tests/test_corpora.py`, which had keys for
+  `pii` and `secrets` only. **Published row: 1.000 precision and 1.000 recall over 85
+  cases becomes 0.960 and 0.980.** No behaviour changed; the number was wrong,
+  not the check.
 
 - `scripts/mutate.py` no longer mangles a whole-file selector. `node_id` asked
   only whether the string contained `::`, so a bare path such as
