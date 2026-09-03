@@ -6,6 +6,10 @@ from collections.abc import Callable, Iterable
 
 from jamjet_guardrails.chain import GuardrailChain
 from jamjet_guardrails.detectors.confusables import CONFUSABLES_TYPES, ConfusablesGuardrail
+from jamjet_guardrails.detectors.encoded_content import (
+    ENCODED_CONTENT_TYPES,
+    EncodedContentGuardrail,
+)
 from jamjet_guardrails.detectors.injection_structural import (
     INJECTION_TYPES,
     InjectionStructuralGuardrail,
@@ -27,6 +31,7 @@ from jamjet_guardrails.types import Direction
 
 AVAILABLE: dict[str, Callable[..., Guardrail]] = {
     "confusables": ConfusablesGuardrail,
+    "encoded-content": EncodedContentGuardrail,
     "injection-structural": InjectionStructuralGuardrail,
     "pii": PiiGuardrail,
     "rules": build_rules,
@@ -53,6 +58,7 @@ AVAILABLE: dict[str, Callable[..., Guardrail]] = {
 # this table and outside every claim made about it.
 TYPES: dict[str, frozenset[str]] = {
     "confusables": CONFUSABLES_TYPES,
+    "encoded-content": ENCODED_CONTENT_TYPES,
     "injection-structural": INJECTION_TYPES,
     "pii": PII_TYPES,
     "rules": RULES_TYPES,
@@ -290,6 +296,7 @@ __all__ = [
     "AVAILABLE",
     "TYPES",
     "ConfusablesGuardrail",
+    "EncodedContentGuardrail",
     "InjectionStructuralGuardrail",
     "PiiGuardrail",
     "ScriptConstraintGuardrail",
