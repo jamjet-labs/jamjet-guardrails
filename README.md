@@ -1,4 +1,4 @@
-![A friendly robot holding a magnifying glass over a long blank scroll. Hidden marks are visible only inside the glass.](docs/banner.png)
+![A friendly robot holding a magnifying glass over a long blank scroll. Hidden marks are visible only inside the glass.](https://raw.githubusercontent.com/jamjet-labs/jamjet-guardrails/main/docs/banner.png)
 
 # jamjet-guardrails
 
@@ -138,7 +138,7 @@ token at any length. Overwriting the smuggled message with a different one of
 the same length leaves the token ids unchanged, so the payload's content never
 reaches the model to be classified. Both directions of that comparison, the
 counts, and what it does and does not support are in
-[benchmarks/RESULTS.md](benchmarks/RESULTS.md).
+[benchmarks/RESULTS.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/benchmarks/RESULTS.md).
 
 It runs on output as well as input, because a model that emits tag characters
 into its own reply is smuggling to whatever reads that reply next, which in an
@@ -213,12 +213,12 @@ python scripts/new_check.py my-check
 
 It deliberately leaves four edits to you, and the test suite fails until each
 is done, naming the one that is missing: register it, record its baseline, add
-a section to [docs/conformance.md](docs/conformance.md) so somebody can port
-it, and add its corpus to [corpora/NOTICE.md](corpora/NOTICE.md).
+a section to [docs/conformance.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/docs/conformance.md) so somebody can port
+it, and add its corpus to [corpora/NOTICE.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/corpora/NOTICE.md).
 
 What you get for that: your check ships with its own precision and recall,
 measured on the corpus you wrote and gated in CI, published beside every other
-check. [CONTRIBUTING.md](CONTRIBUTING.md) has the rest, including the one habit
+check. [CONTRIBUTING.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/CONTRIBUTING.md) has the rest, including the one habit
 this project asks for, which is to break each test you write and watch it fail
 before you trust it.
 
@@ -258,8 +258,8 @@ failures is a number you cannot check.
 | rules | rules/in-repo | in-repo | `f1b809114b13` | 40 | 1.000 | 1.000 | 1.000 | 28 | 0 | 0 | 0 |
 | secrets | secrets/in-repo | in-repo | `e9e0ed70dc37` | 39 | 0.957 | 0.880 | 0.917 | 22 | 1 | 3 | 4 |
 
-See [BENCHMARKS.md](BENCHMARKS.md) for the per-type scores and the worst misses
-behind these numbers, and [corpora/NOTICE.md](corpora/NOTICE.md) for what each
+See [BENCHMARKS.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/BENCHMARKS.md) for the per-type scores and the worst misses
+behind these numbers, and [corpora/NOTICE.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/corpora/NOTICE.md) for what each
 corpus is and where it came from.
 
 **How to read these rows.** Every corpus labels a case with what should happen,
@@ -286,7 +286,7 @@ reaches the byte or line paths.
 Fifteen `injection-structural` cases carry a label the shipped check gets
 wrong, and eight of them fail on purpose: two deny text somebody wrote
 deliberately, and six allow a payload that really is in there. All fifteen are
-named by case id in [corpora/NOTICE.md](corpora/NOTICE.md), along with the
+named by case id in [corpora/NOTICE.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/corpora/NOTICE.md), along with the
 invisible-character families this check does not count and one measured encoder
 for each.
 
@@ -299,11 +299,11 @@ our own corpora only and are self-graded.
 The third-party PII corpus is derived from
 [nvidia/Nemotron-PII](https://huggingface.co/datasets/nvidia/Nemotron-PII),
 used under CC-BY-4.0. Changes were made, and they are listed in
-[corpora/NOTICE.md](corpora/NOTICE.md).
+[corpora/NOTICE.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/corpora/NOTICE.md).
 
 ## Porting it
 
-[docs/conformance.md](docs/conformance.md) specifies the verdict fields, the
+[docs/conformance.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/docs/conformance.md) specifies the verdict fields, the
 combination order, the single-pass rewriting rule, the `saw` hash and the
 corpus schema, and states what is deliberately unspecified. An implementation
 in another language conforms if it produces the same verdicts on the same
@@ -320,10 +320,10 @@ It is a library, not a service. No configuration file, no daemon, no account.
 
 ## Licence
 
-The code is Apache-2.0. See [LICENSE](LICENSE).
+The code is Apache-2.0. See [LICENSE](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/LICENSE).
 
 The published distribution declares `Apache-2.0 AND CC-BY-4.0`, because the
 source distribution also carries `corpora/pii/third-party.jsonl`, derived from
 [nvidia/Nemotron-PII](https://huggingface.co/datasets/nvidia/Nemotron-PII) under
 CC-BY-4.0. Attribution and the list of changes are in
-[corpora/NOTICE.md](corpora/NOTICE.md). The installed wheel contains code only.
+[corpora/NOTICE.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/corpora/NOTICE.md). The installed wheel contains code only.

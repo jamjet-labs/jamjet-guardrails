@@ -206,6 +206,33 @@ def test_the_readme_has_no_em_dash() -> None:
 _CITED_PATH = re.compile(r"`((?:corpora|tests|scripts|src/jamjet_guardrails|docs)/[^`]*)`")
 
 
+# This README is also the PyPI project description, and PyPI does NOT rewrite
+# relative URLs: a relative image src renders broken there and a relative link
+# goes nowhere. Measured through `readme_renderer`, the library PyPI itself
+# uses, before this was changed: one broken image and eleven dead links. So
+# every citation here is an absolute URL into this repository.
+#
+# That would have blinded the guard below, which is the whole reason these two
+# constants exist rather than the URLs being written and forgotten. The test
+# skips anything carrying a scheme, so absolute links would have been checked
+# by nothing while looking exactly like links that were. These prefixes are
+# stripped back to a repository path so the citation is still resolved against
+# the filesystem, which is what stops a cited file being renamed out from under
+# the page.
+_OWN_BLOB = "https://github.com/jamjet-labs/jamjet-guardrails/blob/main/"
+_OWN_RAW = "https://raw.githubusercontent.com/jamjet-labs/jamjet-guardrails/main/"
+
+
+def _own_repository_links(text: str) -> set[str]:
+    """Every link into this repository, as a path relative to the root."""
+    found = set()
+    for target in re.findall(r"\]\(([^)]+)\)", text):
+        for prefix in (_OWN_BLOB, _OWN_RAW):
+            if target.startswith(prefix):
+                found.add(target[len(prefix) :])
+    return found
+
+
 def test_every_repository_path_the_readme_cites_exists() -> None:
     """Presence is not truth.
 
@@ -220,7 +247,7 @@ def test_every_repository_path_the_readme_cites_exists() -> None:
         for target in re.findall(r"\]\(([^)]+)\)", text)
         if "://" not in target and not target.startswith(("#", "mailto:"))
     ]
-    cited = sorted(set(links) | set(_CITED_PATH.findall(text)))
+    cited = sorted(set(links) | set(_CITED_PATH.findall(text)) | _own_repository_links(text))
     assert cited, "the README cites nothing in the repository; this check would prove nothing"
     missing = [
         target
