@@ -10,7 +10,7 @@ findings behind it, and a record of which check made it over exactly what text.
 No dependencies. No network calls. No model downloads. Python 3.10 and above.
 
 ```mermaid
-flowchart LR
+flowchart TD
   U[user input] --> IN
   R[retrieved page] --> IN
   IN[input checks] -->|allow or redact| M[your model]
