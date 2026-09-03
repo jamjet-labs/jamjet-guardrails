@@ -51,6 +51,7 @@ Coming from llm-guard, archived in July 2026? [docs/migrating-from-llm-guard.md]
 | `rules` | whatever you define | your ticket ids, internal hostnames, banned codenames, size limits |
 | `script-constraint` | text written in a script your deployment did not ask for | a Cyrillic paragraph in an English page, one Greek letter inside a Latin word |
 | `confusables` | words that read as one script and are written in two | `pаypal` with a Cyrillic a, a spoofed host label, a banned word dodged by one substituted letter |
+| `template-integrity` | content claiming a role in the conversation that it does not have | a chat template marker, a line beginning `system:`, a tag named after a privileged role |
 
 Every check runs on input and on output, returns `allow`, `redact` or `deny`,
 and reports the exact span it matched so a redaction can be applied and
@@ -381,13 +382,9 @@ third-party corpus for `confusables`, `encoded-content`,
 `url-exfiltration`. No compatibly licensed one was found for any of them, so all
 seven are measured on our own corpora only and are self-graded.
 third-party corpus for `confusables`, `injection-structural`, `rules`,
-`script-constraint`, `secrets` or `url-exfiltration`. No compatibly licensed one
-was found for any of them, so all six are measured on our own corpora only and
-are self-graded.
-third-party corpus for `injection-structural`, `rules`, `secrets`,
-`template-integrity` or `url-exfiltration`. No compatibly licensed one was found
-for any of them, so all five are measured on our own corpora only and are
-self-graded.
+`script-constraint`, `secrets`, `template-integrity` or `url-exfiltration`. No
+compatibly licensed one was found for any of them, so all seven are measured on
+our own corpora only and are self-graded.
 
 The third-party PII corpus is derived from
 [nvidia/Nemotron-PII](https://huggingface.co/datasets/nvidia/Nemotron-PII),
