@@ -1,3 +1,19 @@
+# Every `uses:` in this repository is pinned to a full commit SHA, never to a
+# tag. A tag is a movable pointer, so pinning one hands whoever can move it the
+# ability to run new code inside a job that builds and publishes this package.
+# The trailing comment names the release the SHA belongs to, because a bare
+# forty-character hash is unreadable at bump time and an unreadable pin is one
+# nobody bumps.
+#
+# TO BUMP ONE. `gh api repos/<owner>/<repo>/git/ref/tags/<tag>` gives
+# `.object.sha`. If it also reports `"type": "tag"` the ref is ANNOTATED and
+# that SHA is the tag OBJECT, which `uses:` cannot resolve; dereference it with
+# `gh api repos/<owner>/<repo>/git/tags/<sha>` and pin the commit it names.
+# Both spellings are in use here: the `actions/` tags are lightweight and
+# resolve in one call, the PyPI publisher's are annotated and need the second.
+# Change the trailing comment in the same edit. `tests/test_workflows.py` fails
+# if a `uses:` is not a forty-hex SHA, and fails again if it carries no version
+# comment.
 name: CI
 on: [push, pull_request]
 jobs:
@@ -8,8 +24,8 @@ jobs:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev]"
