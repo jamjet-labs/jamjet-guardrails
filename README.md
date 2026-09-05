@@ -355,13 +355,17 @@ shape and the command that reproduces them.
 never with what the detector does. A known false positive is labelled `allow`
 and costs precision; a known false negative is labelled `deny` and costs
 recall. That is why these numbers are lower than the checks behave on ordinary
-text, and it is the only way two rows in one table can be compared.
+text. Without labels chosen independently of what the detector does, comparing
+two rows in this table would mean very little.
 
 The in-repo `pii` corpus is a stress set rather than a sample of ordinary
 traffic. It is written to hold the shapes that detector is worst at, so its
 precision is lower than you would see on real text and is meant to be. The
-third-party corpus is the one to read for ordinary text: 300 rows we did not
-write, named in the Source column beside its own numbers.
+third-party corpus is the stronger external evidence: 300 rows we did not
+write, named in the Source column beside its own numbers. It is not a sample of
+production traffic either, because `nvidia/Nemotron-PII` is itself synthetic.
+What it settles is narrower and more useful: we chose neither its examples nor
+its labels.
 
 The `rules` row is not comparable to the others. The other checks are
 heuristics over open-ended text, and their numbers describe how often the
