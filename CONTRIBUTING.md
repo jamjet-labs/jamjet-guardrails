@@ -273,9 +273,11 @@ copy in `README.md`. Both are tested.
 ## Scope
 
 This library ships deterministic constraints: patterns and structural rules
-with published false-positive and false-negative rates. It does not classify
-intent, score toxicity, or call a model, and a contribution that adds a
-dependency on one will not be merged. `dependencies = []` is checked against
+with published precision and recall. It does not score toxicity and it does not
+call a model, and a contribution that adds a dependency on either will not be
+merged. Where a check judges what content is for, as `encoded-content` does when
+it separates a hidden instruction from hidden prose, it uses a lexicon you can
+read and a rule you can test rather than a classifier. `dependencies = []` is checked against
 the built metadata, not against `pyproject.toml`.
 
 ## Licence
