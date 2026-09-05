@@ -8,6 +8,28 @@ A published precision or recall figure is part of the interface here. A release
 that moves one says so in its entry, with the old value and the new one, because
 a number that changes quietly is a number nobody can rely on.
 
+## [Unreleased]
+
+### Fixed
+
+- **The README called the third-party PII corpus the one to read for ordinary
+  text, and it is not ordinary text.** `nvidia/Nemotron-PII` is tagged
+  `synthetic-data`, so it is no more a sample of production traffic than the
+  in-repo stress set is. The sentence claimed more of the evidence than the
+  evidence supports, which is the same defect as the `does not classify intent`
+  line in 0.4.1, arriving in the paragraph that exists to explain the numbers.
+  It now says the third-party corpus is the stronger external evidence, states
+  that it is synthetic, and names what it actually settles: we chose neither its
+  examples nor its labels. Found by an external reviewer reading the published
+  post.
+
+- **An absolute claim in the same paragraph.** Labelling by what should happen
+  was described as "the only way two rows in one table can be compared". It is
+  the right method and it is not the only conceivable one, and stating it as an
+  absolute puts evaluation methodology up for argument in place of the result.
+  Now: without labels chosen independently of what the detector does, comparing
+  two rows would mean very little.
+
 ## [0.4.1]
 
 ### Fixed
