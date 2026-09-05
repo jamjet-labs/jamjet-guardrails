@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "jamjet-guardrails"
-version = "0.4.0"
+version = "0.4.1"
 description = "Content guardrails for LLM applications, with published precision and recall and provenance on every decision."
 readme = "README.md"
 # Seven terms, and each AND names material this distribution carries beyond its
