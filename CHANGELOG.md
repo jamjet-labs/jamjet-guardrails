@@ -8,6 +8,35 @@ A published precision or recall figure is part of the interface here. A release
 that moves one says so in its entry, with the old value and the new one, because
 a number that changes quietly is a number nobody can rely on.
 
+## [Unreleased]
+
+### Fixed
+
+- **The README and CONTRIBUTING said this library does not classify intent, and
+  it does.** `encoded-content` has shipped `_is_instruction` since 0.4.0: a
+  29-verb imperative lexicon run over sentence-initial positions, gated on
+  `is_prose`, emitting a finding named `ENCODED_INSTRUCTION`. The guardrail's own
+  docstring says it detects instructions, and the module comment frames the whole
+  design as separating hidden PROSE from a hidden INSTRUCTION. The sentence was
+  written before that check existed and nobody revisited it when the check
+  landed, so the front page of the package and the contribution rules both
+  asserted something the code contradicts. What is true, and is the stronger
+  claim, is that the judgement is made with a derived lexicon a reader can
+  inspect and a test can pin rather than with a classifier. All three now say
+  that.
+
+- **The same sentence named a statistic this project does not publish.** The
+  rows are precision and recall. A false-positive rate is `FP/(FP+TN)` and
+  precision is `TP/(TP+FP)`, computed over different denominators, so "published
+  false-positive and false-negative rates" pointed readers at numbers that are
+  not the ones in the table. The wording appeared in `README.md`,
+  `CONTRIBUTING.md` and `benchmarks/pint/README.md`; all three now say precision
+  and recall.
+
+- The changelog's own link references were left behind by the 0.4.0 release:
+  `[Unreleased]` still compared from `v0.3.0` and there was no `[0.4.0]`
+  reference at all, so the heading above rendered as plain text.
+
 ## [0.4.0]
 
 
@@ -994,7 +1023,8 @@ First release.
   changes are in [corpora/NOTICE.md](corpora/NOTICE.md). The wheel contains code
   only.
 
-[Unreleased]: https://github.com/jamjet-labs/jamjet-guardrails/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/jamjet-labs/jamjet-guardrails/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/jamjet-labs/jamjet-guardrails/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/jamjet-labs/jamjet-guardrails/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/jamjet-labs/jamjet-guardrails/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/jamjet-labs/jamjet-guardrails/releases/tag/v0.1.0

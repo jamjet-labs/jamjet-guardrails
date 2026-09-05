@@ -21,8 +21,8 @@ contribution to somebody else's project.
   the words: invisible tag characters (U+E0000..U+E007F), unbalanced
   bidirectional overrides, and unexplained zero-width runs. Pure Python, no
   dependencies, no model download, no network.
-- **Kind**: constraint. Every match is a pattern with a published
-  false-positive and false-negative rate, not a score over a threshold.
+- **Kind**: constraint. Every match is a pattern with published precision and
+  recall, not a score over a threshold.
 - **Injection label**: the check returns a `Verdict`; the evaluation function
   maps any decision other than `allow` to `True`.
 

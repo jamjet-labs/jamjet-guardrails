@@ -416,10 +416,13 @@ corpora, whatever machinery it uses to get there.
 
 ## What this is not
 
-It does not classify intent, score toxicity, or call a model. The checks here
-are constraints: patterns and structural rules with published false-positive
-and false-negative rates. That is why the numbers exist and why they are worth
-reading.
+It does not score toxicity, and it does not call a model. Nothing here
+downloads weights or reaches the network. Where a check judges what content is
+for, as `encoded-content` does when it separates a hidden instruction from
+hidden prose, it uses a lexicon you can read and a rule you can test rather than
+a classifier. The checks are constraints: patterns and structural rules with
+published precision and recall. That is why the numbers exist and why they are
+worth reading.
 
 It is a library, not a service. No configuration file, no daemon, no account.
 
