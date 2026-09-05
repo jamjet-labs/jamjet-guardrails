@@ -8,7 +8,7 @@ A published precision or recall figure is part of the interface here. A release
 that moves one says so in its entry, with the old value and the new one, because
 a number that changes quietly is a number nobody can rely on.
 
-## [Unreleased]
+## [0.4.1]
 
 ### Fixed
 
@@ -1023,7 +1023,8 @@ First release.
   changes are in [corpora/NOTICE.md](corpora/NOTICE.md). The wheel contains code
   only.
 
-[Unreleased]: https://github.com/jamjet-labs/jamjet-guardrails/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/jamjet-labs/jamjet-guardrails/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/jamjet-labs/jamjet-guardrails/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/jamjet-labs/jamjet-guardrails/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/jamjet-labs/jamjet-guardrails/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/jamjet-labs/jamjet-guardrails/compare/v0.1.0...v0.2.0
