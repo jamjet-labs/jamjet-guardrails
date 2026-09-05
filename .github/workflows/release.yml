@@ -135,9 +135,28 @@ jobs:
   #
   # `environment: pypi` on all three. Trusted publishing is configured per
   # PROJECT on PyPI, so each distribution needs its own publisher entry there
-  # naming this repository, this workflow and this environment; the environment
-  # itself is one gate over the three, which is one thing to configure rather
-  # than three.
+  # naming this repository, this workflow and this environment.
+  #
+  # SHARING ONE ENVIRONMENT ACROSS THE THREE IS NOT FREE, and this comment used
+  # to say it was: one gate over the three, one thing to configure rather than
+  # three. Measured on 2026-09-05, publishing both adapters. PyPI allows only
+  # ONE PENDING publisher per (owner, repository, workflow filename,
+  # environment). The constraint is `_pending_github_oidc_publisher_uc` and it
+  # exists so an upload can map back to exactly one pending publisher during
+  # the pending-to-normal conversion, so registering the second adapter against
+  # this same file and environment is refused outright.
+  #
+  # It binds PENDING publishers only. Normal ones are many-to-many with
+  # projects, which is why the core's live publisher never blocked anything and
+  # why the refusal arrived only on the SECOND new name.
+  #
+  # So one shared environment bootstraps ONE NEW DISTRIBUTION AT A TIME:
+  # publish the one that is registered, its row converts and frees the tuple,
+  # then register the next. A third adapter pays that cost again. The
+  # alternative is a distinct environment per distribution, which splits the
+  # tuple so both can be registered at once, at the price of duplicating this
+  # environment's protection rules on each. Upstream issue, still open:
+  # https://github.com/pypi/warehouse/issues/16920
   #
   # `packages-dir` is passed explicitly because `defaults.run.working-directory`
   # applies to `run` steps and NOT to `uses` steps: without it the publish action
