@@ -141,6 +141,8 @@ persuades. The structural floor is held to the corpus the verdict was judged on,
 the shipped corpus is gated by `corpora/baselines.json` like every other one.
 Later decision-level measurements of the structural layer are recorded in
 `docs/measurements/`, not here.
+Corrections to the bar and to the verdict are in [ERRATA.md](ERRATA.md), because
+neither file is edited after the fact.
 
 ### Why 3.13 and not 3.14
 
