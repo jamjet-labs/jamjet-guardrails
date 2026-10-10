@@ -347,8 +347,8 @@
     "anti-trojan-source": "1.13.0",
     "ghostchars": "0.1.5",
     "hidden-content-scan": "1.0.0",
-    "jamjet-guardrails": "0.5.0 at d4042a8e45f8",
-    "naive-cf-cc": "run.py at d4042a8e45f8",
+    "jamjet-guardrails": "0.5.0 at 6894a352d1ce",
+    "naive-cf-cc": "run.py at 6894a352d1ce",
     "unicode-smuggling-guard": "1.2.0"
   }
 }

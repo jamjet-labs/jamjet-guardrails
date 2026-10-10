@@ -20,12 +20,12 @@ The corpus is 54 files: 27 carry content a reviewer cannot see and should be fla
 
 | Scanner | Version | Flagged hidden (of 27) | Flagged clean (of 27) | Errors | Precision | Recall | False-positive rate |
 |---|---|---:|---:|---:|---:|---:|---:|
-| jamjet-guardrails scan | `0.5.0 at d4042a8e45f8` | 22 | 2 | 0 | 0.917 | 0.815 | 0.074 |
+| jamjet-guardrails scan | `0.5.0 at 6894a352d1ce` | 22 | 2 | 0 | 0.917 | 0.815 | 0.074 |
 | unicode-smuggling-guard | `1.2.0` | 21 | 6 | 0 | 0.778 | 0.778 | 0.222 |
 | ghostchars | `0.1.5` | 14 | 2 | 0 | 0.875 | 0.519 | 0.074 |
 | hidden-content-scan | `1.0.0` | 16 | 10 | 0 | 0.615 | 0.593 | 0.370 |
 | anti-trojan-source | `1.13.0` | 23 | 21 | 0 | 0.523 | 0.852 | 0.778 |
-| naive baseline: any Cf or Cc character | `run.py at d4042a8e45f8` | 16 | 14 | 0 | 0.533 | 0.593 | 0.519 |
+| naive baseline: any Cf or Cc character | `run.py at 6894a352d1ce` | 16 | 14 | 0 | 0.533 | 0.593 | 0.519 |
 
 ## Every wrong decision, ours first
 
