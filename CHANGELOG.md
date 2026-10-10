@@ -8,9 +8,14 @@ A published precision or recall figure is part of the interface here. A release
 that moves one says so in its entry, with the old value and the new one, because
 a number that changes quietly is a number nobody can rely on.
 
-## [Unreleased]
+## [0.5.0] - 2026-10-10
 
 ### Added
+
+- **The PyPI page now links to the docs site.** `Homepage` is
+  `https://jamjet.dev/guardrails/`, and a new `Documentation` URL points at the
+  README on GitHub. `Repository`, `Issues` and `Benchmarks` are unchanged.
+  Metadata only; no code behaviour changes from this entry.
 
 - **Recipes for putting the library in an agent's request path.**
   `docs/recipes/openai-agents-sdk.md` attaches one chain to an OpenAI Agents
@@ -1133,7 +1138,8 @@ First release.
   changes are in [corpora/NOTICE.md](corpora/NOTICE.md). The wheel contains code
   only.
 
-[Unreleased]: https://github.com/jamjet-labs/jamjet-guardrails/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/jamjet-labs/jamjet-guardrails/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/jamjet-labs/jamjet-guardrails/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/jamjet-labs/jamjet-guardrails/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/jamjet-labs/jamjet-guardrails/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/jamjet-labs/jamjet-guardrails/compare/v0.2.0...v0.3.0
