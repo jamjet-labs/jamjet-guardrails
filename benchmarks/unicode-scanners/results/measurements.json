@@ -339,7 +339,7 @@
   },
   "measured": "2026-10-10",
   "network_denied": true,
-  "node": "v24.21.0",
+  "node": "v26.10.0",
   "platform": "Darwin arm64",
   "python": "3.12.4",
   "unicode": "15.0.0",
@@ -347,8 +347,8 @@
     "anti-trojan-source": "1.13.0",
     "ghostchars": "0.1.5",
     "hidden-content-scan": "1.0.0",
-    "jamjet-guardrails": "0.5.0 at 4f656f07a331",
-    "naive-cf-cc": "run.py at 4f656f07a331",
+    "jamjet-guardrails": "0.5.0 at d4042a8e45f8",
+    "naive-cf-cc": "run.py at d4042a8e45f8",
     "unicode-smuggling-guard": "1.2.0"
   }
 }
