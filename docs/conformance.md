@@ -524,7 +524,7 @@ their type names are the labels their corpora use, and their bar is the score on
 section on `secrets` below adds no requirement to that; it discloses which cases sit behind that check's
 published score. This check
 constrains how a document is ENCODED rather than what it says, and reproducing its numbers is not the same
-as reproducing it. 37 of its 107 `allow` cases stop allowing when one of the exemptions or exclusions below
+as reproducing it. 37 of its 108 `allow` cases stop allowing when one of the exemptions or exclusions below
 is switched off, and neither an exemption nor an exclusion is visible in a precision figure.
 
 Its `kind` is `constraint`, so the invariant above applies unchanged: no finding
@@ -555,8 +555,13 @@ a prediction is matched against by name.
 selectors, from U+FE00..U+FE0F and U+E0100..U+E01EF, with nothing visible
 between consecutive ones. Nothing visible means every character between them
 is default-ignorable, by the same Unicode 16.0.0 table the zero-width signal is
-built on, so a left-to-right mark or a joiner after each selector does not end
-the run. The span runs from the first selector of the run to the end of the
+built on, or White_Space, or U+2800 BRAILLE PATTERN BLANK. So a left-to-right
+mark or a joiner after each selector does not end the run, and neither does a
+space, a no-break space, a newline or an ideographic space: no standardized
+variation sequence has a blank base, and `inj-0169` to `inj-0173` are payloads
+spaced that way. A space between two emoji written with selectors leaves a
+visible base before each one and is not a run, and `inj-0174` is that negative.
+The span runs from the first selector of the run to the end of the
 last, and it can enclose characters another signal also reports; spans that
 overlap are merged into one region when the check redacts.
 
@@ -568,8 +573,13 @@ reaches the rule: `inj-0161`, `inj-0162`, `inj-0163` and `inj-0164` are those
 negatives. The four Mongolian free variation selectors are not in the rule's
 alphabet, and `inj-0166` is Mongolian text that carries them.
 
-What the rule does not see is one selector after each VISIBLE character, which
-is a well-formed variation sequence every time. A rule that also denied a lone
+What the rule does not see is one selector after each character that is none of
+those: not default-ignorable, not White_Space and not U+2800. That costs two
+characters per byte, the same as a selector after each space, and each pair is
+a well-formed variation sequence. The cover character need not render: U+FFFC,
+U+FFF9, U+13430, U+0600, U+070F, U+1D159 and a combining mark such as U+0300
+all end a run, and many renderers draw them as nothing or as a mark on the
+character before. A rule that also denied a lone
 VARIATION SELECTOR-17..256 after anything but an ideograph would close that,
 and it is not part of this check: an identifier character class written into
 source code with a selector as a range end is that shape, and `inj-0168` is

@@ -47,15 +47,20 @@ a number that changes quietly is a number nobody can rely on.
   nothing visible between them, because a Unicode variation sequence is one
   base character and exactly one selector. Invisible characters between two
   selectors do not break the run, so a left-to-right mark or a joiner after
-  each one does not get the payload through. Keycaps, text and emoji
+  each one does not get the payload through, and neither does a space, a
+  no-break space, a newline, an ideographic space or U+2800 BRAILLE PATTERN
+  BLANK, since no variation sequence has a blank base. Keycaps, text and emoji
   presentation, emoji ZWJ sequences, ideographic variation sequences, the
   subdivision flags and Mongolian free variation selectors all still allow.
   Detector version 0.2.0 to 0.3.0, because input that allowed now denies.
 
-  One selector after each visible character is a well-formed variation sequence
-  every time and still passes; the published family table now prices that at
-  0.2500 characters per bit with a cover letter per byte, where the selector
-  row was 0.1250 with nothing on the page.
+  One selector after each character that is not default-ignorable, White_Space
+  or U+2800 is a well-formed variation sequence every time and still passes.
+  The published family table now prices that at 0.2500 characters per bit, one
+  cover character per byte, where the selector row was 0.1250 with nothing on
+  the page. The cover character does not have to be visible: format controls
+  such as U+FFF9 and U+13430, U+FFFC, U+0600, U+070F, U+1D159 and combining
+  marks all work as covers.
 
   The published row moved, on a corpus that grew from 154 cases to 168 (six
   positives, eight hard negatives) with `inj-0098` relabelled from one

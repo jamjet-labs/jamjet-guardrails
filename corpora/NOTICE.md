@@ -751,8 +751,8 @@ that date.
 
 **`corpora/injection-structural/in-repo.jsonl` labels its own failures as
 failures, and its published numbers describe a check that trades recall for
-precision at a bound that was raised deliberately.** 0.973 precision, 0.887
-recall, 7 wrong decisions over 168 cases. Seven cases fail, every one of them on
+precision at a bound that was raised deliberately.** 0.975 precision, 0.891
+recall, 7 wrong decisions over 174 cases. Seven cases fail, every one of them on
 purpose, and there are no other failures. Fourteen cases are listed below: the
 seven that fail, plus the three-case balanced-override set and the four
 imbalanced-control cases -- a stray PDF, a stray PDI, and the two halves of a
@@ -1424,7 +1424,7 @@ the cost of THAT ENCODING and is not a bound on anything.
 
 | Family | Size | An encoder, and what it cost |
 |---|---:|---|
-| variation selectors | 256 | one selector per byte, each after a visible cover letter: **0.2500** chars/bit |
+| variation selectors | 256 | one selector per byte, each after a non-blank cover character: **0.2500** chars/bit |
 | the same, plus the 3 directional marks and the 4 Mongolian selectors | 263 | base 263 is not needed; the byte encoder above already uses 256: 0.2500 |
 | C1 controls | 32 | base 32: **0.1992** |
 | C0 controls, tab, LF and CR excluded | 29 | base 29: **0.2070** |
@@ -1435,9 +1435,14 @@ the cost of THAT ENCODING and is not a bound on anything.
 
 The two variation-selector rows were 0.1250, one selector per byte with nothing
 on the page, until `VARIATION_SELECTOR_SMUGGLING` began reporting two selectors
-with nothing visible between them. What is left of that family is one selector
-after each visible character, a well-formed variation sequence every time, and
-it puts a cover letter on the page for every byte it carries.
+with nothing visible between them, where a default-ignorable character, a
+White_Space character or U+2800 BRAILLE PATTERN BLANK between two selectors
+counts as nothing visible. What is left of that family is one selector after
+each character that is none of those, a well-formed variation sequence every
+time. It costs one cover character per byte, and the cover need not be visible:
+U+FFFC, U+FFF9, U+13430, U+0600, U+070F, U+1D159 and a combining mark such as
+U+0300 all end a run and carry the payload, and many renderers draw them as
+nothing or as a mark on the character before.
 
 Every row was measured against the committed detector, returns **zero
 findings**, and decodes back to "ignore all previous instructions" verbatim. Two

@@ -433,11 +433,13 @@ def _invisible() -> frozenset[str]:
     measured against this file. The variation-selector rows were 0.1250, one
     selector per byte with nothing on the page, until `_selector_spans` began
     reporting two selectors with nothing visible between them; what that signal
-    leaves is one selector per visible character, which puts a cover letter on
-    the page for every byte:
+    leaves is one selector after each character that is not default-ignorable,
+    White_Space or U+2800. That cover costs one character per byte, and it need
+    not render: U+FFFC, U+FFF9, U+13430, U+0600, U+070F, U+1D159 and a
+    combining mark all serve:
 
       256 variation selectors, one per byte, each
-        after a visible cover letter                    0.2500 chars/bit
+        after a non-blank cover character              0.2500 chars/bit
       the same plus the 3 marks and 4 Mongolian ones    0.2500
       32 C1 controls, base 32                           0.1992
       29 C0 controls, base 29                           0.2070
@@ -1390,12 +1392,33 @@ def _class(ranges: tuple[tuple[int, int], ...]) -> str:
     return "".join(f"{re.escape(chr(low))}-{re.escape(chr(high))}" for low, high in ranges)
 
 
+# The Unicode White_Space property (PropList.txt), plus U+2800 BRAILLE PATTERN
+# BLANK, which is not White_Space but draws as an empty cell. No standardized
+# variation sequence has any of these as its base, so a selector after one
+# modifies nothing, and one selector after each space or newline would
+# otherwise carry a payload with nothing on the page but whitespace.
+_BLANK_RANGES: tuple[tuple[int, int], ...] = (
+    (0x0009, 0x000D),
+    (0x0020, 0x0020),
+    (0x0085, 0x0085),
+    (0x00A0, 0x00A0),
+    (0x1680, 0x1680),
+    (0x2000, 0x200A),
+    (0x2028, 0x2029),
+    (0x202F, 0x202F),
+    (0x205F, 0x205F),
+    (0x2800, 0x2800),
+    (0x3000, 0x3000),
+)
 # What may stand between two selectors without ending their run: characters a
 # conforming renderer draws as nothing, which is `_DEFAULT_IGNORABLE`, the
-# property the zero-width signal is built on. The selectors are taken OUT of the
-# gap so that the two classes are disjoint: every character then has exactly one
-# way to match, and the pattern cannot backtrack into a second reading of a run.
-_GAP_RANGES = _ranges_without(_DEFAULT_IGNORABLE, _SELECTOR_RANGES)
+# property the zero-width signal is built on, and the blanks above. The
+# selectors are taken OUT of the gap so that the two classes are disjoint: every
+# character then has exactly one way to match, and the pattern cannot backtrack
+# into a second reading of a run.
+_GAP_RANGES = tuple(
+    sorted(_ranges_without(_DEFAULT_IGNORABLE, _SELECTOR_RANGES) + _BLANK_RANGES)
+)
 _SELECTOR_RUN = re.compile(
     f"[{_class(_SELECTOR_RANGES)}]"
     f"(?:[{_class(_GAP_RANGES)}]*[{_class(_SELECTOR_RANGES)}]){{{_MIN_SELECTORS - 1},}}"
@@ -1414,11 +1437,14 @@ def _selector_spans(content: str) -> list[tuple[int, int]]:
     would carry the same payload at two characters per byte with nothing on the
     page. `test_an_invisible_spacer_between_selectors_does_not_break_the_run`
     holds that, and `inj-0098`, where U+FE0F is spaced by ZWJ, is the corpus
-    case.
+    case. White_Space and U+2800 are in the gap too, because no variation
+    sequence has a blank base: a selector after each space would otherwise put
+    nothing but whitespace on the page. `inj-0169` to `inj-0173` are those.
 
-    What it does not see is one selector per VISIBLE character, which is a
-    variation sequence every time. `test_one_selector_per_visible_character_is_a_known_miss`
-    is that residual.
+    What it does not see is one selector after each character outside the gap,
+    which is a variation sequence every time, even where that character draws
+    nothing. `test_one_selector_per_visible_character_is_a_known_miss` and
+    `test_the_cover_for_the_known_miss_need_not_be_visible` are that residual.
 
     The span can enclose characters another signal reports, a run of joiners
     between selectors among them, so this signal's spans can OVERLAP another's.

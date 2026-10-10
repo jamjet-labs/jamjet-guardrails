@@ -9,10 +9,10 @@
     "precision": 1.0,
     "recall": 0.875
   },
-  "injection-structural/in-repo/e2014aeba636": {
+  "injection-structural/in-repo/d559325769de": {
     "decision_mismatches": 7,
-    "precision": 0.973,
-    "recall": 0.887
+    "precision": 0.974,
+    "recall": 0.891
   },
   "pii/in-repo/06fb3b601aba": {
     "decision_mismatches": 24,
