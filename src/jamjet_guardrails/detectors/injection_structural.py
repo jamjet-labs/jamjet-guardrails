@@ -12,10 +12,11 @@ is why Private Use Area characters are NOT a signal -- see the note by
 `_ZERO_WIDTH` for what happens to a check that fires on a developer's shell
 prompt.
 
-Cost, and the shape of it. Linear in the content length. 124 ms median for one
+Cost, and the shape of it. Linear in the content length. 125 ms median for one
 megabyte of the seeded input recorded in `docs/performance.md`, on an Apple M3
 Max under CPython 3.14.5, with the median rising 4.0x per 4x of input across the
-whole range from 1 KB. That measurement denies rather than redacts, so it is the
+whole range from 1 KB. Re-measured on 2026-10-10 when the variation-selector
+signal was added; it was 124 ms before. That measurement denies rather than redacts, so it is the
 scan plus the construction of the findings and no rewrite. `scripts/measure_throughput.py`
 reruns it, and `docs/performance.md` states the machine, the input and the method.
 """

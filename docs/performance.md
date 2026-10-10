@@ -74,7 +74,7 @@ taken on the machine and the interpreter named above.
 |---|---|---|
 | `confusables` | 2026-09-03 | 2026-09-04, when the two quadratic sites below were fixed |
 | `encoded-content` | 2026-09-04 | |
-| `injection-structural` | 2026-09-03 | |
+| `injection-structural` | 2026-09-03 | 2026-10-10, when the variation-selector signal was added; same machine and interpreter, macOS 27.0.1 |
 | `pii` | 2026-09-03 | |
 | `rules` | 2026-09-03 | 2026-09-03, when the fixture set `fold_confusables=True` |
 | `script-constraint` | 2026-09-03 | |
@@ -149,12 +149,12 @@ Milliseconds per call. `MB/s` is derived from the p50.
 | encoded-content | 65 536 | 0 | 10.208 | 10.533 | 10.983 | 6.2 |
 | encoded-content | 262 144 | 0 | 42.053 | 43.697 | 44.273 | 6.0 |
 | encoded-content | 1 048 576 | 0 | 168.925 | 174.867 | 177.190 | 6.0 |
-| injection-structural | 1 024 | 1 | 0.123 | 0.139 | 0.149 | 8.0 |
-| injection-structural | 4 096 | 3 | 0.486 | 0.535 | 0.558 | 8.1 |
-| injection-structural | 16 384 | 15 | 1.987 | 2.089 | 2.127 | 7.9 |
-| injection-structural | 65 536 | 61 | 7.891 | 8.220 | 8.376 | 8.0 |
-| injection-structural | 262 144 | 244 | 31.487 | 32.428 | 33.316 | 8.0 |
-| injection-structural | 1 048 576 | 979 | 124.167 | 126.180 | 126.833 | 8.1 |
+| injection-structural | 1 024 | 1 | 0.129 | 0.133 | 0.137 | 7.7 |
+| injection-structural | 4 096 | 3 | 0.506 | 0.538 | 0.888 | 7.8 |
+| injection-structural | 16 384 | 15 | 2.016 | 2.087 | 2.128 | 7.8 |
+| injection-structural | 65 536 | 61 | 8.129 | 8.482 | 8.714 | 7.8 |
+| injection-structural | 262 144 | 244 | 31.430 | 32.358 | 33.691 | 8.0 |
+| injection-structural | 1 048 576 | 979 | 125.319 | 127.298 | 129.517 | 8.1 |
 | pii | 1 024 | 1 | 0.204 | 0.215 | 0.250 | 4.8 |
 | pii | 4 096 | 4 | 0.820 | 0.841 | 0.879 | 4.8 |
 | pii | 16 384 | 16 | 3.289 | 3.701 | 3.770 | 4.8 |
@@ -230,10 +230,20 @@ of it, so 4.0 is exactly linear.
   that input does not reach is unmeasured rather than covered. The claim for
   this check now rests on the two adversarial measurements above as well as on
   the table.
-- **`injection-structural`** is linear. Ratios across the range run 3.94 to 4.09
-  and the rate never leaves 7.9 to 8.1 megabytes per second. It denies on this
+- **`injection-structural`** is linear. Ratios across the range run 3.87 to 4.03
+  and the rate never leaves 7.7 to 8.1 megabytes per second. It denies on this
   input rather than redacting, so the number is a scan and the construction of
   the findings, with no rewrite.
+
+  The variation-selector signal is one regular expression over the input and
+  added little: measured in alternating runs in one session, the 1 MB median
+  went from 123.274 and 119.865 ms without it to 128.402 and 126.388 ms with it,
+  which is about 4%. This input carries no selectors, so that is the cost of
+  looking. On inputs that are nothing but selectors the signal alone is linear
+  too: 1.78, 7.20 and 29.79 ms for 64 KB, 256 KB and 1 MB of one unbroken run,
+  and 0.94, 3.84 and 17.04 ms when a left-to-right mark follows every selector.
+  Those are one machine's numbers from one session and are not re-measured by
+  anything.
 - **`pii`** is linear. Ratios run 3.95 to 4.02 and the rate holds at 4.8 to 4.9
   megabytes per second across three orders of magnitude. It is the slowest check
   here, and the Luhn validation of every candidate digit run is why: it redacts,
