@@ -448,6 +448,26 @@ def test_the_two_published_tables_agree_on_how_many_decisions_were_wrong() -> No
         if r["detector"]["id"] == "structural" and r["corpus"]["id"] == "in-repo"
     )
     measured = run["overall"]["fp"] + run["overall"]["fn"]
+
+    # SAME CORPUS is a precondition of the comparison, and it was not checked.
+    # `RESULTS.md` was measured on 146 inputs; the corpus grew to 154 at 0.2.0
+    # and the two counts went on agreeing at 8 by coincidence, so this asserted
+    # an equality between two different corpora and passed. It surfaced when
+    # the variation-selector signal moved the 168-case count to 7. Compared
+    # only when the input counts agree; when they do not, `RESULTS.md` has to
+    # say in its own heading how many inputs it measured, so a reader sees two
+    # corpora rather than one table contradicting the other.
+    cases = int(matching[0][header.index("Cases")])
+    measured_cases = sum(run["overall"].values())
+    if measured_cases != cases:
+        results = (BENCHMARKS / "RESULTS.md").read_text(encoding="utf-8")
+        assert (
+            f"`corpora/injection-structural/in-repo.jsonl` ({measured_cases} inputs" in results
+        ), (
+            f"benchmarks/RESULTS.md was measured on {measured_cases} inputs and BENCHMARKS.md "
+            f"on {cases}, and RESULTS.md does not say which corpus it measured"
+        )
+        return
     assert measured == published, (
         f"BENCHMARKS.md reports {published} wrong decisions for injection-structural on "
         f"injection-structural/in-repo; benchmarks/RESULTS.md reports {measured} "
