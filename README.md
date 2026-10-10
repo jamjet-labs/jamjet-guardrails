@@ -253,10 +253,8 @@ and `--sarif scan.sarif` writes a SARIF report in the same run for GitHub code
 scanning. An agent instruction file is never skipped: one that is not UTF-8,
 holds a NUL byte or is over the size cap is scanned anyway and reported.
 
-`scan` is listed under Unreleased in
-[CHANGELOG.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/CHANGELOG.md),
-so the release on PyPI does not have it yet. Until one does, install from the
-repository: `pip install git+https://github.com/jamjet-labs/jamjet-guardrails`.
+The command comes with the package, so `pip install jamjet-guardrails` is all
+it needs.
 
 How it compares with four other hidden-Unicode scanners, on one corpus of
 hidden payloads and hard negatives, with every wrong decision each makes and

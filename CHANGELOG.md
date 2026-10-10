@@ -10,6 +10,8 @@ a number that changes quietly is a number nobody can rely on.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-10
+
 ### Added
 
 - **`jamjet-guardrails scan`, for instructions hidden in the files an AI coding
@@ -44,18 +46,6 @@ a number that changes quietly is a number nobody can rely on.
   first, including the variation-selector encoding `injection-structural` is
   already disclosed as missing. CI re-measures our row and the naive row on
   every run; the other four are measured at pinned versions with one command.
-
-### Changed
-
-- **The README starts with what a new user needs.** What the library is,
-  the install line, an executed five-line example, three paths in (your own
-  calls, an agent framework, a repository scan), how it fails and what it
-  does not catch, then links for people coming from llm-guard, Guardrails AI
-  and NeMo Guardrails. The reference material below is unchanged.
-
-## [0.5.0] - 2026-10-10
-
-### Added
 
 - **The PyPI page now links to the docs site.** `Homepage` is
   `https://jamjet.dev/guardrails/`, and a new `Documentation` URL points at the
@@ -137,6 +127,14 @@ a number that changes quietly is a number nobody can rely on.
   one that ships; the shipped corpus is gated by `corpora/baselines.json`. The
   structural layer's decision-level recall on the new corpus, 0.925, is recorded
   in `docs/measurements/2026-10-10-structural-decision-recall.md`.
+
+### Changed
+
+- **The README starts with what a new user needs.** What the library is,
+  the install line, an executed five-line example, three paths in (your own
+  calls, an agent framework, a repository scan), how it fails and what it
+  does not catch, then links for people coming from llm-guard, Guardrails AI
+  and NeMo Guardrails. The reference material below is unchanged.
 
 ### Fixed
 
