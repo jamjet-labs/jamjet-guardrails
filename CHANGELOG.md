@@ -74,8 +74,12 @@ a number that changes quietly is a number nobody can rely on.
 - **A benchmark guard compared two different corpora and agreed by
   coincidence.** `benchmarks/RESULTS.md` was measured on 146 inputs and
   `BENCHMARKS.md` on 154, and both happened to count 8 wrong decisions. The
-  guard now compares wrong decisions only when the input counts match, and
-  otherwise requires `benchmarks/RESULTS.md` to name the input count it measured.
+  guard now runs today's check over the 146 inputs `benchmarks/RESULTS.md`
+  measured and compares each decision against the `flagged` list
+  `benchmarks/results/measurements.json` keeps. A decision that moved fails it
+  unless it is disclosed with a reason in the test; today that is `inj-0098`,
+  which RESULTS.md recorded as a miss and the variation-selector signal now
+  catches.
 
 - **The README called the third-party PII corpus the one to read for ordinary
   text, and it is not ordinary text.** `nvidia/Nemotron-PII` is tagged
