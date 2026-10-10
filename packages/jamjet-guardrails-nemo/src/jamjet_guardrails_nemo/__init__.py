@@ -60,7 +60,10 @@ def init(app: Any) -> JamJetRails:
     direction key and an option for a check no direction runs. All of it happens
     here, inside `LLMRails.__init__`, where an exception aborts the load.
     Measured on nemoguardrails 0.24.0: an exception raised from `init`
-    propagates out of `LLMRails(config)` unchanged.
+    propagates out of `LLMRails(config)` unchanged. From 0.24.1 nemoguardrails
+    wraps it in a `RuntimeError` that names the `config.py` path, with the
+    `GuardrailUnavailableError` from here as its `__cause__`. The load fails
+    either way.
 
     The alternative is what a lazily built chain gives you, and it is worse than
     it sounds: the first user message is the one that discovers the config names
