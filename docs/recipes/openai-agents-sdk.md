@@ -43,6 +43,7 @@ from typing import Any
 
 from agents import (
     Agent,
+    AgentOutputSchemaBase,
     FunctionTool,
     GuardrailFunctionOutput,
     OutputGuardrailTripwireTriggered,
@@ -311,10 +312,14 @@ async def answer(agent: Agent[Any], text: str) -> Any:
         redacted = tripped.guardrail_result.output.output_info.get("redacted")
         if redacted is None:
             raise
-        if agent.output_type in (None, str):
+        output_type = agent.output_type
+        if output_type is None or output_type is str:
             return redacted
+        if isinstance(output_type, AgentOutputSchemaBase):
+            # A schema object decides its own parsing; the reply stays on the tripwire.
+            raise
         try:
-            return TypeAdapter(agent.output_type).validate_json(redacted)
+            return TypeAdapter(output_type).validate_json(redacted)
         except ValidationError:
             raise tripped from None
     return result.final_output
@@ -365,7 +370,8 @@ write a hidden character as a `\u` escape pair.
 **Final outputs cannot be rewritten either.** An output guardrail can only trip.
 On `redact` the redacted reply travels in `output_info`, and `answer` catches
 `OutputGuardrailTripwireTriggered` and returns it, parsed back into the agent's
-`output_type` when it has one. On `deny` there is no `redacted` key and
+`output_type` when it has one. When `output_type` is a schema object rather
+than a type, `answer` re-raises and the redacted reply stays in `output_info`. On `deny` there is no `redacted` key and
 `answer` re-raises. A tripwire from any other output guardrail is re-raised
 untouched.
 

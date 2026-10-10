@@ -127,7 +127,7 @@ class JamjetGuardrail(CustomGuardrail):
         # Responses API tool outputs (`function_call_output`) and `instructions`
         # reach the model through `structured_messages` only, never `texts`.
         original = inputs.get("structured_messages")
-        messages = copy.deepcopy(original) if original else None
+        messages: list[Any] | None = copy.deepcopy(list(original)) if original else None
         changed = False
         for message in messages or []:
             fields: list[tuple[Any, Any]] = []

@@ -534,6 +534,21 @@ def test_agents_answer_returns_a_redacted_structured_reply_as_its_type(
     assert reply.text == "Mail [REDACTED:EMAIL]."
 
 
+def test_agents_answer_reraises_a_redacted_reply_for_an_output_schema_object(
+    agents: ModuleType, recipe: ModuleType
+) -> None:
+    """A schema object decides its own parsing, so `answer` does not guess it
+    and the redacted reply stays on the tripwire."""
+    ModelReply, _ = _reply_types()
+    model = _scripted_model(agents, [json.dumps({"text": f"Mail {EMAIL}."})])
+    schema = agents.AgentOutputSchema(ModelReply)
+    agent = recipe.guarded_agent("probe", "Be brief.", tools=[], model=model, output_type=schema)
+    with pytest.raises(agents.OutputGuardrailTripwireTriggered) as tripped:
+        _run(recipe.answer(agent, "Who?"))
+    info = tripped.value.guardrail_result.output.output_info
+    assert info["redacted"] == '{"text": "Mail [REDACTED:EMAIL]."}'
+
+
 def test_agents_a_structured_tool_output_is_checked_with_its_hidden_characters(
     agents: ModuleType, recipe: ModuleType
 ) -> None:

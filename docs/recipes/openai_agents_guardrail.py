@@ -15,6 +15,7 @@ from typing import Any
 
 from agents import (
     Agent,
+    AgentOutputSchemaBase,
     FunctionTool,
     GuardrailFunctionOutput,
     OutputGuardrailTripwireTriggered,
@@ -283,10 +284,14 @@ async def answer(agent: Agent[Any], text: str) -> Any:
         redacted = tripped.guardrail_result.output.output_info.get("redacted")
         if redacted is None:
             raise
-        if agent.output_type in (None, str):
+        output_type = agent.output_type
+        if output_type is None or output_type is str:
             return redacted
+        if isinstance(output_type, AgentOutputSchemaBase):
+            # A schema object decides its own parsing; the reply stays on the tripwire.
+            raise
         try:
-            return TypeAdapter(agent.output_type).validate_json(redacted)
+            return TypeAdapter(output_type).validate_json(redacted)
         except ValidationError:
             raise tripped from None
     return result.final_output

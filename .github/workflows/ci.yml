@@ -166,6 +166,9 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev]" "openai-agents==0.23.1"
+      # The main job's mypy cannot see the recipe's framework types, so the
+      # recipe is type-checked here, where they are installed.
+      - run: mypy docs/recipes/openai_agents_guardrail.py
       - run: pytest -q tests/test_recipes.py
 
   recipe-litellm:
@@ -180,4 +183,5 @@ jobs:
       # The `proxy` extra because the recipe is a proxy guardrail and the tests
       # drive the proxy's own dispatch and config loader.
       - run: pip install -e ".[dev]" "litellm[proxy]==1.104.2"
+      - run: mypy docs/recipes/litellm_guardrail.py
       - run: pytest -q tests/test_recipes.py
