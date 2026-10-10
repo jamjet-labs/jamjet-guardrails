@@ -11,6 +11,7 @@ with no network and no model.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from pathlib import Path
 
@@ -164,15 +165,29 @@ def test_a_configuration_that_would_check_less_than_it_names_fails_the_load(
 ) -> None:
     """Every one of these used to be discoverable only at the first user message.
 
-    `init` runs inside `LLMRails.__init__`, and an exception raised there
-    propagates out of the constructor unchanged (measured on nemoguardrails
-    0.24.0). So a config that names a check nobody installed, or wires a flow to
-    a direction with no checks, fails the process that loads it rather than the
-    request that trips over it.
+    `init` runs inside `LLMRails.__init__`, and an exception raised there aborts
+    the constructor. So a config that names a check nobody installed, or wires a
+    flow to a direction with no checks, fails the process that loads it rather
+    than the request that trips over it.
+
+    What reaches the caller depends on the nemoguardrails release, and both are
+    inside this adapter's declared range. 0.24.0 lets the error out unchanged.
+    0.24.1 (NVIDIA-NeMo/Guardrails#2371) wraps it in a `RuntimeError` naming the
+    `config.py` path and chains the original as `__cause__`. Either way the load
+    fails and the refusal is ours, which is what this asserts: the raised error
+    is `GuardrailUnavailableError` or directly caused by one, and its message is
+    the one this configuration should produce. A wrapper caused by anything
+    else, or a load that succeeds, still fails here.
     """
     config = RailsConfig.from_path(str(rails_folder(yaml_text)))
-    with pytest.raises(GuardrailUnavailableError, match=message):
+    with pytest.raises((GuardrailUnavailableError, RuntimeError)) as raised:
         LLMRails(config)
+    refusal: BaseException | None = raised.value
+    if isinstance(raised.value, RuntimeError):
+        assert "Failed to initialize configuration module" in str(raised.value)
+        refusal = raised.value.__cause__
+    assert isinstance(refusal, GuardrailUnavailableError)
+    assert re.search(message, str(refusal))
 
 
 def test_only_the_configured_direction_registers_an_action(rails_folder: Folder) -> None:
