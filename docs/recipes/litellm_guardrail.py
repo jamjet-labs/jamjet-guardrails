@@ -47,6 +47,19 @@ def audit_record(result: ChainResult) -> dict[str, Any]:
     }
 
 
+def decoded(arguments: str) -> str:
+    """Tool call arguments with their JSON escapes undone.
+
+    A model may write a hidden character as `\\udb40\\udc69` or a letter as
+    `\\u0073`, and the checks read characters, not escapes.
+    """
+    try:
+        value = json.loads(arguments)
+    except ValueError:
+        return arguments
+    return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+
+
 class JamjetGuardrail(CustomGuardrail):
     def __init__(
         self, jamjet_checks: Any = DEFAULT_CHECKS, allow_streaming: Any = False, **kwargs: Any
@@ -128,9 +141,11 @@ class JamjetGuardrail(CustomGuardrail):
                     fields.append((call["function"], "arguments"))
             for holder, key in fields:
                 if isinstance(holder.get(key), str):
-                    checked = check(holder[key])
-                    changed = changed or checked != holder[key]
-                    holder[key] = checked
+                    text = decoded(holder[key]) if key == "arguments" else holder[key]
+                    checked = check(text)
+                    if checked != text:
+                        holder[key] = checked
+                        changed = True
         denied = [audit_record(r) for r in results.values() if r.decision == "deny"]
         if denied:
             # Names what fired, never the content: the content is what was denied.

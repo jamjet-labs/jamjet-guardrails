@@ -788,9 +788,11 @@ def test_litellm_checks_the_arguments_of_earlier_tool_calls(
 ) -> None:
     GuardrailRaisedException = _from("litellm.exceptions", "GuardrailRaisedException")
 
-    turn = _tool_turn("ok", arguments=json.dumps({"q": SMUGGLED}, ensure_ascii=False))
-    with pytest.raises(GuardrailRaisedException):
-        _pre_call(guard, _responses(*turn), "aresponses")
+    # Raw, and as JSON escapes, which is how most encoders write the characters.
+    for ascii_only in (False, True):
+        arguments = json.dumps({"q": SMUGGLED}, ensure_ascii=ascii_only)
+        with pytest.raises(GuardrailRaisedException):
+            _pre_call(guard, _responses(*_tool_turn("ok", arguments=arguments)), "aresponses")
 
 
 def test_litellm_never_calls_the_guardrail_for_a_request_of_only_tool_outputs(
