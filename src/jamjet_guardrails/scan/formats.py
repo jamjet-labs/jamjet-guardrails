@@ -49,9 +49,10 @@ def _detail(hit: ScanHit) -> str:
 def to_text(report: ScanReport) -> str:
     lines: list[str] = []
     for hit in report.hits:
-        head = (
-            f"{safe_line(hit.path)}:{hit.line}:{hit.column}: "
-            f"{hit.decision} {hit.check}/{hit.finding_type}"
+        # Escaped as a whole, not path alone: a path of ":" followed by the
+        # ":line" separator would otherwise start the line with "::".
+        head = safe_line(
+            f"{hit.path}:{hit.line}:{hit.column}: {hit.decision} {hit.check}/{hit.finding_type}"
         )
         detail = safe_line(_detail(hit))
         lines.append(f"{head} {detail}" if detail else head)
@@ -116,12 +117,15 @@ def _uri(path: str) -> dict[str, str]:
 
 
 def _message(hit: ScanHit) -> str:
+    # A code-scanning alert is rendered and often copied into a log, and a
+    # variation-selector payload decodes to arbitrary text, so the message is
+    # escaped exactly as a text-format line is.
     text = f"{hit.check} reported {hit.finding_type}"
-    detail = _detail(hit)
+    detail = safe_line(_detail(hit))
     if detail:
         text += f": {detail}"
     if hit.hidden_text is not None:
-        text += f'. Hidden text: "{hit.hidden_text}"'
+        text += f'. Hidden text: "{safe_line(hit.hidden_text)}"'
     return text
 
 

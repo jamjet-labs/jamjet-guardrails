@@ -180,10 +180,10 @@ def test_an_explicit_binary_file_is_never_skipped(tmp_path: Path) -> None:
 
 @pytest.mark.skipif(sys.platform == "win32", reason="symlinks need privileges on Windows")
 def test_a_symlinked_rules_directory_is_followed(tmp_path: Path) -> None:
-    _w(tmp_path, "shared/style.mdc")
+    _w(tmp_path, "shared/style.md")
     (tmp_path / ".cursor").mkdir()
     os.symlink(tmp_path / "shared", tmp_path / ".cursor" / "rules")
-    assert _rels(tmp_path) == [".cursor/rules/style.mdc"]
+    assert _rels(tmp_path) == [".cursor/rules/style.md"]
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="symlinks need privileges on Windows")
@@ -198,3 +198,60 @@ def test_a_symlinked_agent_file_is_read(tmp_path: Path) -> None:
     _w(tmp_path, "real.txt", "x")
     os.symlink(tmp_path / "real.txt", tmp_path / "AGENTS.md")
     assert _rels(tmp_path) == ["AGENTS.md"]
+
+
+# Regressions from the adversarial review of this branch. Each was a payload
+# in a file an agent reads that the scan reported as clean.
+
+
+def test_a_directory_other_than_the_cwd_matches_agent_files_relative_to_itself(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    _w(repo, ".cursorrules")
+    _w(repo, ".github/copilot-instructions.md")
+    _w(repo, "README.md")
+    got = [t.rel for t in discover([repo], all_text=False, root=tmp_path)]
+    assert got == ["repo/.cursorrules", "repo/.github/copilot-instructions.md"]
+
+
+def test_where_the_checkout_lives_does_not_make_its_files_agent_files(tmp_path: Path) -> None:
+    # A checkout under a directory called `.continue` is not a rules directory:
+    # its README is matched as `README.md`, relative to the walked directory.
+    repo = tmp_path / ".continue" / "repo"
+    _w(repo, "README.md")
+    _w(repo, "AGENTS.md")
+    got = [t.rel for t in discover([repo], all_text=False, root=tmp_path)]
+    assert got == [".continue/repo/AGENTS.md"]
+
+
+def test_nested_rule_directories_are_agent_files() -> None:
+    for rel in ["pkg/.cursor/rules/r.md", "a/b/.clinerules/x.md", "svc/.claude/skills/s/x.py"]:
+        assert is_agent_file(rel), rel
+
+
+def test_agent_file_names_match_without_regard_to_case() -> None:
+    # macOS and Windows resolve AGENTS.md to a file named agents.md.
+    for rel in ["agents.md", "Claude.md", ".CursorRules", ".Claude/settings.json"]:
+        assert is_agent_file(rel), rel
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="symlinks need privileges on Windows")
+def test_a_symlinked_rules_directory_is_read_although_its_target_was_walked_first(
+    tmp_path: Path,
+) -> None:
+    _w(tmp_path, ".a/rules.md")
+    os.symlink(tmp_path / ".a", tmp_path / ".roo")
+    assert _rels(tmp_path) == [".roo/rules.md"]
+
+
+def test_an_explicit_path_that_cannot_be_statted_is_an_invocation_error(tmp_path: Path) -> None:
+    with pytest.raises(TargetError):
+        discover([tmp_path / ("a" * 300)], all_text=False, root=tmp_path)
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no FIFOs here")
+def test_an_explicit_fifo_is_refused_rather_than_read(tmp_path: Path) -> None:
+    os.mkfifo(tmp_path / "f")
+    with pytest.raises(TargetError):
+        discover([tmp_path / "f"], all_text=False, root=tmp_path)

@@ -27,10 +27,13 @@ a number that changes quietly is a number nobody can rely on.
   file named on the command line, that is not UTF-8, holds a NUL byte or is
   over the 2,000,000-byte cap is decoded leniently, scanned, and reported as a
   `deny` finding of its own, because each was a one-byte way past a scanner
-  that skipped it. Directory symlinks are followed with a loop guard. String
-  literals in `.json` files are decoded and scanned again, so a tag payload
-  written as `\u` escapes in an MCP configuration is found. Paths and excerpts
-  are escaped before printing, including every `::`, so a file name cannot
+  that skipped it. Agent file names match at any depth and without regard to
+  case, relative to the directory being walked. Directory symlinks are
+  followed with a loop guard. Any `\u` or `\U` escape in a scanned file is
+  decoded and scanned again, so a tag payload written as escapes in an MCP
+  config, a Gemini TOML command or a skill's YAML frontmatter is found.
+  Paths, excerpts and decoded text are escaped before printing, including
+  every `::`, so a file name cannot
   forge a GitHub Actions workflow command.
 
 - **An open benchmark of hidden-Unicode scanners.**

@@ -143,3 +143,15 @@ def test_sarif_encodes_an_undecodable_file_name_byte_for_byte() -> None:
     sarif = json.loads(to_sarif(ScanReport(1, 0, (_hit(path=name),))))
     loc = sarif["runs"][0]["results"][0]["locations"][0]["physicalLocation"]
     assert loc["artifactLocation"]["uri"] == "bad%FF.md"
+
+
+def test_sarif_message_escapes_hidden_text_and_excerpt() -> None:
+    hostile = _hit(hidden_text="ok\n::error file=x::pwned \u202eevil", excerpt="a\rb")
+    msg = json.loads(to_sarif(ScanReport(1, 0, (hostile,))))["runs"][0]["results"][0]
+    text = msg["message"]["text"]
+    assert "\n" not in text and "\r" not in text and "::" not in text and "\u202e" not in text
+
+
+def test_a_path_that_is_a_colon_cannot_start_a_line_with_two_colons() -> None:
+    out = to_text(ScanReport(1, 0, (_hit(path=":"),)))
+    assert not any(line.startswith("::") for line in out.splitlines())

@@ -19,8 +19,10 @@ scan those instead, and put `--` before any path that starts with a dash.
 ## What it reads by default
 
 A directory walk reads only agent instruction files: a path, relative to the
-directory the scan runs from, that matches one of these patterns. `**/` means
-any number of directories, including none; `/**` means anything below.
+directory being walked, that matches one of these patterns without regard to
+case. `**/` means any number of directories, including none; `/**` means
+anything below. The list is best-effort: a tool that reads a file not on it is
+covered by `--all-text` or by naming the file.
 
 <!-- agent-file-patterns -->
 ```
@@ -29,44 +31,51 @@ any number of directories, including none; `/**` means anything below.
 **/CLAUDE.md
 **/CLAUDE.local.md
 **/GEMINI.md
-CONVENTIONS.md
-.cursorrules
-.windsurfrules
-.clinerules
-.clinerules/**
-.cursor/rules/**
-.windsurf/rules/**
-.roo/**
-.kiro/steering/**
-.continue/**
-.amazonq/**
-.junie/**
-.gemini/**
-.github/copilot-instructions.md
-.github/instructions/**
-.github/prompts/**
-.github/agents/**
-.github/chatmodes/**
+**/AGENTS.override.md
+**/CONVENTIONS.md
+**/.cursorrules
+**/.windsurfrules
+**/.clinerules
+**/.clinerules/**
+**/.cursor/rules/**
+**/.windsurf/rules/**
+**/.roo/**
+**/.kiro/steering/**
+**/.continue/**
+**/.amazonq/**
+**/.junie/**
+**/.gemini/**
+**/.github/copilot-instructions.md
+**/.github/instructions/**
+**/.github/prompts/**
+**/.github/agents/**
+**/.github/chatmodes/**
 **/*.prompt.md
 **/*.prompt
 **/*.mdc
 **/SKILL.md
-.claude/skills/**
-.claude/agents/**
-.claude/commands/**
-.claude/settings.json
-.claude/settings.local.json
-.mcp.json
-mcp.json
-.vscode/mcp.json
-.cursor/mcp.json
+**/.claude/skills/**
+**/.claude/agents/**
+**/.claude/commands/**
+**/.claude/settings.json
+**/.claude/settings.local.json
+**/.mcp.json
+**/mcp.json
+**/.vscode/mcp.json
+**/.cursor/mcp.json
+**/.roomodes
+**/.rules
+**/.goosehints
+**/opencode.json
 ```
 <!-- /agent-file-patterns -->
 
 `tests/test_scan_docs.py` holds this list to the tuple the scanner matches
 against, in order, so the two cannot drift. `--all-text` widens the walk to
 every text file. The walk skips `.git`, `node_modules`, virtual environments,
-caches and build output, and follows directory symlinks without looping.
+caches and build output. It follows directory symlinks, refuses to enter a
+directory that is its own ancestor, and walks a directory reached by two names
+under both, because the name decides whether its files are agent files.
 
 ## Files it will not skip
 
@@ -85,11 +94,12 @@ Each of these is a `deny` finding and fails the scan. Only files an
 `--all-text` walk reaches for no other reason are skipped silently, and they
 are counted in the summary line.
 
-A `.json` file is scanned as written and again with every string literal that
-contains an escape decoded. `json.dumps` writes a tag character as a pair of
-`\u` escapes by default, so a payload in an MCP configuration can be plain
-ASCII on disk. A finding inside a decoded literal is reported at the literal's
-opening quote.
+A file that holds `\uXXXX` or `\UXXXXXXXX` escapes is scanned as written and
+again with every escape decoded, surrogate pairs joined, wherever the escape
+stands. JSON, TOML, YAML and Python all write an astral character that way, so
+a tag payload in an MCP configuration, a Gemini command or a skill's
+frontmatter can be plain ASCII on disk. A finding in the decoded text is
+reported at the escapes it came from.
 
 ## Checks
 
@@ -126,7 +136,7 @@ text output. JSON and SARIF are written as ASCII.
 |---|---|
 | `0` | nothing found, or `--no-fail` |
 | `1` | at least one finding, including a file it could not read cleanly |
-| `2` | the invocation is wrong: an unknown check, a check that needs options, a named path that does not exist, a SARIF path that cannot be written |
+| `2` | the invocation is wrong: an unknown check, a check that needs options, a named path that does not exist or is not a regular file or directory, a SARIF path that cannot be written |
 
 A scan that finds no agent instruction files at all exits `0` and prints
 `scanned 0 files`. A repository without them is clean, not misconfigured.

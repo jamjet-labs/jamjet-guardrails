@@ -14,6 +14,7 @@ is the one function that turns either into something a log can carry.
 from __future__ import annotations
 
 import unicodedata
+from bisect import bisect_left, bisect_right
 
 _TAG_LO, _TAG_HI = 0xE0000, 0xE007F
 _KEEP = frozenset("\t\n\r")
@@ -52,6 +53,33 @@ def utf16_col(text: str, offset: int) -> int:
     _check_offset(text, offset)
     start = text.rfind("\n", 0, offset) + 1
     return 1 + sum(2 if ord(c) > 0xFFFF else 1 for c in text[start:offset])
+
+
+class Locator:
+    """``line_col`` and ``utf16_col`` for many offsets into one text.
+
+    Built once per file: the line starts and the positions of astral
+    characters, each searched by bisection. Calling the two functions above
+    per finding is quadratic, and a 200 KB line of findings took 107 s.
+    """
+
+    __slots__ = ("_astral", "_starts", "_text")
+
+    def __init__(self, text: str) -> None:
+        self._text = text
+        self._starts = [0] + [i + 1 for i, c in enumerate(text) if c == "\n"]
+        self._astral = [i for i, c in enumerate(text) if ord(c) > 0xFFFF]
+
+    def line_col(self, offset: int) -> tuple[int, int]:
+        _check_offset(self._text, offset)
+        line = bisect_right(self._starts, offset)
+        return line, offset - self._starts[line - 1] + 1
+
+    def utf16_col(self, offset: int) -> int:
+        _check_offset(self._text, offset)
+        start = self._starts[bisect_right(self._starts, offset) - 1]
+        astral = bisect_left(self._astral, offset) - bisect_left(self._astral, start)
+        return 1 + (offset - start) + astral
 
 
 def _invisible(ch: str) -> bool:

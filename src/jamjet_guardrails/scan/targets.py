@@ -17,8 +17,14 @@ Every other file, which only an ``--all-text`` walk reaches, is skipped and
 counted when it has any of those three properties.
 
 Directory symlinks are followed, because ``.cursor/rules -> ../shared`` is an
-ordinary layout, and a directory already walked (by its resolved path) is not
-walked again, so a link loop terminates.
+ordinary layout. A directory whose resolved path is one of its own ancestors
+is not entered, so a link loop terminates; a directory reached twice by two
+different names is walked under both, because whether its files are agent
+files depends on the name.
+
+A walked file is matched against the patterns by its path relative to the
+directory being walked, not to the directory the scan runs from, so
+``scan path/to/checkout`` finds the checkout's root-level rules files.
 """
 
 from __future__ import annotations
@@ -26,6 +32,7 @@ from __future__ import annotations
 import codecs
 import os
 import re
+import stat
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import lru_cache
@@ -33,43 +40,54 @@ from pathlib import Path
 
 DEFAULT_CHECKS: tuple[str, ...] = ("injection-structural",)
 
+# Every pattern starts with `**/` because tools read these files below the
+# repository root too (Cursor reads nested `.cursor/rules`, monorepos keep one
+# per package), and matching is case-insensitive because macOS and Windows
+# resolve `AGENTS.md` to a file named `agents.md`. Over-including is the cheap
+# error here. The list is best-effort: a tool that reads a file not on it is
+# covered by `--all-text` or by naming the file.
 AGENT_FILE_PATTERNS: tuple[str, ...] = (
     "**/AGENTS.md",
     "**/AGENT.md",
     "**/CLAUDE.md",
     "**/CLAUDE.local.md",
     "**/GEMINI.md",
-    "CONVENTIONS.md",
-    ".cursorrules",
-    ".windsurfrules",
-    ".clinerules",
-    ".clinerules/**",
-    ".cursor/rules/**",
-    ".windsurf/rules/**",
-    ".roo/**",
-    ".kiro/steering/**",
-    ".continue/**",
-    ".amazonq/**",
-    ".junie/**",
-    ".gemini/**",
-    ".github/copilot-instructions.md",
-    ".github/instructions/**",
-    ".github/prompts/**",
-    ".github/agents/**",
-    ".github/chatmodes/**",
+    "**/AGENTS.override.md",
+    "**/CONVENTIONS.md",
+    "**/.cursorrules",
+    "**/.windsurfrules",
+    "**/.clinerules",
+    "**/.clinerules/**",
+    "**/.cursor/rules/**",
+    "**/.windsurf/rules/**",
+    "**/.roo/**",
+    "**/.kiro/steering/**",
+    "**/.continue/**",
+    "**/.amazonq/**",
+    "**/.junie/**",
+    "**/.gemini/**",
+    "**/.github/copilot-instructions.md",
+    "**/.github/instructions/**",
+    "**/.github/prompts/**",
+    "**/.github/agents/**",
+    "**/.github/chatmodes/**",
     "**/*.prompt.md",
     "**/*.prompt",
     "**/*.mdc",
     "**/SKILL.md",
-    ".claude/skills/**",
-    ".claude/agents/**",
-    ".claude/commands/**",
-    ".claude/settings.json",
-    ".claude/settings.local.json",
-    ".mcp.json",
-    "mcp.json",
-    ".vscode/mcp.json",
-    ".cursor/mcp.json",
+    "**/.claude/skills/**",
+    "**/.claude/agents/**",
+    "**/.claude/commands/**",
+    "**/.claude/settings.json",
+    "**/.claude/settings.local.json",
+    "**/.mcp.json",
+    "**/mcp.json",
+    "**/.vscode/mcp.json",
+    "**/.cursor/mcp.json",
+    "**/.roomodes",
+    "**/.rules",
+    "**/.goosehints",
+    "**/opencode.json",
 )
 
 MAX_BYTES = 2_000_000
@@ -138,7 +156,7 @@ def _translate(pattern: str) -> re.Pattern[str]:
             out.append(re.escape(pattern[i]))
             i += 1
     out.append(r")\Z")
-    return re.compile("".join(out))
+    return re.compile("".join(out), re.IGNORECASE)
 
 
 @lru_cache(maxsize=1)
@@ -177,22 +195,26 @@ def _readable_text(path: Path) -> bool:
     return True
 
 
-def _walk(top: Path, root: Path, all_text: bool, seen: set[str]) -> tuple[list[Target], int]:
+def _walk(top: Path, root: Path, all_text: bool) -> tuple[list[Target], int]:
     found: list[Target] = []
     skipped = 0
+    ancestors: dict[str, frozenset[str]] = {str(top): frozenset()}
     for dirpath, dirnames, filenames in os.walk(top, followlinks=True):
         real = os.path.realpath(dirpath)
-        if real in seen:
+        chain = ancestors.pop(dirpath, frozenset())
+        if real in chain:
             dirnames[:] = []
             continue
-        seen.add(real)
+        below = chain | {real}
         dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
+        for d in dirnames:
+            ancestors[os.path.join(dirpath, d)] = below
         for name in filenames:
             path = Path(dirpath) / name
             if not path.is_file():
                 continue
             rel = _rel(path, root)
-            if is_agent_file(rel):
+            if is_agent_file(_rel(path, top)):
                 found.append(Target(path, rel, forced=True))
             elif all_text:
                 if _readable_text(path):
@@ -208,18 +230,23 @@ def discover_counted(
     """``discover`` plus the number of ``--all-text`` files skipped."""
     found: dict[str, Target] = {}
     skipped = 0
-    seen: set[str] = set()
     for raw in paths:
-        if not raw.exists():
-            raise TargetError(f"no such file or directory: {raw}")
-        if raw.is_dir():
-            walked, n = _walk(raw, root, all_text, seen)
+        try:
+            mode = raw.stat().st_mode
+        except OSError as exc:
+            raise TargetError(f"cannot read {raw}: {exc.strerror or exc}") from None
+        if stat.S_ISDIR(mode):
+            walked, n = _walk(raw, root, all_text)
             skipped += n
             for t in walked:
                 found.setdefault(t.rel, t)
-        else:
+        elif stat.S_ISREG(mode):
             rel = _rel(raw, root)
             found[rel] = Target(raw, rel, forced=True)
+        else:
+            # A FIFO or a device would block or never end; it is not a file an
+            # agent reads, and naming one is an invocation error.
+            raise TargetError(f"not a regular file or directory: {raw}")
     return [found[k] for k in sorted(found)], skipped
 
 

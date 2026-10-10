@@ -21,6 +21,7 @@ from pathlib import Path
 
 from jamjet_guardrails.errors import GuardrailChainError
 from jamjet_guardrails.scan.formats import to_json, to_sarif, to_text
+from jamjet_guardrails.scan.positions import safe_line
 from jamjet_guardrails.scan.scanner import scan_paths
 from jamjet_guardrails.scan.targets import DEFAULT_CHECKS, TargetError
 
@@ -68,7 +69,7 @@ def main(argv: Sequence[str]) -> int:
         print(f"scan: {exc}", file=sys.stderr)
         return 2
     except TargetError as exc:
-        print(f"scan: {exc}", file=sys.stderr)
+        print(f"scan: {safe_line(str(exc))}", file=sys.stderr)
         return 2
 
     if args.sarif is not None:
