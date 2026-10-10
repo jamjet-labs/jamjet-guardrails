@@ -256,7 +256,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     # positional argument, so a prog of "jamjet-guardrails eval" printed a usage
     # line instructing the reader to type something argparse then refuses. False
     # in every state rather than in a reachable one.
-    parser = argparse.ArgumentParser(prog="jamjet-guardrails")
+    args_in = list(sys.argv[1:] if argv is None else argv)
+    if args_in[:1] == ["scan"]:
+        # Strictly additive: the eval parser takes no positional argument, so
+        # `scan` as the first argument was always a usage error before this.
+        from jamjet_guardrails.scan.cli import main as scan_main
+
+        return scan_main(args_in[1:])
+    parser = argparse.ArgumentParser(
+        prog="jamjet-guardrails",
+        epilog=(
+            "To scan files for hidden instructions instead, run `jamjet-guardrails scan --help`."
+        ),
+    )
     parser.add_argument("--corpora-dir", default="corpora", type=Path)
     parser.add_argument("--json", dest="json_out", type=Path)
     parser.add_argument("--md", dest="md_out", type=Path)
@@ -279,7 +291,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "a value outside [0, 0.05], or NaN, is refused rather than honoured."
         ),
     )
-    args = parser.parse_args(list(argv) if argv is not None else None)
+    args = parser.parse_args(args_in)
 
     if args.write_baselines and args.baselines:
         print(
