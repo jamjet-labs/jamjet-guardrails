@@ -15,8 +15,8 @@ Four properties, and each one is a way the bar could be quietly moved:
 - `reference_measured_by` still says `this-repo`, because a leaderboard figure
   swapped in here would compare two different datasets and that is the exact
   flaw the bar was rewritten to remove;
-- the structural floor is `0.891` at DECISION level, re-derived from the shipped
-  corpus, and is not the `0.873` FINDING-level number `BENCHMARKS.md` publishes
+- the structural floor is `0.918` at DECISION level, re-derived from the shipped
+  corpus, and is not the `0.887` FINDING-level number `BENCHMARKS.md` publishes
   for the same file;
 - `our_minimum` is what `required_minimum` returns for the recorded reference
   scores, so the bar cannot drift away from the rule that produced it.
@@ -30,6 +30,7 @@ package and a corpus that ships with it.
 from __future__ import annotations
 
 import hashlib
+import itertools
 import json
 import math
 import re
@@ -86,7 +87,13 @@ ARTIFACTS = ROOT / "training" / "artifacts"
 #: `SHIP_BAR_CORE_SHA256` below is what closes it: the semantic registration is
 #: digested separately and has never moved, so no disclosure key, however
 #: plausibly worded, can cover an edit to the number the bar actually is.
-SHIP_BAR_SHA256 = "462fab954db14b18ce7836d12f54031a3f89bb1470d7ed92570033a72f91ddc0"
+#:
+#: Moved a second time, on 2026-10-10, from
+#: 462fab954db14b18ce7836d12f54031a3f89bb1470d7ed92570033a72f91ddc0, when the
+#: structural corpus grew from 154 cases to 168 for the variation-selector
+#: signal and the floor was re-derived from 0.891 to 0.918. Disclosed in
+#: `structural_floor_rederived`, which now keeps the first move in `earlier`.
+SHIP_BAR_SHA256 = "0bef8679c89272960ae51ecb8202b53956bc72f4014be9e07cc55ad1f3be530b"
 
 #: What the whole file digested to when `training/artifacts/ship_check.json` was
 #: written, so that verdict's own record of the bar it was judged against still
@@ -94,6 +101,14 @@ SHIP_BAR_SHA256 = "462fab954db14b18ce7836d12f54031a3f89bb1470d7ed92570033a72f91d
 #: verdict alone, because a recorded verdict may never be back-filled and a
 #: constant nobody can find is a record nobody can check.
 SHIP_BAR_SHA256_AT_VERDICT = "74fb86231e6ef98813d09433041d032989ce7ed1512fb6c03d00d7e672eb2ae0"
+
+#: The structural corpus the verdict in `training/artifacts/ship_check.json` was
+#: measured on, for the same reason as the digest above. The verdict records
+#: the counts it measured and not the corpus version, because the version pin
+#: did not exist yet, and it may never be back-filled. The bar's re-derivation
+#: chain holds the counts each corpus version scored, so the verdict is checked
+#: against the record for THIS version rather than against whatever ships today.
+STRUCTURAL_CORPUS_VERSION_AT_VERDICT = "b704703f431d"
 
 #: sha256 over a canonical serialisation of the fields that were registered
 #: BEFORE any model existed, and that nothing may ever re-derive.
@@ -162,7 +177,7 @@ SHIP_BAR_CORE_KEYS = (
 #:
 #: `published_finding_level_recall` and `structural_floor_note` are here because
 #: they carry the finding-level number, which moved from 0.870 to 0.873 with the
-#: same corpus growth. `structural_floor_level` is a constant and is here because
+#: same corpus growth, and from 0.873 to 0.887 with the next one. `structural_floor_level` is a constant and is here because
 #: it describes the structural side and belongs with it.
 SHIP_BAR_STRUCTURAL_KEYS = (
     "structural_floor",
@@ -405,7 +420,7 @@ def test_the_structural_floor_is_the_decision_level_recall_of_the_shipped_corpus
 
 
 def test_the_structural_floor_is_not_the_published_finding_level_number() -> None:
-    """0.891 and 0.873 are two quantities, not one quantity that moved.
+    """0.918 and 0.887 are two quantities, not one quantity that moved.
 
     `BENCHMARKS.md` publishes the finding-level recall, where a case with four
     expected spans contributes four. A classifier emits no spans, so it can only
@@ -414,14 +429,14 @@ def test_the_structural_floor_is_not_the_published_finding_level_number() -> Non
     thing, and it would do it silently: both are recalls on the same file.
     """
     recorded = bar()
-    assert recorded["structural_floor"] == 0.891
+    assert recorded["structural_floor"] == 0.918
     assert recorded["structural_floor"] != PUBLISHED_FINDING_LEVEL_RECALL
-    assert recorded["published_finding_level_recall"] == PUBLISHED_FINDING_LEVEL_RECALL == 0.873
-    assert "0.873" in recorded["structural_floor_note"], (
+    assert recorded["published_finding_level_recall"] == PUBLISHED_FINDING_LEVEL_RECALL == 0.887
+    assert "0.887" in recorded["structural_floor_note"], (
         "the note must show the finding-level number it is telling the reader apart from"
     )
     published = (ROOT / "BENCHMARKS.md").read_text(encoding="utf-8")
-    assert "0.873" in published, "BENCHMARKS.md no longer publishes the finding-level recall"
+    assert "0.887" in published, "BENCHMARKS.md no longer publishes the finding-level recall"
 
 
 def test_the_evaluation_corpus_is_the_external_one_both_records_agree_on() -> None:
@@ -784,6 +799,10 @@ def test_the_structural_floor_names_the_corpus_version_it_was_measured_on() -> N
     in `structural_floor_rederived` and both the pin and the digest are moved in
     the same commit, which is one reviewable diff.
 
+    It has happened once since: the variation-selector signal grew the corpus
+    from 154 cases to 168 and the floor went from 0.891 to 0.918. The record of
+    the first move now sits in `earlier`, and the moves are checked to chain.
+
     Mutation-checked: relabelling one case in the corpus from `deny` to `allow`
     makes this fail, and so does changing STRUCTURAL_CORPUS_VERSION.
     """
@@ -796,10 +815,31 @@ def test_the_structural_floor_names_the_corpus_version_it_was_measured_on() -> N
         "structural_floor_rederived"
     )
     assert recorded["structural_floor_detail"]["corpus_version"] == STRUCTURAL_CORPUS_VERSION
-    assert recorded["structural_floor_rederived"]["current"]["corpus_version"] == derived
+    latest = recorded["structural_floor_rederived"]
+    assert latest["current"]["corpus_version"] == derived
+    # The current record is the detail the floor is read from, field for field.
+    detail = recorded["structural_floor_detail"]
+    assert latest["current"] == {
+        "floor": detail["floor"],
+        "corpus_cases": detail["cases"],
+        "counts": detail["counts"],
+        "recall": detail["recall"],
+        "corpus_version": detail["corpus_version"],
+    }
+    # Every move is kept, newest first, and the moves CHAIN: what each one
+    # moved from is what the one before it moved to. A move recorded without
+    # its predecessor, or a predecessor edited afterwards, breaks the chain.
+    moves = [latest, *latest.get("earlier", [])]
+    for newer, older in itertools.pairwise(moves):
+        assert newer["previous"] == older["current"], (
+            f"the move dated {newer['date']} starts from a record the move dated "
+            f"{older['date']} did not end at"
+        )
+        assert newer["date"] > older["date"]
     # The corpus that preceded the pin was never digested, and the record says
     # so with a null rather than with a value nobody measured.
-    assert recorded["structural_floor_rederived"]["previous"]["corpus_version"] is None
+    assert moves[-1]["previous"]["corpus_version"] is None
+    assert all(move["previous"]["corpus_version"] for move in moves[:-1])
     # And the derivation reads the FILE rather than quoting the pin, or the
     # whole guard would agree with itself no matter what is on disk.
     assert structural_floor(harness())["corpus_version"] == derived

@@ -73,11 +73,13 @@ body a rule like that lets through is the one worth catching.
 
 Every value in this file is invented too, and none of it is a credential or a
 person: the payloads say "ignore all previous instructions" and "do evil",
-written in Unicode tag characters or as a zero-width bitstream, and the one
-domain in them is `evil.example`, reserved for documentation by RFC 2606.
+written in Unicode tag characters, as a zero-width bitstream or as variation
+selectors, and the one domain in them is `evil.example`, reserved for
+documentation by RFC 2606.
 
 Its negatives are not invented, and could not be. The three subdivision flags,
-the emoji ZWJ sequences, the Brahmic conjuncts and the Persian, Urdu, Arabic,
+the emoji ZWJ sequences, the keycaps and ideographic variation sequences, the
+Mongolian free variation selectors, the Brahmic conjuncts and the Persian, Urdu, Arabic,
 Hindi, Malayalam and Thai text are the sequences Unicode itself publishes or
 the orthography of a living script, because the point of a negative here is
 that it is text somebody really writes. They are spelled out of code points
@@ -559,8 +561,9 @@ and the corpus says so.** Decoded prose that is not imperative does not fire:
 and `enc-0081` are encoded status notes about a migration and a ledger, all three
 labelled `allow` and all three allowed, and closing that would deny every base64
 MIME part there is. And the **marker half of `ENCODED_MARKUP` is not
-here**: the type reads the three structural signals of `injection-structural` and
-not a chat-template marker one encoding layer down, no corpus case labels one,
+here**: the type reads three of the four structural signals of
+`injection-structural`, every one but the variation-selector signal, and not a
+chat-template marker one encoding layer down, no corpus case labels one,
 and the published per-type recall for `ENCODED_MARKUP` measures the structural
 half only.
 
@@ -748,10 +751,10 @@ that date.
 
 **`corpora/injection-structural/in-repo.jsonl` labels its own failures as
 failures, and its published numbers describe a check that trades recall for
-precision at a bound that was raised deliberately.** 0.972 precision, 0.873
-recall, 8 wrong decisions over 154 cases. Eight cases fail, every one of them on
-purpose, and there are no other failures. Fifteen cases are listed below: the
-eight that fail, plus the three-case balanced-override set and the four
+precision at a bound that was raised deliberately.** 0.973 precision, 0.887
+recall, 7 wrong decisions over 168 cases. Seven cases fail, every one of them on
+purpose, and there are no other failures. Fourteen cases are listed below: the
+seven that fail, plus the three-case balanced-override set and the four
 imbalanced-control cases -- a stray PDF, a stray PDI, and the two halves of a
 document split across a balanced pair, of which `inj-0139` keeps the unclosed
 INITIATOR and only `inj-0140` is a stray terminator -- which pass and are here
@@ -793,8 +796,8 @@ an adjacent pair, so the run bound reports it and the volume bound never did.
   to the same string with the wrapper deleted -- measured with GNU FriBidi
   1.0.16. `inj-0129` is musical notation extracted to plain text, denied on the
   RUN bound as described above.
-- **Six allow a payload that is really there, and are labelled `deny`.** They
-  score as the corpus's fifteen false negatives. Three are the cost of raising
+- **Five allow a payload that is really there, and are labelled `deny`.** They
+  score as the corpus's fourteen false negatives. Three are the cost of raising
   `_MIN_TOTAL`: `inj-0051` is a ZWNJ between emoji four times over, `inj-0052`
   puts a ZWJ with one pictographic neighbour four times over, and `inj-0053`
   begins with a ZWNJ and carries three ZWSPs through Arabic text. Each is four
@@ -802,12 +805,21 @@ an adjacent pair, so the run bound reports it and the volume bound never did.
   extended: a fifth character denies whatever else the message contains, so this
   is a bounded residual rather than a channel.
 
-  The other three pre-date the raise. `inj-0097`, `inj-0098` and `inj-0099` each
-  carry the string `exfiltrate` past the check, decoded back out to check that:
-  presence-and-absence spacing of a joiner behind a Devanagari cover, the same
-  encoding between variation selectors at 119 characters with nothing on the
-  page at all, and a bitstream deperiodised with one spare cover character every
-  three bits.
+  The other two pre-date the raise. `inj-0097` and `inj-0099` each carry the
+  string `exfiltrate` past the check, decoded back out to check that:
+  presence-and-absence spacing of a joiner behind a Devanagari cover, and a
+  bitstream deperiodised with one spare cover character every three bits.
+
+  `inj-0098` was a third, and is no longer a miss. It is the same
+  presence-and-absence encoding with U+FE0F as the cover, 119 characters with
+  nothing on the page at all, and the joiner rule still excuses every joiner in
+  it. `VARIATION_SELECTOR_SMUGGLING` reports it because the cover is itself a
+  run of selectors with nothing visible between them. Its label moved with
+  that, from one `ZERO_WIDTH_SMUGGLING` finding over the joiners to one
+  `VARIATION_SELECTOR_SMUGGLING` finding over the selectors, and it stays
+  labelled `deny`. That is a relabel, so it is named here: the label says which
+  signal should report the case, and while the zero-width signal was the only
+  one that could, it named that one.
 - **Three are labelled `allow` and pass, and they are one construct rather
   than three cases.** `inj-0030`, `inj-0038` and `inj-0096` are each a BALANCED
   override whose scope contains characters whose order it reverses. Measured
@@ -828,7 +840,7 @@ an adjacent pair, so the run bound reports it and the volume bound never did.
   right-to-left reorders nothing. That is the same category as the `secrets` corpus's
   `github_pat_` and `xapp-` cases, which are tested as `allow` because they are
   shapes outside the pattern table rather than shapes it fails on -- and it is a
-  different category from `inj-0097`, `inj-0098` and `inj-0099` above, which are
+  different category from `inj-0097` and `inj-0099` above, which are
   failures inside the boundary and are labelled `deny` accordingly.
 
   The reader-facing consequence is that Trojan Source written with a closed pair
@@ -1412,14 +1424,20 @@ the cost of THAT ENCODING and is not a bound on anything.
 
 | Family | Size | An encoder, and what it cost |
 |---|---:|---|
-| variation selectors | 256 | one selector per byte: **0.1250** chars/bit |
-| the same, plus the 3 directional marks and the 4 Mongolian selectors | 263 | base 263 is not needed; the byte encoder above already uses 256: 0.1250 |
+| variation selectors | 256 | one selector per byte, each after a visible cover letter: **0.2500** chars/bit |
+| the same, plus the 3 directional marks and the 4 Mongolian selectors | 263 | base 263 is not needed; the byte encoder above already uses 256: 0.2500 |
 | C1 controls | 32 | base 32: **0.1992** |
 | C0 controls, tab, LF and CR excluded | 29 | base 29: **0.2070** |
 | Egyptian hieroglyph format controls | 16 | base 16: **0.2500** |
 | `Prepended_Concatenation_Mark` characters | 13 | base 13: **0.2695** |
 | interlinear annotation characters | 3 | base 3: **0.6289** |
 | directional marks alone | 3 | one character per bit, two of the three: **1.0000** |
+
+The two variation-selector rows were 0.1250, one selector per byte with nothing
+on the page, until `VARIATION_SELECTOR_SMUGGLING` began reporting two selectors
+with nothing visible between them. What is left of that family is one selector
+after each visible character, a well-formed variation sequence every time, and
+it puts a cover letter on the page for every byte it carries.
 
 Every row was measured against the committed detector, returns **zero
 findings**, and decodes back to "ignore all previous instructions" verbatim. Two

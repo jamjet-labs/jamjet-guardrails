@@ -524,7 +524,7 @@ their type names are the labels their corpora use, and their bar is the score on
 section on `secrets` below adds no requirement to that; it discloses which cases sit behind that check's
 published score. This check
 constrains how a document is ENCODED rather than what it says, and reproducing its numbers is not the same
-as reproducing it. 33 of its 99 `allow` cases stop allowing when one of the exemptions or exclusions below
+as reproducing it. 37 of its 107 `allow` cases stop allowing when one of the exemptions or exclusions below
 is switched off, and neither an exemption nor an exclusion is visible in a precision figure.
 
 Its `kind` is `constraint`, so the invariant above applies unchanged: no finding
@@ -543,10 +543,37 @@ express is contract because it is written here, not because anything scores it;
 the direction this check declares is the one such property, and it is stated
 below rather than measured.
 
-### Three finding types
+### Four finding types
 
-`INVISIBLE_TAG_CHARS`, `BIDI_OVERRIDE` and `ZERO_WIDTH_SMUGGLING`. Each is a
-label the corpus uses, so each is what a prediction is matched against by name.
+`INVISIBLE_TAG_CHARS`, `BIDI_OVERRIDE`, `ZERO_WIDTH_SMUGGLING` and
+`VARIATION_SELECTOR_SMUGGLING`. Each is a label the corpus uses, so each is what
+a prediction is matched against by name.
+
+### Variation selector runs
+
+`VARIATION_SELECTOR_SMUGGLING` reports a run of two or more variation
+selectors, from U+FE00..U+FE0F and U+E0100..U+E01EF, with nothing visible
+between consecutive ones. Nothing visible means every character between them
+is default-ignorable, by the same Unicode 16.0.0 table the zero-width signal is
+built on, so a left-to-right mark or a joiner after each selector does not end
+the run. The span runs from the first selector of the run to the end of the
+last, and it can enclose characters another signal also reports; spans that
+overlap are merged into one region when the check redacts.
+
+The rule is structural rather than a list of sequences. A Unicode variation
+sequence is one base character followed by exactly one selector, so keycaps,
+text and emoji presentation, emoji ZWJ sequences and ideographic variation
+sequences each carry at most one selector per visible base, and none of them
+reaches the rule: `inj-0161`, `inj-0162`, `inj-0163` and `inj-0164` are those
+negatives. The four Mongolian free variation selectors are not in the rule's
+alphabet, and `inj-0166` is Mongolian text that carries them.
+
+What the rule does not see is one selector after each VISIBLE character, which
+is a well-formed variation sequence every time. A rule that also denied a lone
+VARIATION SELECTOR-17..256 after anything but an ideograph would close that,
+and it is not part of this check: an identifier character class written into
+source code with a selector as a range end is that shape, and `inj-0168` is
+that negative.
 
 ### Spans count code points
 
@@ -604,25 +631,27 @@ rather than left to go stale.
   spelling of its subdivision code, and U+E007F CANCEL TAG. Unicode defines
   those three and no others, so the set is closed. Dropping the exemption denies
   these, all labelled `allow`: `inj-0002`, `inj-0015`, `inj-0016`, `inj-0017`,
-  `inj-0018` and `inj-0150`, which carry all three flags singly and in a row. A
+  `inj-0018`, `inj-0150` and `inj-0165`, which carry all three flags singly and
+  in a row, and once beside an emoji written with a variation selector. A
   check that denies the Scotland flag is a check that gets switched off.
 
 - **The joiner exemption is contextual, by script.** ZWJ and ZWNJ are
   orthography in the scripts that write them and structure inside an emoji
   sequence, and nothing anywhere else, so what excuses one is its NEIGHBOURS and
   never its identity. Dropping the exemption denies these, all labelled `allow`:
-  `inj-0055`, `inj-0089` and `inj-0151`, which are family emoji; `inj-0061` and
-  `inj-0152`, which are Devanagari conjuncts; and `inj-0063`, `inj-0079`,
-  `inj-0087` and `inj-0095`, which are Persian and Arabic, both written in the
-  Arabic script. A port that exempts a joiner wherever it appears has exempted
-  the attack along with the orthography; one that exempts it nowhere denies
-  conjunct Devanagari, ZWNJ in the Arabic script, and every emoji ZWJ sequence.
-  Those are what these nine carry, and they are narrower than the eight ranges
-  this implementation declares.
+  `inj-0055`, `inj-0089` and `inj-0151`, which are family emoji; `inj-0163`,
+  which is four emoji ZWJ sequences written with variation selectors;
+  `inj-0061` and `inj-0152`, which are Devanagari conjuncts; and `inj-0063`,
+  `inj-0079`, `inj-0087` and `inj-0095`, which are Persian and Arabic, both
+  written in the Arabic script. A port that exempts a joiner wherever it appears
+  has exempted the attack along with the orthography; one that exempts it
+  nowhere denies conjunct Devanagari, ZWNJ in the Arabic script, and every emoji
+  ZWJ sequence. Those are what these ten carry, and they are narrower than the
+  eight ranges this implementation declares.
 
   Every other joiner case in the corpus still allows with the exemption
   disabled, because it carries too few joiners to reach either bound. Those
-  nine are what hold the rule.
+  ten are what hold the rule.
 
 ### Where this implementation falls short of its own corpus
 
@@ -640,21 +669,33 @@ otherwise assume closed, pulled out because they are the ones that surprise.
 - **Two invisible channels stay open.** A payload can be carried by the PRESENCE
   OR ABSENCE of a joiner rather than by a choice between two, which defeats a
   rule that asks for the symbol to change; and a bitstream can be spaced out to
-  defeat a rule about periodicity. `inj-0097`, `inj-0098` and `inj-0099` are
-  labelled `deny` and this implementation allows all three, so they cost it
-  recall rather than hiding in prose. The first two are the presence-and-absence
-  encoding, behind a Devanagari cover and between variation selectors; the third
-  is the spaced-out one. `inj-0098` is 119 characters of variation selectors and
-  joiners, with nothing on the page at all.
+  defeat a rule about periodicity. `inj-0097` and `inj-0099` are labelled `deny`
+  and this implementation allows both, so they cost it recall rather than
+  hiding in prose. The first is the presence-and-absence encoding behind a
+  Devanagari cover; the second is the spaced-out one.
+
+  `inj-0098` was the third. It is the same presence-and-absence encoding with
+  U+FE0F as the cover, 119 characters of variation selectors and joiners with
+  nothing on the page at all, and the joiner rule still excuses every joiner in
+  it. It is denied now because its cover is itself a run of selectors with
+  nothing visible between them, so it is labelled with one
+  `VARIATION_SELECTOR_SMUGGLING` finding over the selectors rather than the
+  `ZERO_WIDTH_SMUGGLING` finding it carried while that was the only signal that
+  could have reported it.
 
   These are the corpus's bar, not a licence: by the rule at the top of this
   section a port that denies them matches the label where this implementation
   does not. What a port is held to is the `allow` side, and the two exclusions
   those channels ride on are load-bearing there. Measured:
 
-  - counting variation selectors denies `inj-0143`, `inj-0144` and `inj-0145`,
-    all labelled `allow`: five keycaps, five emoji carrying U+FE0F, and five
-    Japanese names taking variant glyphs.
+  - counting variation selectors denies `inj-0143`, `inj-0144`, `inj-0145`,
+    `inj-0162`, `inj-0163` and `inj-0166`, all labelled `allow`: five keycaps,
+    five emoji carrying U+FE0F, five Japanese names taking variant glyphs, text
+    and emoji presentation beside three hearts, four emoji ZWJ sequences
+    carrying variation selectors, and Mongolian words ending in free variation
+    selectors. Counting them in the zero-width signal is a different rule from
+    `VARIATION_SELECTOR_SMUGGLING`, which never counts a selector that has a
+    visible base of its own.
   - dropping the exclusion for the directional format characters denies
     `inj-0037` and `inj-0146`, both labelled `allow`. `inj-0146` is a bilingual
     invoice carrying five directional MARKS, which is the case that exclusion
@@ -1451,7 +1492,7 @@ no false positives. All five wrong decisions are misses, and every one is named 
 **Two further residuals carry no failing case, because they are allowed by design and the corpus says
 so.** Decoded prose that is not imperative does not fire: `enc-0055` is a base64 MIME part carrying an
 ordinary email body, `enc-0080` and `enc-0081` are encoded status notes, and all three are
-labelled `allow` and allowed. And `ENCODED_MARKUP` reads the three structural signals only; a chat-template
+labelled `allow` and allowed. And `ENCODED_MARKUP` reads the three structural signals only, not the variation-selector one; a chat-template
 marker one encoding layer down is not among them, and no corpus case labels one.
 
 These five misses are the corpus's bar and not a licence. A port that denies any of them matches the

@@ -39,6 +39,31 @@ a number that changes quietly is a number nobody can rely on.
   proxy without a guardrail whose constructor raises `ValueError` or
   `TypeError`, and the recipe re-raises both so a typo stops the proxy instead.
 
+- **`injection-structural` reports variation-selector smuggling.** A payload
+  written one byte per variation selector after an emoji, the published
+  ASCII-smuggler encoding, used to allow with no findings; `inj-0098` disclosed
+  the shape. The new finding type `VARIATION_SELECTOR_SMUGGLING` reports a run
+  of two or more selectors from U+FE00..U+FE0F and U+E0100..U+E01EF with
+  nothing visible between them, because a Unicode variation sequence is one
+  base character and exactly one selector. Invisible characters between two
+  selectors do not break the run, so a left-to-right mark or a joiner after
+  each one does not get the payload through. Keycaps, text and emoji
+  presentation, emoji ZWJ sequences, ideographic variation sequences, the
+  subdivision flags and Mongolian free variation selectors all still allow.
+  Detector version 0.2.0 to 0.3.0, because input that allowed now denies.
+
+  One selector after each visible character is a well-formed variation sequence
+  every time and still passes; the published family table now prices that at
+  0.2500 characters per bit with a cover letter per byte, where the selector
+  row was 0.1250 with nothing on the page.
+
+  The published row moved, on a corpus that grew from 154 cases to 168 (six
+  positives, eight hard negatives) with `inj-0098` relabelled from one
+  `ZERO_WIDTH_SMUGGLING` finding to one `VARIATION_SELECTOR_SMUGGLING` finding:
+  precision 0.972 to 0.973, recall 0.873 to 0.887, wrong decisions 8 to 7. The
+  ship bar's decision-level structural floor is re-derived from 0.891 to 0.918
+  and the move is disclosed in `training/ship_bar.json`.
+
 ### Fixed
 
 - **A benchmark guard compared two different corpora and agreed by

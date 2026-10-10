@@ -582,8 +582,8 @@ def test_the_notice_qualifies_the_two_numbers_that_need_qualifying() -> None:
     assert "2033-05-18" in notice
 
 
-# The fifteen injection-structural cases a reader is most likely to argue with.
-# Eight of them FAIL when the corpus is scored, on purpose: they are the check's
+# The fourteen injection-structural cases a reader is most likely to argue with.
+# Seven of them FAIL when the corpus is scored, on purpose: they are the check's
 # known false positives and known false negatives, labelled with what SHOULD
 # happen so that they cost precision and recall rather than being scored as
 # successes. That convention is `corpora/pii/in-repo.jsonl`'s, and it is why
@@ -618,8 +618,9 @@ _INJECTION_DISCLOSED = {
     "inj-0091": "allow",  # FSI around a multi-line value, the idiom Unicode recommends
     "inj-0129": "allow",  # musical notation: an END BEAM abuts the next BEGIN BEAM
     # False negatives that pre-date the raise. Each allows; each is labelled deny.
+    # `inj-0098`, the same encoding between variation selectors, was the third
+    # and left this list when VARIATION_SELECTOR_SMUGGLING began reporting it.
     "inj-0097": "deny",  # presence-and-absence encoding behind a Devanagari cover
-    "inj-0098": "deny",  # the same encoding between variation selectors, nothing visible
     "inj-0099": "deny",  # a bitstream deperiodised with one spare cover every three bits
     # Not misses: the BOUNDARY of the bidi signal. Each of these three is a
     # balanced override whose scope reverses the order of what is inside it,
@@ -661,7 +662,7 @@ def test_a_disclosed_injection_shape_is_in_the_corpus_and_in_the_notice(
     Both halves, because either one alone is half a disclosure. A case dropped
     from the file leaves the notice describing evidence that is not there; an id
     dropped from the notice leaves a case whose label reads as an ordinary
-    expectation, which for these fifteen it is not.
+    expectation, which for these fourteen it is not.
     """
     case = next(
         (c for c in _load("injection-structural", "in-repo").cases if c.id == case_id), None
@@ -706,6 +707,7 @@ _REGIONS = (
     ("def _is_valid_flag_sequence", "INVISIBLE_TAG_CHARS"),
     ("def _bidi_spans", "BIDI_OVERRIDE"),
     ("_DEFAULT_IGNORABLE: tuple", "ZERO_WIDTH_SMUGGLING"),
+    ("_SELECTOR_RANGES: tuple", "VARIATION_SELECTOR_SMUGGLING"),
 )
 
 
@@ -788,6 +790,9 @@ def test_an_id_cited_inside_a_signal_names_a_case_that_signal_is_about() -> None
             for c in text
         ),
         "ZERO_WIDTH_SMUGGLING": lambda text: any(c in ignorable for c in text),
+        "VARIATION_SELECTOR_SMUGGLING": lambda text: any(
+            0xFE00 <= ord(c) <= 0xFE0F or 0xE0100 <= ord(c) <= 0xE01EF for c in text
+        ),
     }
     bounds = sorted((source.index(marker), kind) for marker, kind in _REGIONS)
 

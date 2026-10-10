@@ -43,7 +43,7 @@ Coming from llm-guard, archived in July 2026? [docs/migrating-from-llm-guard.md]
 
 | Name | Catches | Looks like |
 |---|---|---|
-| `injection-structural` | instructions hidden in the encoding rather than the words | invisible tag characters, unbalanced bidirectional controls, zero-width runs |
+| `injection-structural` | instructions hidden in the encoding rather than the words | invisible tag characters, unbalanced bidirectional controls, zero-width runs, variation-selector runs |
 | `pii` | personal data, redacted to typed placeholders | email addresses, card numbers, US SSNs, phone numbers |
 | `secrets` | credentials, matched on their issuer prefix | `sk-`, `AKIA`, `ghp_`, `xoxb-` prefixes and PEM private key headers |
 | `url-exfiltration` | URLs that carry data out rather than fetch something in | a markdown image whose query string is your conversation, a `data:` URI that says it is a picture, a `javascript:` scheme |
@@ -148,7 +148,7 @@ and the page shows where the redaction goes instead.
 |---|---|---|---|
 | `confusables` | constraint | input, output | `MIXED_SCRIPT_CONFUSABLE`, `WHOLE_SCRIPT_CONFUSABLE` |
 | `encoded-content` | constraint | input, output | `ENCODED_CREDENTIAL`, `ENCODED_INSTRUCTION`, `ENCODED_MARKUP` |
-| `injection-structural` | constraint | input, output | `BIDI_OVERRIDE`, `INVISIBLE_TAG_CHARS`, `ZERO_WIDTH_SMUGGLING` |
+| `injection-structural` | constraint | input, output | `BIDI_OVERRIDE`, `INVISIBLE_TAG_CHARS`, `VARIATION_SELECTOR_SMUGGLING`, `ZERO_WIDTH_SMUGGLING` |
 | `pii` | constraint | input, output | `CREDIT_CARD`, `EMAIL`, `PHONE_NUMBER`, `US_SSN` |
 | `rules` | constraint | input, output | `INTERNAL_HOST`, `LENGTH_LIMIT`, `PROJECT_CODENAME`, `TICKET_ID` |
 | `script-constraint` | constraint | input, output | `DISALLOWED_SCRIPT` |
@@ -159,8 +159,8 @@ and the page shows where the redaction goes instead.
 **`injection-structural`** is the one worth reading about. It looks at
 instruction smuggling in the encoding rather than in the words: Unicode tag
 characters that mirror ASCII invisibly, bidirectional controls that make text
-render differently from how it parses, and zero-width steganography. None of
-that is visible in a rendered page, a terminal, a log line or a code review.
+render differently from how it parses, zero-width steganography, and bytes
+written as a run of variation selectors after an emoji. None of that is visible in a rendered page, a terminal, a log line or a code review.
 
 A classifier trained on natural language does not see it either, and the reason
 is mechanical rather than a matter of accuracy. Two published prompt-injection
@@ -352,7 +352,7 @@ failures is a number you cannot check.
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
 | confusables | confusables/in-repo | in-repo | `e53f03d3527e` | 115 | 0.942 | 0.891 | 0.916 | 49 | 3 | 6 | 9 |
 | encoded-content | encoded-content/in-repo | in-repo | `ffddd0cd3c29` | 81 | 1.000 | 0.875 | 0.933 | 35 | 0 | 5 | 5 |
-| injection-structural | injection-structural/in-repo | in-repo | `b704703f431d` | 154 | 0.972 | 0.873 | 0.920 | 103 | 3 | 15 | 8 |
+| injection-structural | injection-structural/in-repo | in-repo | `e2014aeba636` | 168 | 0.973 | 0.887 | 0.928 | 110 | 3 | 14 | 7 |
 | pii | pii/in-repo | in-repo | `06fb3b601aba` | 81 | 0.631 | 0.872 | 0.732 | 41 | 24 | 6 | 24 |
 | pii | pii/third-party | nvidia/Nemotron-PII@b70ffaf | `c25ef538d677` | 300 | 0.960 | 0.997 | 0.978 | 340 | 14 | 1 | 6 |
 | rules | rules/in-repo | in-repo | `8fe119ddb734` | 42 | 1.000 | 1.000 | 1.000 | 29 | 0 | 0 | 0 |
@@ -394,13 +394,13 @@ applies limits correctly. It says nothing about whether any rule is well
 chosen, and the fixture behind it sets a character limit only, so the row never
 reaches the byte or line paths.
 
-Fifteen `injection-structural` cases are disclosed, and eight of them are the
-check's wrong decisions: two deny text somebody wrote deliberately, and six
+Fourteen `injection-structural` cases are disclosed, and seven of them are the
+check's wrong decisions: two deny text somebody wrote deliberately, and five
 allow a payload that really is in there. The other seven PASS, and are disclosed
-because a reader can reasonably expect the opposite of each. This sentence used
-to say all fifteen carried a label the check gets wrong, which is nearly twice
-the check's error rate and contradicts the wrong-decision column in the table
-above; the guard read the count and never the predicate. All fifteen are
+because a reader can reasonably expect the opposite of each. This sentence once
+said every disclosed case carried a label the check gets wrong, which was nearly
+twice the check's error rate and contradicted the wrong-decision column in the
+table above; the guard read the count and never the predicate. All fourteen are
 named by case id in [corpora/NOTICE.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/corpora/NOTICE.md), along with the
 invisible-character families this check does not count and one measured encoder
 for each.
