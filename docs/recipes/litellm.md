@@ -1,9 +1,11 @@
 # LiteLLM proxy
 
-This recipe runs a jamjet-guardrails chain inside a LiteLLM proxy, on every
-request before the model sees it and on every reply before the client does. A
+This recipe runs a jamjet-guardrails chain inside a LiteLLM proxy, on requests
+to the chat completions, `/v1/messages` and `/v1/responses` endpoints before the
+model sees them, and on their non-streamed replies before the client does. A
 tag-smuggled instruction is refused with a 400, and a credential or an email
-address is redacted in place in the request or the reply.
+address is redacted in place in the request or the reply. The endpoints and
+fields it does not reach are listed under "Where this does not reach".
 
 Verified against `litellm` 1.104.2, on Python 3.12, by a CI job that runs
 [tests/test_recipes.py](../../tests/test_recipes.py) against that release. The
@@ -20,19 +22,24 @@ pip install jamjet-guardrails "litellm[proxy]==1.104.2"
 LiteLLM's [custom guardrail](https://docs.litellm.ai/docs/proxy/guardrails/custom_guardrail)
 interface asks for one method, `apply_guardrail`. The proxy pulls the text out
 of a request or a reply, passes it in as `inputs["texts"]`, and maps whatever
-comes back onto the original request or reply.
+comes back onto the original request or reply. On a request it also passes
+`inputs["structured_messages"]`, the conversation as chat messages, and that is
+the only place some content appears: on `/v1/responses`, tool outputs
+(`function_call_output`) and `instructions` are not in `texts`. So the recipe
+checks both, and writes redactions back through `structured_messages`.
 
 <!-- file: docs/recipes/litellm_guardrail.py -->
 ```python
 """jamjet-guardrails as a LiteLLM proxy guardrail.
 
-One class for both directions: LiteLLM calls `apply_guardrail` with the texts
-of each request before the model sees them, and with the texts of each reply
-before the client does. Verified against litellm 1.104.2.
+One class for both directions: LiteLLM calls `apply_guardrail` with the content
+of a request before the model sees it, and with the text of a reply before the
+client does. Verified against litellm 1.104.2.
 """
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 from typing import TYPE_CHECKING, Any, Literal
@@ -73,7 +80,9 @@ def audit_record(result: ChainResult) -> dict[str, Any]:
 
 
 class JamjetGuardrail(CustomGuardrail):
-    def __init__(self, jamjet_checks: Any = DEFAULT_CHECKS, **kwargs: Any) -> None:
+    def __init__(
+        self, jamjet_checks: Any = DEFAULT_CHECKS, allow_streaming: Any = False, **kwargs: Any
+    ) -> None:
         # litellm 1.104.2 catches ValueError and TypeError from a guardrail's
         # constructor, logs them, and starts the proxy WITHOUT that guardrail.
         # A typo in config.yaml must stop the proxy instead, so both are
@@ -81,10 +90,26 @@ class JamjetGuardrail(CustomGuardrail):
         try:
             if isinstance(jamjet_checks, str) or not jamjet_checks:
                 raise ValueError(f"jamjet_checks must be a non-empty list, got {jamjet_checks!r}")
+            if not isinstance(allow_streaming, bool):
+                raise TypeError(f"allow_streaming must be true or false, got {allow_streaming!r}")
             self.chain = build_chain(list(jamjet_checks))
         except (ValueError, TypeError) as error:
             raise RuntimeError(f"jamjet-guardrails is misconfigured: {error}") from error
+        self.allow_streaming = allow_streaming
         super().__init__(**kwargs)
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        # litellm 1.104.2 routes a guardrail to `apply_guardrail` only when the
+        # method is defined on the guardrail's own class. A subclass that only
+        # inherits it is dispatched to the default hooks, which do nothing, so
+        # the proxy would run with no checks and no error.
+        super().__init_subclass__(**kwargs)
+        if "apply_guardrail" not in cls.__dict__:
+            raise TypeError(
+                f"{cls.__name__} must define apply_guardrail itself: litellm only calls "
+                "apply_guardrail when it is defined on the class, not inherited. Re-declare "
+                "it and call super().apply_guardrail(...)."
+            )
 
     async def apply_guardrail(
         self,
@@ -94,19 +119,51 @@ class JamjetGuardrail(CustomGuardrail):
         logging_obj: LiteLLMLoggingObj | None = None,
     ) -> GenericGuardrailAPIInputs:
         if input_type == "request":
+            if request_data.get("stream") and not self.allow_streaming:
+                raise GuardrailRaisedException(
+                    guardrail_name=self.guardrail_name,
+                    message=(
+                        "jamjet-guardrails refuses stream: true, because reply checks cannot "
+                        "rewrite or stop a streamed reply; send the request without streaming"
+                    ),
+                    status_code=400,
+                    blocked_content=True,
+                )
             context = Context(direction="input", origin="user")
         else:
             context = Context(direction="output", origin="model")
-        texts = list(inputs.get("texts", []))
-        denied: list[dict[str, Any]] = []
-        for index, text in enumerate(texts):
-            result = self.chain.run(text, context)
-            record = audit_record(result)
-            AUDIT_LOG.info(json.dumps(record))
-            if result.decision == "deny":
-                denied.append(record)
-            else:
-                texts[index] = result.content
+        results: dict[str, ChainResult] = {}
+
+        def check(text: str) -> str:
+            # The same text can arrive twice, as a text and inside a structured
+            # message, so each distinct text is checked and logged once.
+            if text not in results:
+                results[text] = self.chain.run(text, context)
+                AUDIT_LOG.info(json.dumps(audit_record(results[text])))
+            return results[text].content
+
+        texts = [check(text) for text in inputs.get("texts", [])]
+        # Responses API tool outputs (`function_call_output`) and `instructions`
+        # reach the model through `structured_messages` only, never `texts`.
+        original = inputs.get("structured_messages")
+        messages = copy.deepcopy(original) if original else None
+        changed = False
+        for message in messages or []:
+            fields: list[tuple[Any, Any]] = []
+            content = message.get("content")
+            if isinstance(content, str):
+                fields.append((message, "content"))
+            elif isinstance(content, list):
+                fields += [(p, "text") for p in content if isinstance(p, dict)]
+            for call in message.get("tool_calls") or []:
+                if isinstance(call, dict) and isinstance(call.get("function"), dict):
+                    fields.append((call["function"], "arguments"))
+            for holder, key in fields:
+                if isinstance(holder.get(key), str):
+                    checked = check(holder[key])
+                    changed = changed or checked != holder[key]
+                    holder[key] = checked
+        denied = [audit_record(r) for r in results.values() if r.decision == "deny"]
         if denied:
             # Names what fired, never the content: the content is what was denied.
             fired = sorted(
@@ -119,6 +176,10 @@ class JamjetGuardrail(CustomGuardrail):
                 blocked_content=True,
             )
         inputs["texts"] = texts
+        if changed and messages is not None:
+            # A new list tells LiteLLM to write these messages back; the same
+            # object tells it nothing changed.
+            inputs["structured_messages"] = messages
         return inputs
 ```
 
@@ -148,13 +209,14 @@ litellm --config litellm_config.yaml
 
 ## How decisions map
 
-| Decision | On a request (`pre_call`) | On a reply (`post_call`) |
-|---|---|---|
-| `allow` | the text is unchanged | the text is unchanged |
-| `redact` | the message is rewritten before the model sees it | the reply is rewritten before the client sees it |
-| `deny` | the request is refused with status 400 | the reply is refused with status 400 |
+| Decision | On a request (`pre_call`) | On a reply (`post_call`), not streamed | On a streamed reply, with `allow_streaming: true` |
+|---|---|---|---|
+| `allow` | the text is unchanged | the text is unchanged | the text is unchanged |
+| `redact` | the message is rewritten before the model sees it | the reply is rewritten before the client sees it | logged only; the client already has the text |
+| `deny` | the request is refused with status 400 | the reply is refused with status 400 | logged only; the client already has the text |
 
-LiteLLM allows rewriting in both directions, so `redact` here does what it says.
+LiteLLM allows rewriting in both directions for a reply that is not streamed,
+so `redact` there does what it says.
 A `deny` raises `GuardrailRaisedException` with `blocked_content=True`, which is
 the type LiteLLM itself counts as a guardrail block rather than a guardrail
 failure. Its message names the checks that denied and never quotes the content,
@@ -175,6 +237,23 @@ option is called `jamjet_checks` and not `checks` because `checks` is already a
 LiteLLM guardrail option with its own type, and a list there fails LiteLLM's
 validation, which is the same silent skip.
 
+**Streaming is refused unless you allow it.** It is the client that chooses to
+stream, by sending `stream: true`, and a streamed reply is one the reply checks
+cannot rewrite or stop. So by default the recipe refuses such a request on the
+request pass, with a 400 that says why.
+`test_litellm_a_streamed_reply_reaches_the_client_unredacted` recomputes the
+reason against the pinned release: with streaming allowed, a credential in a
+streamed reply reaches the client as the model wrote it. Set
+`allow_streaming: true` beside `jamjet_checks` in the config to accept streamed
+requests anyway. Then the reply checks on a streamed reply are audit-only: they
+log a decision about text the client already has.
+
+**A subclass must define `apply_guardrail` itself.** LiteLLM 1.104.2 sends a
+guardrail through `apply_guardrail` only when the method is defined on the
+guardrail's own class, so a subclass that inherits it runs with no checks and
+no error. The recipe's `__init_subclass__` refuses such a subclass with a
+`TypeError`. Re-declare the method and call `super().apply_guardrail(...)`.
+
 Only `pre_call` and `post_call` are configured. LiteLLM's documentation
 describes `during_call`, which runs beside the model call, as able to block but
 not to rewrite.
@@ -191,11 +270,40 @@ text.
 
 ## Where this does not reach
 
-- Streaming. LiteLLM's documentation says `post_call` guardrails on a streaming
-  response are audit-only: they see the whole reply but cannot stop its
-  delivery. The streamed path is not tested here.
-- Only `inputs["texts"]`. Images and the arguments of tool calls the model
-  makes arrive in other fields, and this recipe does not read them.
+These endpoints have no guardrail translation in litellm 1.104.2, so the
+guardrail is never given their content:
+
+- Assistants threads (`/v1/threads/{id}/messages`).
+- `/v1/realtime`.
+- Image edits (`/v1/images/edits`).
+- Moderations (`/v1/moderations`).
+
+On the endpoints it does cover:
+
+- A `/v1/responses` request made of tool outputs only is never checked. That is
+  the usual shape of a tool loop that uses `previous_response_id`: the client
+  sends just the `function_call_output` items. LiteLLM returns before calling
+  any guardrail when a Responses request carries no message text, so the tool
+  output reaches the model unchecked. A tool output sent beside a message is
+  checked.
+- Content held by OpenAI under `previous_response_id` is never in the request,
+  so it is not checked here either.
+- Tool definitions are not checked. A smuggled `tools[].description` passes.
+- The tool calls in a reply, the arguments the model writes for a tool, are not
+  checked. Neither are images.
+- If LiteLLM cannot tell which kind of call a reply belongs to, it logs a
+  warning and skips `post_call` for it.
+- An admin can switch this guardrail off for a key or a team, even with
+  `default_on: true`, by setting `disable_global_guardrails: true` or listing
+  `jamjet` in `opted_out_global_guardrails` in that key's or team's metadata.
+  A caller cannot do this from the request body.
+- Base64 sent as text is checked as text. A data URL inside a tool output or a
+  message string can contain a run that `secrets` reads as a credential, such
+  as one starting `AKIA`, and redacting it corrupts the image. Send images as
+  image parts (`image_url` or `input_image`), which this recipe does not read
+  as text, rather than as strings inside a message or a tool output. Do not
+  exempt data URLs from the checks instead: an exempted field is one an
+  attacker can write text into.
 
 ## What the checks do not catch
 

@@ -6,9 +6,9 @@ that needs a framework drives the framework's own code with no network and no
 API key. The OpenAI Agents SDK runs its real `Runner` against a scripted model
 that records what it was sent, so "the model never saw it" is an assertion
 about what the model received rather than about what a guardrail returned. The
-LiteLLM tests call the proxy's own dispatch, `unified_guardrail`, which is what
-the proxy calls for a guardrail that implements `apply_guardrail`, and load the
-published `config.yaml` through the proxy's own initialiser.
+LiteLLM tests go through `ProxyLogging`, the proxy's own dispatch, which picks
+the path a guardrail takes before calling it, and load the published
+`config.yaml` through the proxy's own initialiser.
 
 The frameworks are optional. The core package has no dependencies and its main
 CI job installs neither framework, so each framework test asks for its module
@@ -477,45 +477,67 @@ def test_agents_audit_record_names_the_check_its_version_and_the_hash(
 
 
 @pytest.fixture
-def litellm() -> ModuleType:
-    return _framework("litellm")
+def litellm() -> Any:
+    """The framework, with its global callback list put back after each test."""
+    module: Any = _framework("litellm")
+    saved = list(module.callbacks)
+    yield module
+    module.callbacks = saved
+
+
+def _guard(**options: Any) -> Any:
+    module = _load("litellm_guardrail")
+    return module.JamjetGuardrail(
+        guardrail_name="jamjet", event_hook=["pre_call", "post_call"], default_on=True, **options
+    )
 
 
 @pytest.fixture
 def guard(litellm: ModuleType) -> Any:
-    module = _load("litellm_guardrail")
-    return module.JamjetGuardrail(
-        guardrail_name="jamjet", event_hook=["pre_call", "post_call"], default_on=True
-    )
+    return _guard()
 
 
-def _pre_call(guard: Any, data: dict[str, Any]) -> Any:
-    """What the proxy does for a pre_call guardrail that implements apply_guardrail."""
+def _proxy(guard: Any) -> Any:
+    """The proxy's own guardrail dispatch, with `guard` as its only callback.
+
+    `ProxyLogging` is what the proxy server calls for every request and reply.
+    It decides whether a guardrail goes through `apply_guardrail` at all, and
+    that selection is the step a test that hands the guardrail over directly
+    would skip.
+    """
+    litellm: Any = importlib.import_module("litellm")
     DualCache = _from("litellm.caching.caching", "DualCache")
-    UserAPIKeyAuth = _from("litellm.proxy._types", "UserAPIKeyAuth")
-    unified_guardrail = _from("litellm.proxy.utils", "unified_guardrail")
+    ProxyLogging = _from("litellm.proxy.utils", "ProxyLogging")
 
-    data["guardrail_to_apply"] = guard
+    litellm.callbacks = [guard]
+    return ProxyLogging(user_api_key_cache=DualCache())
+
+
+def _pre_call(guard: Any, data: dict[str, Any], call_type: str = "acompletion") -> Any:
+    """What the proxy does with a request before the model sees it."""
+    UserAPIKeyAuth = _from("litellm.proxy._types", "UserAPIKeyAuth")
+
+    # `guardrails_only` skips the rate limiters and the hanging-request alert,
+    # which this test has no use for; the guardrail walk is the same.
     return _run(
-        unified_guardrail.async_pre_call_hook(
+        _proxy(guard).pre_call_hook(
             user_api_key_dict=UserAPIKeyAuth(),
-            cache=DualCache(),
             data=data,
-            call_type="acompletion",
+            call_type=call_type,
+            guardrails_only=True,
         )
     )
 
 
 def _post_call(guard: Any, data: dict[str, Any], reply: str) -> Any:
+    """What the proxy does with a reply before the client sees it."""
     litellm = importlib.import_module("litellm")
     UserAPIKeyAuth = _from("litellm.proxy._types", "UserAPIKeyAuth")
-    unified_guardrail = _from("litellm.proxy.utils", "unified_guardrail")
 
     response = litellm.ModelResponse(choices=[{"message": {"role": "assistant", "content": reply}}])
-    data["guardrail_to_apply"] = guard
     _run(
-        unified_guardrail.async_post_call_success_hook(
-            data=data, user_api_key_dict=UserAPIKeyAuth(), response=response
+        _proxy(guard).post_call_success_hook(
+            data=data, response=response, user_api_key_dict=UserAPIKeyAuth()
         )
     )
     return response
@@ -693,17 +715,341 @@ def test_litellm_a_misconfigured_recipe_stops_the_proxy_instead(
     (tmp_path / "litellm_guardrail.py").write_text(
         (RECIPES / "litellm_guardrail.py").read_text(encoding="utf-8"), encoding="utf-8"
     )
-    for checks in (["no-such-check"], ["script-constraint"], "pii", [], 5):
+    bad: list[dict[str, Any]] = [
+        {"jamjet_checks": checks}
+        for checks in (["no-such-check"], ["script-constraint"], "pii", [], 5)
+    ]
+    bad += [{"allow_streaming": value} for value in ("yes", "false", 1)]
+    for option in bad:
         entry = {
             "guardrail_name": "jamjet",
             "litellm_params": {
                 "guardrail": "litellm_guardrail.JamjetGuardrail",
                 "mode": ["pre_call", "post_call"],
-                "jamjet_checks": checks,
+                **option,
             },
         }
         with pytest.raises(Exception) as raised:
             _init_from_config(tmp_path / "config.yaml", [entry])
         assert not isinstance(raised.value, (ValueError, TypeError)), (
-            f"jamjet_checks={checks!r} raised {type(raised.value).__name__}, which litellm swallows"
+            f"{option!r} raised {type(raised.value).__name__}, which litellm swallows"
         )
+
+
+# --------------------------------------------------------------------------
+# LiteLLM: what reaches the model besides `texts`
+# --------------------------------------------------------------------------
+
+
+def _responses(*items: dict[str, Any], **fields: Any) -> dict[str, Any]:
+    """A /v1/responses request body."""
+    return {"model": "gpt-4o-mini", "input": list(items), **fields}
+
+
+def _tool_turn(output: str, arguments: str = "{}") -> list[dict[str, Any]]:
+    return [
+        {"role": "user", "content": "Summarise the page you fetched."},
+        {"type": "function_call", "call_id": "c1", "name": "fetch_page", "arguments": arguments},
+        {"type": "function_call_output", "call_id": "c1", "output": output},
+    ]
+
+
+def test_litellm_checks_a_responses_tool_output(litellm: ModuleType, guard: Any) -> None:
+    """A tool result is where a retrieved page enters, and on /v1/responses it
+    reaches the guardrail only in `structured_messages`."""
+    GuardrailRaisedException = _from("litellm.exceptions", "GuardrailRaisedException")
+
+    with pytest.raises(GuardrailRaisedException):
+        _pre_call(guard, _responses(*_tool_turn(SMUGGLED)), "aresponses")
+    data = _pre_call(guard, _responses(*_tool_turn(f"Contact {EMAIL}.")), "aresponses")
+    assert data["input"][2]["output"] == "Contact [REDACTED:EMAIL]."
+    assert data["input"][0]["content"] == "Summarise the page you fetched."
+
+
+def test_litellm_checks_responses_instructions(litellm: ModuleType, guard: Any) -> None:
+    GuardrailRaisedException = _from("litellm.exceptions", "GuardrailRaisedException")
+
+    with pytest.raises(GuardrailRaisedException):
+        _pre_call(
+            guard,
+            _responses({"role": "user", "content": "hi"}, instructions=SMUGGLED),
+            "aresponses",
+        )
+    data = _pre_call(
+        guard,
+        _responses({"role": "user", "content": "hi"}, instructions=f"Reply to {EMAIL}."),
+        "aresponses",
+    )
+    assert data["instructions"] == "Reply to [REDACTED:EMAIL]."
+
+
+def test_litellm_checks_the_arguments_of_earlier_tool_calls(
+    litellm: ModuleType, guard: Any
+) -> None:
+    GuardrailRaisedException = _from("litellm.exceptions", "GuardrailRaisedException")
+
+    turn = _tool_turn("ok", arguments=json.dumps({"q": SMUGGLED}, ensure_ascii=False))
+    with pytest.raises(GuardrailRaisedException):
+        _pre_call(guard, _responses(*turn), "aresponses")
+
+
+def test_litellm_never_calls_the_guardrail_for_a_request_of_only_tool_outputs(
+    litellm: ModuleType, guard: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A published gap, recomputed. With `previous_response_id` a client sends
+    only `function_call_output` items, and litellm 1.104.2 returns before it
+    calls any guardrail when a Responses request has no message text."""
+    calls: list[Any] = []
+    real = guard.apply_guardrail
+
+    async def spy(*args: Any, **kwargs: Any) -> Any:
+        calls.append(kwargs)
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(guard, "apply_guardrail", spy)
+    only = {"type": "function_call_output", "call_id": "c1", "output": SMUGGLED}
+    data = _pre_call(guard, _responses(only, previous_response_id="resp_1"), "aresponses")
+    assert data["input"][0]["output"] == SMUGGLED
+    assert calls == []
+    # The spy itself works: the same tool output beside a user message is seen.
+    GuardrailRaisedException = _from("litellm.exceptions", "GuardrailRaisedException")
+    with pytest.raises(GuardrailRaisedException):
+        _pre_call(guard, _responses(*_tool_turn(SMUGGLED)), "aresponses")
+    assert len(calls) == 1
+
+
+def test_litellm_checks_a_messages_api_tool_result_and_system_prompt(
+    litellm: ModuleType, guard: Any
+) -> None:
+    GuardrailRaisedException = _from("litellm.exceptions", "GuardrailRaisedException")
+
+    def body(system: str, result: str) -> dict[str, Any]:
+        return {
+            "model": "claude",
+            "max_tokens": 5,
+            "system": system,
+            "messages": [
+                {"role": "user", "content": "hi"},
+                {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "id": "t1", "name": "f", "input": {}}],
+                },
+                {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "t1", "content": result}],
+                },
+            ],
+        }
+
+    for system, result in ((SMUGGLED, "ok"), ("Be brief.", SMUGGLED)):
+        with pytest.raises(GuardrailRaisedException):
+            _pre_call(guard, body(system, result), "anthropic_messages")
+
+
+UNCOVERED_CALL_TYPES = ("a_add_message", "_arealtime", "aimage_edit", "amoderation")
+
+
+@pytest.mark.parametrize("call_type", UNCOVERED_CALL_TYPES)
+def test_litellm_has_no_guardrail_translation_for_the_endpoints_the_page_names(
+    litellm: ModuleType, guard: Any, call_type: str
+) -> None:
+    """The page lists assistants threads, realtime, image edits and moderations
+    as not covered. litellm 1.104.2 has no translation for those call types, so
+    a pre_call guardrail returns the request untouched."""
+    CallTypes = _from("litellm.types.utils", "CallTypes")
+    load = _from("litellm.llms", "load_guardrail_translation_mappings")
+
+    assert CallTypes(call_type) not in load()
+    data = {"model": "gpt-4o-mini", "messages": [{"role": "user", "content": SMUGGLED}]}
+    assert _pre_call(guard, data, call_type)["messages"][0]["content"] == SMUGGLED
+
+
+def test_litellm_does_not_check_tool_descriptions(litellm: ModuleType, guard: Any) -> None:
+    """Published gap: the definitions in `tools` reach the guardrail but this
+    recipe reads only message text, so a smuggled description passes."""
+    data = _chat("hello")
+    data["tools"] = [
+        {"type": "function", "function": {"name": "f", "description": SMUGGLED, "parameters": {}}}
+    ]
+    assert _pre_call(guard, data)["tools"][0]["function"]["description"] == SMUGGLED
+
+
+def test_litellm_admin_key_metadata_switches_off_a_default_on_guardrail(
+    litellm: ModuleType, guard: Any
+) -> None:
+    GuardrailRaisedException = _from("litellm.exceptions", "GuardrailRaisedException")
+
+    for metadata in (
+        {"disable_global_guardrails": True},
+        {"opted_out_global_guardrails": ["jamjet"]},
+    ):
+        data = _chat(SMUGGLED)
+        data["metadata"] = {"user_api_key_metadata": metadata}
+        assert _pre_call(guard, data)["messages"][0]["content"] == SMUGGLED
+        # The same setting written by the caller into the request body does nothing.
+        data = _chat(SMUGGLED)
+        data["metadata"] = metadata
+        with pytest.raises(GuardrailRaisedException):
+            _pre_call(guard, data)
+
+
+def test_litellm_does_not_check_tool_calls_in_a_reply(litellm: ModuleType, guard: Any) -> None:
+    """Published gap: the arguments the model writes for a tool are not checked."""
+    litellm_module = importlib.import_module("litellm")
+    UserAPIKeyAuth = _from("litellm.proxy._types", "UserAPIKeyAuth")
+
+    arguments = json.dumps({"body": f"key {OPENAI_KEY}"})
+    call = {"id": "c1", "type": "function", "function": {"name": "send", "arguments": arguments}}
+    response = litellm_module.ModelResponse(
+        choices=[{"message": {"role": "assistant", "content": None, "tool_calls": [call]}}]
+    )
+    _run(
+        _proxy(guard).post_call_success_hook(
+            data=_chat("send it"), response=response, user_api_key_dict=UserAPIKeyAuth()
+        )
+    )
+    assert response.choices[0].message.tool_calls[0].function.arguments == arguments
+
+
+def test_litellm_skips_post_call_when_it_cannot_resolve_the_call_type(
+    litellm: ModuleType, guard: Any
+) -> None:
+    """With no route and a reply it cannot classify, litellm logs a warning and
+    returns the reply without calling the guardrail."""
+    UserAPIKeyAuth = _from("litellm.proxy._types", "UserAPIKeyAuth")
+
+    reply = {"output": SMUGGLED}
+    returned = _run(
+        _proxy(guard).post_call_success_hook(
+            data=_chat("hi"), response=reply, user_api_key_dict=UserAPIKeyAuth()
+        )
+    )
+    assert reply == {"output": SMUGGLED}
+    assert returned is None or returned == reply
+
+
+AWS_SHAPED_IMAGE = "data:image/png;base64,iVBORw0KGgoAKIAZ7Q3XK2P4LMNB8RTYW"
+
+
+def test_litellm_base64_in_text_can_be_redacted_and_an_image_part_is_not(
+    litellm: ModuleType, guard: Any
+) -> None:
+    """The false positive the page warns about, and its mitigation: the same
+    data URL is corrupted when it travels as text and left alone as an image."""
+    text = _pre_call(guard, _responses(*_tool_turn(AWS_SHAPED_IMAGE)), "aresponses")
+    assert text["input"][2]["output"] != AWS_SHAPED_IMAGE
+    data = _chat("describe this")
+    data["messages"][0]["content"] = [
+        {"type": "text", "text": "describe this"},
+        {"type": "image_url", "image_url": {"url": AWS_SHAPED_IMAGE}},
+    ]
+    assert (
+        _pre_call(guard, data)["messages"][0]["content"][1]["image_url"]["url"] == AWS_SHAPED_IMAGE
+    )
+
+
+# --------------------------------------------------------------------------
+# LiteLLM: streaming
+# --------------------------------------------------------------------------
+
+
+def test_litellm_refuses_a_streamed_request_by_default(litellm: ModuleType, guard: Any) -> None:
+    GuardrailRaisedException = _from("litellm.exceptions", "GuardrailRaisedException")
+
+    data = _chat("What is the capital of France?")
+    data["stream"] = True
+    with pytest.raises(GuardrailRaisedException) as raised:
+        _pre_call(guard, data)
+    assert raised.value.status_code == 400
+    assert "stream" in raised.value.message
+
+
+def test_litellm_allow_streaming_lets_a_streamed_request_through(litellm: ModuleType) -> None:
+    data = _chat("What is the capital of France?")
+    data["stream"] = True
+    assert _pre_call(_guard(allow_streaming=True), data)["messages"] == data["messages"]
+
+
+def test_litellm_a_streamed_reply_reaches_the_client_unredacted(litellm: ModuleType) -> None:
+    """Why streaming is refused by default: with it allowed, a credential in a
+    streamed reply reaches the client as the model wrote it."""
+    UserAPIKeyAuth = _from("litellm.proxy._types", "UserAPIKeyAuth")
+    ModelResponseStream = _from("litellm.types.utils", "ModelResponseStream")
+    StreamingChoices = _from("litellm.types.utils", "StreamingChoices")
+    Delta = _from("litellm.types.utils", "Delta")
+
+    async def model() -> Any:
+        for index, text in enumerate(["Use ", OPENAI_KEY, " here."]):
+            yield ModelResponseStream(
+                id="r",
+                choices=[
+                    StreamingChoices(
+                        index=0,
+                        delta=Delta(content=text, role="assistant"),
+                        finish_reason="stop" if index == 2 else None,
+                    )
+                ],
+            )
+
+    async def client() -> str:
+        received = []
+        stream = _proxy(_guard(allow_streaming=True)).async_post_call_streaming_iterator_hook(
+            response=model(),
+            user_api_key_dict=UserAPIKeyAuth(request_route="/chat/completions"),
+            request_data={**_chat("which key?"), "stream": True},
+        )
+        async for chunk in stream:
+            received.append(chunk.choices[0].delta.content or "")
+        return "".join(received)
+
+    assert OPENAI_KEY in _run(client())
+
+
+# --------------------------------------------------------------------------
+# LiteLLM: subclassing
+# --------------------------------------------------------------------------
+
+
+def test_litellm_dispatches_to_apply_guardrail_only_when_the_class_defines_it(
+    litellm: ModuleType,
+) -> None:
+    """The proxy behaviour the recipe defends against, recomputed with a plain
+    CustomGuardrail: the parent blocks, a child that only inherits does not."""
+    CustomGuardrail = _from("litellm.integrations.custom_guardrail", "CustomGuardrail")
+
+    class Parent(CustomGuardrail):  # type: ignore[misc,valid-type]
+        async def apply_guardrail(self, inputs: Any, *args: Any, **kwargs: Any) -> Any:
+            raise RuntimeError("parent ran")
+
+    class Child(Parent):
+        pass
+
+    options = {"guardrail_name": "p", "event_hook": "pre_call", "default_on": True}
+    with pytest.raises(Exception, match="parent ran"):
+        _pre_call(Parent(**options), _chat("hello"))
+    assert _pre_call(Child(**options), _chat("hello"))["messages"][0]["content"] == "hello"
+
+
+def test_litellm_a_subclass_that_only_inherits_apply_guardrail_is_refused(
+    litellm: ModuleType,
+) -> None:
+    module = _load("litellm_guardrail")
+    with pytest.raises(TypeError, match="apply_guardrail"):
+
+        class Mine(module.JamjetGuardrail):  # type: ignore[misc,name-defined]
+            pass
+
+
+def test_litellm_a_subclass_that_redeclares_apply_guardrail_still_blocks(
+    litellm: ModuleType,
+) -> None:
+    GuardrailRaisedException = _from("litellm.exceptions", "GuardrailRaisedException")
+    module = _load("litellm_guardrail")
+
+    class Mine(module.JamjetGuardrail):  # type: ignore[misc,name-defined]
+        async def apply_guardrail(self, *args: Any, **kwargs: Any) -> Any:
+            return await super().apply_guardrail(*args, **kwargs)
+
+    mine = Mine(guardrail_name="jamjet", event_hook=["pre_call"], default_on=True)
+    with pytest.raises(GuardrailRaisedException):
+        _pre_call(mine, _chat(SMUGGLED))
