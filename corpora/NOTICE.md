@@ -1120,6 +1120,25 @@ datasets may carry non-commercial terms. That has no bearing on measuring the
 model, and it would have a bearing on anything downstream that bundled it, which
 this repository does not.
 
+### Hidden-Unicode scanners, by their authors
+
+`benchmarks/unicode-scanners/RESULTS.md` publishes precision and recall for
+four scanners written by other people, measured on a corpus written here
+(`benchmarks/unicode-scanners/corpus.jsonl`, first-party, Apache-2.0). No part
+of any scanner is committed to this repository; each is installed into a
+directory outside it at the pinned version and run unmodified with its
+default settings.
+
+| Scanner | Author | Licence | Version | Commit |
+|---|---|---|---|---|
+| [unicode-smuggling-guard](https://github.com/raulkivi/unicode-smuggling-guard) | Raul Kivi | MIT | 1.2.0 | `5b1ddb1fa7a53872832315f8ead14d4aeeb8af9f` |
+| [ghostchars](https://github.com/antonsoo/ghostchars) | Anton Soloviev | MIT | 0.1.5 | `74b1c603a43aefc6a6b86fa2a24a72a037a8483b` |
+| [hidden-content-scan](https://github.com/kukv/hidden-content-scan) | kukv | MIT | 1.0.0 | `4643ed6ddf226db042fbce9a41a7f41a30aea6b6` |
+| [anti-trojan-source](https://github.com/lirantal/anti-trojan-source) | Liran Tal | Apache-2.0 | 1.13.0 | `5c95bf53b3768b895038165d4dc086108db1b12a` |
+
+The pins, and the SHA-256 of every file fetched outside a package manager,
+are in `benchmarks/unicode-scanners/tools.json`.
+
 ## Chat-template marker sources
 
 `src/jamjet_guardrails/detectors/_template_markers.py` is a generated table of

@@ -1,0 +1,4 @@
+# The PyPI scanner benchmarks/unicode-scanners measures, pinned by version and
+# by the SHA-256 of the wheel. Not a dependency of jamjet-guardrails.
+unicode-smuggling-guard==1.2.0 \
+    --hash=sha256:22aff6d88ceb9ce390648eed2b0175071f7a400a01957d25d5430d4edb842a61
