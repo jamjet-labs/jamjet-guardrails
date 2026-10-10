@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "jamjet-guardrails"
-version = "0.4.1"
+version = "0.5.0"
 description = "Content guardrails for LLM applications, with published precision and recall and provenance on every decision."
 readme = "README.md"
 # Seven terms, and each AND names material this distribution carries beyond its
@@ -150,7 +150,8 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/jamjet-labs/jamjet-guardrails"
+Homepage = "https://jamjet.dev/guardrails/"
+Documentation = "https://github.com/jamjet-labs/jamjet-guardrails#readme"
 Repository = "https://github.com/jamjet-labs/jamjet-guardrails"
 Issues = "https://github.com/jamjet-labs/jamjet-guardrails/issues"
 Benchmarks = "https://github.com/jamjet-labs/jamjet-guardrails/blob/main/BENCHMARKS.md"
