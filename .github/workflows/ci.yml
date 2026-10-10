@@ -142,3 +142,42 @@ jobs:
       - run: ruff format --check .
       - run: mypy
       - run: pytest -q
+
+  # The integration recipes in docs/recipes/, executed against the frameworks
+  # they integrate with. Separate jobs, never legs of `check`: the core claims no
+  # dependencies, and `check` runs tests/test_recipes.py with neither framework
+  # installed, where every framework test skips.
+  #
+  # One job per framework because the two cannot share an environment:
+  # openai-agents 0.23.1 requires openai>=3 and litellm 1.104.2 requires
+  # openai<3. Each version below is the one its page says it was verified
+  # against, and tests/test_recipes.py reads these lines to hold the pages to it.
+  #
+  # JAMJET_RECIPE_FRAMEWORK turns a missing import into a failure rather than a
+  # skip. Without it a broken install step would leave this job green having run
+  # nothing but the framework-free tests.
+  recipe-openai-agents:
+    runs-on: ubuntu-latest
+    env:
+      JAMJET_RECIPE_FRAMEWORK: openai-agents
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]" "openai-agents==0.23.1"
+      - run: pytest -q tests/test_recipes.py
+
+  recipe-litellm:
+    runs-on: ubuntu-latest
+    env:
+      JAMJET_RECIPE_FRAMEWORK: litellm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      # The `proxy` extra because the recipe is a proxy guardrail and the tests
+      # drive the proxy's own dispatch and config loader.
+      - run: pip install -e ".[dev]" "litellm[proxy]==1.104.2"
+      - run: pytest -q tests/test_recipes.py
