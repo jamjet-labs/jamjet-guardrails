@@ -65,7 +65,7 @@
     {
       "id": "naive-cf-cc",
       "name": "naive baseline: any Cf or Cc character",
-      "repo": "benchmarks/unicode-scanners/run.py",
+      "repo": "run.py",
       "registry": "this checkout",
       "version": "this checkout",
       "license": "Apache-2.0",

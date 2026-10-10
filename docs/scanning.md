@@ -155,7 +155,8 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - run: pip install jamjet-guardrails
+      # `scan` is not in a PyPI release yet; until it is, install from GitHub.
+      - run: pip install git+https://github.com/jamjet-labs/jamjet-guardrails
       - run: jamjet-guardrails scan --sarif scan.sarif
       - if: always()
         uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9

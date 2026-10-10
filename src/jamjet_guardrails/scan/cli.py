@@ -76,7 +76,9 @@ def main(argv: Sequence[str]) -> int:
         try:
             args.sarif.write_text(to_sarif(report), encoding="utf-8")
         except OSError as exc:
-            print(f"scan: cannot write {args.sarif}: {exc.strerror}", file=sys.stderr)
+            print(
+                f"scan: cannot write {safe_line(str(args.sarif))}: {exc.strerror}", file=sys.stderr
+            )
             return 2
 
     # A console whose encoding cannot carry a character in a path or an excerpt

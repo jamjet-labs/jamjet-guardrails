@@ -160,3 +160,13 @@ def test_the_console_script_runs_scan_end_to_end(tmp_path: Path) -> None:
     )
     assert proc.returncode == 1, proc.stderr
     assert "INVISIBLE_TAG_CHARS" in proc.stdout
+
+
+def test_an_unwritable_sarif_path_is_escaped_in_the_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _smuggled(tmp_path)
+    _chdir(monkeypatch, tmp_path)
+    assert main(["scan", "--sarif", "no/such\n::error::forged"]) == 2
+    err = capsys.readouterr().err
+    assert "\n::" not in err and "::error" not in err

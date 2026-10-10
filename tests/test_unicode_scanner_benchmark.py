@@ -180,3 +180,11 @@ def test_the_changelog_states_the_corpus_sizes() -> None:
         f"on {len(corpus)} files: {flag} hidden payloads and {len(corpus) - flag} hard negatives"
         in changelog
     )
+
+
+def test_every_relative_link_in_results_md_resolves_beside_it() -> None:
+    results = (BENCH / "RESULTS.md").read_text(encoding="utf-8")
+    links = [t for t in re.findall(r"\]\(([^)]+)\)", results) if "://" not in t]
+    assert links
+    missing = [t for t in links if not (BENCH / t).exists()]
+    assert missing == []

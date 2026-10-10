@@ -81,10 +81,10 @@ def test_json_escaped_tag_characters_are_decoded_and_found(tmp_path: Path) -> No
 
 
 def test_a_raw_tag_run_in_json_is_reported_once_not_twice(tmp_path: Path) -> None:
-    # One literal holding both an escape and a raw tag run: the raw scan finds
-    # the run, and decoding the literal finds it again.
-    raw = json.dumps({"d": "x\n" + TAGS}, ensure_ascii=False)
-    assert "\\n" in raw and TAGS in raw
+    # One literal holding a non-ASCII escape and a raw tag run: the raw scan
+    # finds the run, and the decoded pass, which the escape triggers, finds it
+    # again at the same place.
+    raw = '{"d": "caf\\u00e9 ' + TAGS + '"}'
     (tmp_path / ".mcp.json").write_text(raw, encoding="utf-8")
     assert len(scan_paths([tmp_path], root=tmp_path).hits) == 1
 
@@ -159,3 +159,20 @@ def test_locating_many_findings_on_one_line_is_not_quadratic() -> None:
     assert len(hits) > 1000
     # Measured before the fix: 107 s for half this size.
     assert elapsed < 10, f"{elapsed:.1f}s"
+
+
+def test_an_empty_check_list_is_refused_not_reported_clean(tmp_path: Path) -> None:
+    from jamjet_guardrails import GuardrailUnavailableError
+
+    with pytest.raises(GuardrailUnavailableError):
+        scan_text("AGENTS.md", TAGS, [])
+    with pytest.raises(GuardrailUnavailableError):
+        scan_paths([tmp_path], checks=(), root=tmp_path)
+
+
+def test_a_raw_and_an_escaped_copy_of_one_payload_are_two_findings() -> None:
+    raw = json.dumps({"a": "x" + TAGS}, ensure_ascii=False)[:-1]
+    raw += ', "b": "y' + json.dumps(TAGS)[1:-1] + '"}'
+    hits = scan_text(".mcp.json", raw, ["injection-structural"])
+    assert len(hits) == 2
+    assert hits[0].column != hits[1].column

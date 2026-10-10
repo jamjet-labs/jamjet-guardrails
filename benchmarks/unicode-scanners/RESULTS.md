@@ -254,6 +254,6 @@ Wrong decisions are in bold.
 | [ghostchars](https://github.com/antonsoo/ghostchars) | npm @antonsoloviev/ghostchars@0.1.5 | `74b1c603a43a` | MIT | exit 1 (error-level findings; warnings exit 0) | defaults, with --no-config so no stray .ghostcharsrc.json is read |
 | [hidden-content-scan](https://github.com/kukv/hidden-content-scan) | scripts/scan.py at tag v1.0.0 | `4643ed6ddf22` | MIT | exit 1 (blocking rules; its report-only rules exit 0) | defaults |
 | [anti-trojan-source](https://github.com/lirantal/anti-trojan-source) | npm anti-trojan-source@1.13.0 | `5c95bf53b376` | Apache-2.0 | exit 1 | defaults (no --extended) |
-| [naive baseline: any Cf or Cc character](benchmarks/unicode-scanners/run.py) | this checkout | this checkout | Apache-2.0 | any character of category Cf, or Cc other than tab, LF and CR | the rule Snyk Agent Scan's W021 issue code describes, written here; Snyk's scanner itself was not run |
+| [naive baseline: any Cf or Cc character](run.py) | this checkout | this checkout | Apache-2.0 | any character of category Cf, or Cc other than tab, LF and CR | the rule Snyk Agent Scan's W021 issue code describes, written here; Snyk's scanner itself was not run |
 
 The `jamjet-guardrails` and naive rows are measured from the checkout named in the Version column, and CI recomputes both from the code on every run. The other four rows are measured at the versions shown and are not recomputed by CI, because CI does not install them; [README.md](README.md) has the one command that reruns every row.

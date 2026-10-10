@@ -155,3 +155,9 @@ def test_sarif_message_escapes_hidden_text_and_excerpt() -> None:
 def test_a_path_that_is_a_colon_cannot_start_a_line_with_two_colons() -> None:
     out = to_text(ScanReport(1, 0, (_hit(path=":"),)))
     assert not any(line.startswith("::") for line in out.splitlines())
+
+
+def test_a_posix_path_with_a_colon_stays_relative_to_srcroot() -> None:
+    sarif = json.loads(to_sarif(ScanReport(1, 0, (_hit(path="a:b.md"),))))
+    loc = sarif["runs"][0]["results"][0]["locations"][0]["physicalLocation"]
+    assert loc["artifactLocation"] == {"uri": "a%3Ab.md", "uriBaseId": "%SRCROOT%"}

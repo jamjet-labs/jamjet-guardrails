@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from jamjet_guardrails.detectors import build
+from jamjet_guardrails.errors import GuardrailUnavailableError
 from jamjet_guardrails.protocol import Guardrail
 from jamjet_guardrails.scan.positions import Locator, decode_hidden, excerpt
 from jamjet_guardrails.scan.targets import DEFAULT_CHECKS, discover_counted, load
@@ -163,6 +164,10 @@ def _run(
 
 
 def _build(checks: Sequence[str]) -> list[tuple[str, Guardrail]]:
+    if not checks:
+        # The same refusal build_chain makes: no checks would report every file
+        # clean, which is a scan that did not run reported as a pass.
+        raise GuardrailUnavailableError("scan was given no checks, so it would check nothing")
     return [(name, build(name)) for name in checks]
 
 
@@ -171,9 +176,11 @@ def _scan_built(path: str, text: str, guards: Sequence[tuple[str, Guardrail]]) -
     hits = _run(path, text, guards, None, locate)
     decoded = unescape(text)
     if decoded is not None:
-        seen = {(h.check, h.finding_type, h.hidden_text) for h in hits}
+        # A raw payload maps to the same offsets in the decoded text, so it is
+        # the same finding when it starts at the same place, and only then.
+        seen = {(h.check, h.finding_type, h.line, h.column) for h in hits}
         for hit in _run(path, decoded[0], guards, decoded[1], locate):
-            if (hit.check, hit.finding_type, hit.hidden_text) not in seen:
+            if (hit.check, hit.finding_type, hit.line, hit.column) not in seen:
                 hits.append(hit)
     return sorted(hits, key=_sort_key)
 

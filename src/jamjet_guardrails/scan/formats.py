@@ -9,6 +9,7 @@ invisible character is an escape and a value cannot break its own line.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from jamjet_guardrails import __version__
@@ -109,8 +110,13 @@ def _rule(hit: ScanHit) -> dict[str, Any]:
     }
 
 
+# A Windows drive path, `C:/x` or `C:\\x`. Only that: `a:b.md` is a legal
+# relative POSIX name and stays relative to %SRCROOT%.
+_DRIVE = re.compile(r"[A-Za-z]:[\\/]")
+
+
 def _uri(path: str) -> dict[str, str]:
-    if path.startswith("/") or (len(path) > 1 and path[1] == ":"):
+    if path.startswith("/") or _DRIVE.match(path):
         # Outside the scan root and not expressible relative to it.
         return {"uri": "file://" + quote(path if path.startswith("/") else "/" + path)}
     return {"uri": quote(path), "uriBaseId": "%SRCROOT%"}

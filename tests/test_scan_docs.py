@@ -95,3 +95,13 @@ def test_every_action_the_doc_pins_is_pinned_the_same_way_in_this_repo() -> None
             repo,
             sha,
         )
+
+
+def test_the_workflow_installs_a_version_that_has_scan() -> None:
+    """While `scan` is unreleased, `pip install jamjet-guardrails` lacks it."""
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    unreleased = changelog.split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
+    workflow = _text().split("## In GitHub Actions", 1)[1].split("\n## ", 1)[0]
+    if "`jamjet-guardrails scan`" in unreleased:
+        assert "pip install jamjet-guardrails\n" not in workflow
+        assert "pip install git+https://github.com/jamjet-labs/jamjet-guardrails" in workflow
