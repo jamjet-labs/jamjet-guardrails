@@ -8,16 +8,19 @@ numbers it was computed from while both files go on looking right.
 
 So nothing here re-states a rate. Every rate is re-derived: the F1 from the
 counts through `training/ship_bar.py:f1`, the comparison from the bar's own
-`our_minimum` and `our_minimum_comparison`, the structural side by rerunning
-`structural_floor` over the shipped corpus for real. And the ship decision is
+`our_minimum` and `our_minimum_comparison`, the structural side from the counts
+the bar recorded for the corpus the verdict was judged on. And the ship decision is
 checked as a truth table over all three sides rather than as the one row this
 run happened to land on, because the row we landed on is the one row where a
 conjunction written as `or` would still have produced the right answer.
 
-Nothing here needs a network, a model or `onnxruntime`. The semantic side is
-read from the artifact, which is why it is held to the counts beside it; the
-structural side is recomputed, which needs only the package and a committed
-corpus.
+Nothing here needs a network, a model or `onnxruntime`. Both sides are read
+from records and held to the counts beside them. The structural side used to be
+recomputed over the shipped corpus. It stopped being recomputable on 2026-10-10,
+when the corpus grew past `b704703f431d` and the check gained the
+variation-selector signal: neither the corpus nor the check that produced the
+verdict ships any more, so a recomputation would compare the verdict against
+something it never measured.
 """
 
 from __future__ import annotations
@@ -30,7 +33,6 @@ from typing import Any
 from test_ship_bar import (
     SHIP_BAR_CORE_SHA256,
     SHIP_BAR_SHA256_AT_VERDICT,
-    STRUCTURAL_CORPUS_VERSION_AT_VERDICT,
     _core_digest,
 )
 from training.decide import EXPORT_RECORD, METRICS, SHIPPED, verdict
@@ -42,8 +44,6 @@ from training.ship_bar import (
     SHIP_BAR,
     STRUCTURAL_CORPUS_VERSION,
     f1,
-    harness,
-    structural_floor,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -51,24 +51,6 @@ RECORD = ROOT / "training" / "artifacts" / "ship_check.json"
 SPLITS = ROOT / "training" / "generated" / "splits.json"
 MANIFEST = ROOT / "training" / "sources.yaml"
 RESULTS = ROOT / "docs" / "measurements" / "2026-08-31-phase2b1-results.md"
-
-
-def at_verdict() -> dict[str, Any]:
-    """The bar's record of the structural corpus the verdict was measured on.
-
-    Read out of the re-derivation chain by corpus version. The verdict carries
-    counts and no version, and is never back-filled, so this is the only place
-    the two can be joined.
-    """
-    latest = bar()["structural_floor_rederived"]
-    for move in [latest, *latest.get("earlier", [])]:
-        for side in ("current", "previous"):
-            if move[side]["corpus_version"] == STRUCTURAL_CORPUS_VERSION_AT_VERDICT:
-                return dict(move[side])
-    raise AssertionError(
-        f"the bar keeps no record of {STRUCTURAL_CORPUS_VERSION_AT_VERDICT}, the corpus "
-        "the verdict was measured on"
-    )
 
 
 def check() -> dict[str, Any]:
@@ -141,67 +123,45 @@ def test_the_semantic_side_is_the_comparison_the_bar_asks_for() -> None:
     assert recorded["corpus"] == EVAL_SOURCE
 
 
-def test_the_structural_side_is_re_derived_from_the_shipped_corpus() -> None:
-    """Recomputed for real, not read back out of the artifact, while it can be.
+def test_the_structural_side_is_what_the_bar_recorded_for_the_verdicts_corpus() -> None:
+    """Record against record. This used to be a recomputation and is not one now.
 
-    The structural half needs no model, so there is no reason to trust a
-    recorded copy of it. `structural_floor` runs the shipped check over the
-    shipped corpus through the same `run.score` the semantic half used, and the
-    counts have to be what the artifact says they were.
-
-    THE SHIPPED CORPUS HAS SINCE MOVED, which this test could not express until
-    it did. The verdict was measured on `b704703f431d`, 154 cases, and the
-    variation-selector signal moved the shipped corpus to 168. A recorded
-    verdict is never back-filled, so from that move on the verdict is checked
-    against the bar's own record of the corpus it was measured on, which the
-    bar's re-derivation chain keeps and `test_ship_bar.py` checks for breaks.
-    While the shipped corpus IS that corpus, the recomputation below still runs.
+    Until 2026-10-10 `structural_floor` ran the shipped check over the shipped
+    corpus and the counts had to be what the artifact said. The shipped corpus
+    is no longer `b704703f431d` and the shipped check is no longer the one that
+    scored it, so the verdict's structural record is held to the bar's record of
+    that corpus instead, key for key, and the rates to the counts.
     """
+    detail = bar()["structural_floor_detail"]
+    assert detail["corpus_version"] == STRUCTURAL_CORPUS_VERSION
+    from_bar = {key: detail[key] for key in ("corpus", "corpus_version", "cases", "counts")}
+    from_bar["recall"] = f1(detail["counts"])["recall"]
+    from_bar["floor"] = round(from_bar["recall"], FLOOR_PLACES)
     recorded_structural = check()["structural"]
-    then = at_verdict()
-    assert {
-        "cases": recorded_structural["cases"],
-        "counts": recorded_structural["counts"],
-        "recall": recorded_structural["recall"],
-        "floor": recorded_structural["floor"],
-    } == {
-        "cases": then["corpus_cases"],
-        "counts": then["counts"],
-        "recall": then["recall"],
-        "floor": then["floor"],
-    }, "the verdict's structural record is not what the bar recorded for that corpus"
-    recorded = check()["verdict"]["structural"]
-    assert recorded["floor"] == then["recall"]
-    assert recorded["floor_published_as"] == then["floor"]
-    assert recorded["measured"] == float(recorded_structural["recall"])
-    assert recorded["holds"] is (float(recorded_structural["recall"]) >= then["recall"])
-    if STRUCTURAL_CORPUS_VERSION != STRUCTURAL_CORPUS_VERSION_AT_VERDICT:
-        return
-    recomputed = structural_floor(harness())
     # Compared on the keys the ARTIFACT carries, and the delta is asserted
-    # rather than ignored. `structural_floor` grew `corpus_version` on
+    # rather than ignored. The bar's record grew `corpus_version` on
     # 2026-09-03, after this verdict was recorded; back-filling it into
     # `ship_check.json` would edit a record of what was measured, which is the
     # one thing a recorded verdict may never do. Naming the allowed delta is
     # what keeps this a total comparison: a key added later that nobody thought
     # about fails here rather than disappearing into a subset match.
-    assert set(recomputed) - set(recorded_structural) == {"corpus_version"}, (
-        "structural_floor produces keys this recorded verdict does not carry; a verdict "
+    assert set(from_bar) - set(recorded_structural) == {"corpus_version"}, (
+        "the bar records keys this recorded verdict does not carry; a verdict "
         "is a record of what was measured and is not back-filled"
     )
-    assert {key: recomputed[key] for key in recorded_structural} == recorded_structural, (
-        "the structural side of the verdict is not what the shipped corpus scores today"
+    assert {key: from_bar[key] for key in recorded_structural} == recorded_structural, (
+        "the structural side of the verdict is not what the bar recorded for its corpus"
     )
     # And the corpus is the same one, which is the claim `corpus_version` exists
     # to make and the only reason the comparison above is still about one thing.
-    assert recomputed["corpus_version"] == STRUCTURAL_CORPUS_VERSION
+    assert from_bar["corpus_version"] == STRUCTURAL_CORPUS_VERSION
     recorded = check()["verdict"]["structural"]
     # The floor compared against is the recall it was DERIVED from, not the
     # three-decimal rendering the bar also carries. `round(0.8909090909, 3)` is
     # 0.891, which is ABOVE the value it renders, so the rendering fails an
     # untouched structural layer by 0.00009. Both numbers are in the bar,
     # whose semantic half is byte-pinned by `SHIP_BAR_CORE_SHA256` and whose
-    # structural half is re-derived above; the verdict records which one it used.
+    # structural half is held to its own counts above; the verdict records which one it used.
     floor = float(bar()["structural_floor_detail"]["recall"])
     published = float(bar()["structural_floor"])
     assert recorded["floor"] == floor
@@ -210,8 +170,8 @@ def test_the_structural_side_is_re_derived_from_the_shipped_corpus() -> None:
         "the rendering is below the value it renders, so this comment describes "
         "a rounding that no longer happens"
     )
-    assert recorded["measured"] == float(recomputed["recall"])
-    assert recorded["holds"] is (float(recomputed["recall"]) >= floor)
+    assert recorded["measured"] == float(from_bar["recall"])
+    assert recorded["holds"] is (float(from_bar["recall"]) >= floor)
 
 
 def test_the_floor_a_verdict_compares_against_is_never_above_its_own_measurement() -> None:
@@ -247,9 +207,10 @@ def test_rounding_the_floor_to_three_places_could_never_have_hidden_a_real_chang
     1/(TP+FN). If that step were smaller than the rounding, the published 0.891
     would be hiding real movement rather than merely mis-comparing. It is not,
     by a factor of about 36, and the factor is asserted rather than stated so it
-    fails if the corpus is ever cut down.
+    fails if the record is ever cut down. Read from the counts the floor was
+    measured on, not from the shipped corpus, which is no longer that corpus.
     """
-    counts = structural_floor(harness())["counts"]
+    counts = bar()["structural_floor_detail"]["counts"]
     positives = counts["tp"] + counts["fn"]
     step = 1 / positives
     rounding = 0.5 * 10**-FLOOR_PLACES
@@ -268,9 +229,7 @@ def test_the_structural_layer_scored_exactly_what_the_bar_recorded_for_it() -> N
     is the stronger one: a chain that had lost a true positive and gained
     another somewhere else would keep the recall and fail here.
     """
-    # Against the bar's record of the corpus the verdict was measured on, which
-    # is the bar's current detail only while the shipped corpus has not moved.
-    assert check()["structural"]["counts"] == at_verdict()["counts"], (
+    assert check()["structural"]["counts"] == bar()["structural_floor_detail"]["counts"], (
         "the structural counts moved; adding a classifier to the package has cost the "
         "structural layer decisions it used to get right"
     )
@@ -288,11 +247,7 @@ def test_the_ship_decision_is_the_conjunction_of_all_three_sides() -> None:
     """
     recorded_bar = bar()
     minimum = float(recorded_bar["our_minimum"])
-    # The recall the floor was derived from, which is what `verdict` compares
-    # against. This read the three-decimal rendering and only worked while the
-    # rendering rounded UP: 0.891 for 0.8909. At 0.918 for 0.91803 it rounds
-    # down, so "recall equal to the rendering" no longer holds the floor.
-    floor = float(recorded_bar["structural_floor_detail"]["recall"])
+    floor = float(recorded_bar["structural_floor"])
     for controls in (True, False):
         for semantic_clears in (True, False):
             for structural_holds in (True, False):
@@ -411,9 +366,7 @@ def test_the_verdict_was_taken_against_the_bar_as_it_was_recorded() -> None:
     )
     assert judged["recorded_utc"] == bar()["recorded_utc"]
     assert judged["our_minimum"] == float(bar()["our_minimum"])
-    # The floor at the verdict, which the bar keeps in its re-derivation chain.
-    # The current floor moved past it when the corpus grew to 168 cases.
-    assert judged["structural_floor"] == float(at_verdict()["floor"])
+    assert judged["structural_floor"] == float(bar()["structural_floor"])
     assert judged["structural_floor_level"] == "decision"
     measured = datetime.fromisoformat(check()["measured_utc"])
     written = datetime.fromisoformat(str(bar()["recorded_utc"]))

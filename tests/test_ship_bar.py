@@ -15,22 +15,31 @@ Four properties, and each one is a way the bar could be quietly moved:
 - `reference_measured_by` still says `this-repo`, because a leaderboard figure
   swapped in here would compare two different datasets and that is the exact
   flaw the bar was rewritten to remove;
-- the structural floor is `0.918` at DECISION level, re-derived from the shipped
-  corpus, and is not the `0.887` FINDING-level number `BENCHMARKS.md` publishes
-  for the same file;
+- the structural floor is `0.891` at DECISION level, measured on the corpus the
+  verdict was judged on (`b704703f431d`, 154 cases), and is not the `0.873`
+  FINDING-level number `BENCHMARKS.md` published for that corpus;
 - `our_minimum` is what `required_minimum` returns for the recorded reference
   scores, so the bar cannot drift away from the rule that produced it.
 
 Nothing here needs a network or a model server. The reference scores are read
-from the artifact and re-derived from the counts recorded beside them; the
-structural floor is recomputed for real, because that half needs only the
-package and a corpus that ships with it.
+from the artifact and re-derived from the counts recorded beside them, and so is
+the structural floor.
+
+THE STRUCTURAL FLOOR IS NO LONGER RECOMPUTED FROM THE SHIPPED CORPUS. Until
+2026-10-10 the shipped corpus was the corpus the floor was measured on, and the
+floor was re-derived from it here. The variation-selector signal then grew the
+corpus from 154 cases to 168 and relabelled `inj-0098`, and it moved the check
+as well, so neither half of what produced 0.891 still ships. The bar stays
+frozen at what the verdict was judged against rather than following the corpus:
+the verdict ran once and is recorded, and a pre-registration that re-derives
+itself on every corpus change is one reviewers learn to wave through. The
+shipped corpus is gated where every other corpus is, by its own key in
+`corpora/baselines.json`.
 """
 
 from __future__ import annotations
 
 import hashlib
-import itertools
 import json
 import math
 import re
@@ -87,13 +96,7 @@ ARTIFACTS = ROOT / "training" / "artifacts"
 #: `SHIP_BAR_CORE_SHA256` below is what closes it: the semantic registration is
 #: digested separately and has never moved, so no disclosure key, however
 #: plausibly worded, can cover an edit to the number the bar actually is.
-#:
-#: Moved a second time, on 2026-10-10, from
-#: 462fab954db14b18ce7836d12f54031a3f89bb1470d7ed92570033a72f91ddc0, when the
-#: structural corpus grew from 154 cases to 168 for the variation-selector
-#: signal and the floor was re-derived from 0.891 to 0.918. Disclosed in
-#: `structural_floor_rederived`, which now keeps the first move in `earlier`.
-SHIP_BAR_SHA256 = "0bef8679c89272960ae51ecb8202b53956bc72f4014be9e07cc55ad1f3be530b"
+SHIP_BAR_SHA256 = "462fab954db14b18ce7836d12f54031a3f89bb1470d7ed92570033a72f91ddc0"
 
 #: What the whole file digested to when `training/artifacts/ship_check.json` was
 #: written, so that verdict's own record of the bar it was judged against still
@@ -101,14 +104,6 @@ SHIP_BAR_SHA256 = "0bef8679c89272960ae51ecb8202b53956bc72f4014be9e07cc55ad1f3be5
 #: verdict alone, because a recorded verdict may never be back-filled and a
 #: constant nobody can find is a record nobody can check.
 SHIP_BAR_SHA256_AT_VERDICT = "74fb86231e6ef98813d09433041d032989ce7ed1512fb6c03d00d7e672eb2ae0"
-
-#: The structural corpus the verdict in `training/artifacts/ship_check.json` was
-#: measured on, for the same reason as the digest above. The verdict records
-#: the counts it measured and not the corpus version, because the version pin
-#: did not exist yet, and it may never be back-filled. The bar's re-derivation
-#: chain holds the counts each corpus version scored, so the verdict is checked
-#: against the record for THIS version rather than against whatever ships today.
-STRUCTURAL_CORPUS_VERSION_AT_VERDICT = "b704703f431d"
 
 #: sha256 over a canonical serialisation of the fields that were registered
 #: BEFORE any model existed, and that nothing may ever re-derive.
@@ -177,7 +172,7 @@ SHIP_BAR_CORE_KEYS = (
 #:
 #: `published_finding_level_recall` and `structural_floor_note` are here because
 #: they carry the finding-level number, which moved from 0.870 to 0.873 with the
-#: same corpus growth, and from 0.873 to 0.887 with the next one. `structural_floor_level` is a constant and is here because
+#: same corpus growth. `structural_floor_level` is a constant and is here because
 #: it describes the structural side and belongs with it.
 SHIP_BAR_STRUCTURAL_KEYS = (
     "structural_floor",
@@ -392,35 +387,52 @@ def test_the_bar_carries_no_tolerance_band() -> None:
     assert recorded["our_minimum"] >= recorded["reference_score"]
 
 
-def test_the_structural_floor_is_the_decision_level_recall_of_the_shipped_corpus() -> None:
-    """Re-derived, not read. This is the half of the bar CI can recompute.
+def test_the_structural_floor_is_the_decision_level_recall_its_counts_give() -> None:
+    """Re-derived from the counts the bar recorded, not from today's corpus.
 
-    `run.score` over `run.load_structural_cases` is the same counting the
-    artifact used, and it needs only the package and a corpus that ships with
-    it. If the corpus or the check moves, the recorded floor has to move with
-    it or this fails.
+    This used to recompute the floor over the shipped corpus. It cannot any
+    more, honestly: the corpus moved past `b704703f431d` and the check moved
+    past the version that scored it, and today's check over the old 154 cases
+    gets `inj-0098` right where the measured one did not (50 true positives,
+    not 49). So the recorded floor is held to its own recorded counts, which is
+    record-to-record, and the corpus it names is held to the pin.
     """
-    recomputed = structural_floor(harness())
     recorded = bar()
-    assert recorded["structural_floor"] == recomputed["floor"]
-    assert recorded["structural_floor_detail"]["counts"] == recomputed["counts"]
+    detail = recorded["structural_floor_detail"]
     assert recorded["structural_floor_level"] == STRUCTURAL_LEVEL == "decision"
+    assert detail["corpus_version"] == STRUCTURAL_CORPUS_VERSION
+    counts = detail["counts"]
+    assert detail["cases"] == sum(counts.values())
     # The unrounded rate too, and against the counts rather than against itself.
     # Rounding to three places hides WHICH rate was recorded: precision here is
-    # 0.961 and recall 0.891, and a mutation swapping one for the other inside
-    # `structural_floor` survived until this line existed, because the rounded
-    # `floor` was computed from a value the test never looked at.
+    # 0.961 and recall 0.891, and a record holding one in place of the other
+    # would still round to a plausible floor.
+    exact = counts["tp"] / (counts["tp"] + counts["fn"])
+    assert math.isclose(detail["recall"], exact, rel_tol=1e-12)
+    assert recorded["structural_floor"] == round(exact, FLOOR_PLACES)
+
+
+def test_structural_floor_still_measures_recall_on_whatever_corpus_it_reads() -> None:
+    """The function, live, on the shipped corpus. Not the bar.
+
+    `training.decide` and `training.ship_bar` both call `structural_floor`, so
+    the function has to keep computing decision-level RECALL from its own
+    counts even though the bar no longer reads it. A mutation swapping recall
+    for precision inside it survived until the recall was checked against the
+    counts rather than against the rounded `floor`.
+    """
+    recomputed = structural_floor(harness())
     counts = recomputed["counts"]
     exact = counts["tp"] / (counts["tp"] + counts["fn"])
     assert math.isclose(recomputed["recall"], exact, rel_tol=1e-12), (
         f"structural_floor reports {recomputed['recall']} where TP/(TP+FN) is {exact}"
     )
-    assert math.isclose(recorded["structural_floor_detail"]["recall"], exact, rel_tol=1e-12)
-    assert recorded["structural_floor"] == round(exact, FLOOR_PLACES)
+    assert recomputed["floor"] == round(exact, FLOOR_PLACES)
+    assert recomputed["cases"] == sum(counts.values())
 
 
 def test_the_structural_floor_is_not_the_published_finding_level_number() -> None:
-    """0.918 and 0.887 are two quantities, not one quantity that moved.
+    """0.891 and 0.873 are two quantities, not one quantity that moved.
 
     `BENCHMARKS.md` publishes the finding-level recall, where a case with four
     expected spans contributes four. A classifier emits no spans, so it can only
@@ -429,14 +441,18 @@ def test_the_structural_floor_is_not_the_published_finding_level_number() -> Non
     thing, and it would do it silently: both are recalls on the same file.
     """
     recorded = bar()
-    assert recorded["structural_floor"] == 0.918
+    assert recorded["structural_floor"] == 0.891
     assert recorded["structural_floor"] != PUBLISHED_FINDING_LEVEL_RECALL
-    assert recorded["published_finding_level_recall"] == PUBLISHED_FINDING_LEVEL_RECALL == 0.887
-    assert "0.887" in recorded["structural_floor_note"], (
+    assert recorded["published_finding_level_recall"] == PUBLISHED_FINDING_LEVEL_RECALL == 0.873
+    assert "0.873" in recorded["structural_floor_note"], (
         "the note must show the finding-level number it is telling the reader apart from"
     )
-    published = (ROOT / "BENCHMARKS.md").read_text(encoding="utf-8")
-    assert "0.887" in published, "BENCHMARKS.md no longer publishes the finding-level recall"
+    # This also asserted that "0.873" appears in BENCHMARKS.md. BENCHMARKS.md
+    # publishes the SHIPPED corpus, which moved to 168 cases and 0.887, and the
+    # assertion went on passing only because the `secrets` row also reads
+    # 0.873. A guard that passes on another row's number is not one, so it is
+    # gone: 0.873 was the finding-level recall on `b704703f431d`, and the
+    # CHANGELOG entry for that corpus is where it is published.
 
 
 def test_the_evaluation_corpus_is_the_external_one_both_records_agree_on() -> None:
@@ -795,54 +811,37 @@ def test_the_structural_floor_names_the_corpus_version_it_was_measured_on() -> N
     most worth making dishonestly: changing an expectation to match whatever the
     check currently does is the cheapest way to turn a failing gate green.
 
-    From here, a corpus that moves fails this test until the move is disclosed
-    in `structural_floor_rederived` and both the pin and the digest are moved in
-    the same commit, which is one reviewable diff.
+    From 2026-09-03 a corpus that moved failed this test until the move was
+    disclosed in `structural_floor_rederived`, and `version_pin_added` in the
+    bar still says so. It no longer does, and `training/ERRATA.md` says so. The
+    bar is frozen at the corpus the verdict was judged on, `b704703f431d`, and
+    this asserts the bar names THAT corpus, not the one that ships today. A
+    corpus that moves is gated by `corpora/baselines.json` instead, which keys
+    every baseline by corpus version, so the shipped digest has to have a
+    baseline entry of its own.
 
-    It has happened once since: the variation-selector signal grew the corpus
-    from 154 cases to 168 and the floor went from 0.891 to 0.918. The record of
-    the first move now sits in `earlier`, and the moves are checked to chain.
-
-    Mutation-checked: relabelling one case in the corpus from `deny` to `allow`
-    makes this fail, and so does changing STRUCTURAL_CORPUS_VERSION.
+    Mutation-checked: changing STRUCTURAL_CORPUS_VERSION makes this fail, and
+    so does relabelling one case in the corpus without moving its baseline.
     """
     recorded = bar()
-    derived = structural_corpus_version()
-    assert derived == STRUCTURAL_CORPUS_VERSION, (
-        f"corpora/injection-structural/in-repo.jsonl now digests to {derived} and the "
-        f"ship bar was registered against {STRUCTURAL_CORPUS_VERSION}; if the corpus "
-        "moved for a reason, re-derive the floor and disclose it in "
-        "structural_floor_rederived"
-    )
+    assert STRUCTURAL_CORPUS_VERSION == "b704703f431d"
     assert recorded["structural_floor_detail"]["corpus_version"] == STRUCTURAL_CORPUS_VERSION
-    latest = recorded["structural_floor_rederived"]
-    assert latest["current"]["corpus_version"] == derived
-    # The current record is the detail the floor is read from, field for field.
-    detail = recorded["structural_floor_detail"]
-    assert latest["current"] == {
-        "floor": detail["floor"],
-        "corpus_cases": detail["cases"],
-        "counts": detail["counts"],
-        "recall": detail["recall"],
-        "corpus_version": detail["corpus_version"],
-    }
-    # Every move is kept, newest first, and the moves CHAIN: what each one
-    # moved from is what the one before it moved to. A move recorded without
-    # its predecessor, or a predecessor edited afterwards, breaks the chain.
-    moves = [latest, *latest.get("earlier", [])]
-    for newer, older in itertools.pairwise(moves):
-        assert newer["previous"] == older["current"], (
-            f"the move dated {newer['date']} starts from a record the move dated "
-            f"{older['date']} did not end at"
-        )
-        assert newer["date"] > older["date"]
+    assert recorded["structural_floor_rederived"]["current"]["corpus_version"] == (
+        STRUCTURAL_CORPUS_VERSION
+    )
     # The corpus that preceded the pin was never digested, and the record says
     # so with a null rather than with a value nobody measured.
-    assert moves[-1]["previous"]["corpus_version"] is None
-    assert all(move["previous"]["corpus_version"] for move in moves[:-1])
-    # And the derivation reads the FILE rather than quoting the pin, or the
-    # whole guard would agree with itself no matter what is on disk.
+    assert recorded["structural_floor_rederived"]["previous"]["corpus_version"] is None
+    # The shipped corpus, read off disk, is gated under its own version. The
+    # derivation reads the FILE rather than quoting a pin, or this would agree
+    # with itself no matter what is on disk.
+    derived = structural_corpus_version()
     assert structural_floor(harness())["corpus_version"] == derived
+    baselines = json.loads((ROOT / "corpora" / "baselines.json").read_text(encoding="utf-8"))
+    assert f"injection-structural/in-repo/{derived}" in baselines, (
+        f"corpora/injection-structural/in-repo.jsonl digests to {derived} and "
+        "corpora/baselines.json has no baseline for that version, so nothing gates it"
+    )
 
 
 def test_every_key_in_the_bar_is_on_exactly_one_side_of_the_digest() -> None:

@@ -60,9 +60,14 @@ a number that changes quietly is a number nobody can rely on.
   The published row moved, on a corpus that grew from 154 cases to 168 (six
   positives, eight hard negatives) with `inj-0098` relabelled from one
   `ZERO_WIDTH_SMUGGLING` finding to one `VARIATION_SELECTOR_SMUGGLING` finding:
-  precision 0.972 to 0.973, recall 0.873 to 0.887, wrong decisions 8 to 7. The
-  ship bar's decision-level structural floor is re-derived from 0.891 to 0.918
-  and the move is disclosed in `training/ship_bar.json`.
+  precision 0.972 to 0.973, recall 0.873 to 0.887, wrong decisions 8 to 7.
+
+  The ship bar does not move. `training/ship_bar.json` stays at the 0.891
+  structural floor on the 154-case corpus the verdict was judged on, and
+  `tests/test_ship_bar.py` now holds the bar to that corpus instead of to the
+  one that ships; the shipped corpus is gated by `corpora/baselines.json`. The
+  structural layer's decision-level recall on the new corpus, 0.918, is recorded
+  in `docs/measurements/2026-10-10-structural-decision-recall.md`.
 
 ### Fixed
 

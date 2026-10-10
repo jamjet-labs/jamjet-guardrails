@@ -104,12 +104,7 @@ STRUCTURAL_CORPUS = "corpora/injection-structural/in-repo.jsonl"
 #: be caught by hand. Pinned on 2026-09-03, against the corpus as it stood after
 #: that move; the 146-case corpus that preceded it was never digested, and no
 #: value is invented for it here.
-#:
-#: Moved on 2026-10-10 from `b704703f431d` (154 cases) to `e2014aeba636` (168),
-#: when `injection-structural` gained its variation-selector signal and its
-#: corpus gained fourteen cases and relabelled `inj-0098`. Disclosed in
-#: `structural_floor_rederived`, whose `earlier` list keeps the first move.
-STRUCTURAL_CORPUS_VERSION = "e2014aeba636"
+STRUCTURAL_CORPUS_VERSION = "b704703f431d"
 
 #: The published FINDING-level recall on the same corpus, recorded so the two
 #: numbers are visibly different things rather than one number that moved.
@@ -121,9 +116,7 @@ STRUCTURAL_CORPUS_VERSION = "e2014aeba636"
 #: which widened `injection-structural` to run on output as well as input and
 #: added 8 cases to its corpus (146 -> 154), 5 of them `allow`. That raised
 #: BENCHMARKS.md's finding-level recall for this check from 0.870 to 0.873.
-#: Moved again, from 0.873 to 0.887, when the variation-selector signal arrived
-#: and the corpus grew from 154 cases to 168.
-PUBLISHED_FINDING_LEVEL_RECALL = 0.887
+PUBLISHED_FINDING_LEVEL_RECALL = 0.873
 
 #: Places the recorded floor is rounded to, matching how BENCHMARKS.md and
 #: benchmarks/RESULTS.md print every rate in this repository.
