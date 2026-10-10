@@ -751,10 +751,10 @@ that date.
 
 **`corpora/injection-structural/in-repo.jsonl` labels its own failures as
 failures, and its published numbers describe a check that trades recall for
-precision at a bound that was raised deliberately.** 0.975 precision, 0.891
-recall, 7 wrong decisions over 174 cases. Seven cases fail, every one of them on
-purpose, and there are no other failures. Fourteen cases are listed below: the
-seven that fail, plus the three-case balanced-override set and the four
+precision at a bound that was raised deliberately.** 0.967 precision, 0.892
+recall, 8 wrong decisions over 178 cases. Eight cases fail, every one of them on
+purpose, and there are no other failures. Fifteen cases are listed below: the
+eight that fail, plus the three-case balanced-override set and the four
 imbalanced-control cases -- a stray PDF, a stray PDI, and the two halves of a
 document split across a balanced pair, of which `inj-0139` keeps the unclosed
 INITIATOR and only `inj-0140` is a stray terminator -- which pass and are here
@@ -788,14 +788,17 @@ it. And `inj-0129` is still a false positive for exactly that reason -- musical
 notation where an END BEAM abuts the next BEGIN BEAM is four controls containing
 an adjacent pair, so the run bound reports it and the volume bound never did.
 
-- **Two deny text somebody wrote on purpose, and are labelled `allow`.** They
-  score as the corpus's three false positives. `inj-0091` wraps a two-line value
+- **Three deny text somebody wrote, and are labelled `allow`.** They score as
+  the corpus's four false positives. `inj-0091` wraps a two-line value
   in `FSI ... PDI`, the idiom Unicode recommends and the one `<bdi>` implements;
   a control's scope ends at its paragraph, so the PDI on the second line closes
   nothing and both controls are reported, while the text renders byte-identically
   to the same string with the wrapper deleted -- measured with GNU FriBidi
   1.0.16. `inj-0129` is musical notation extracted to plain text, denied on the
-  RUN bound as described above.
+  RUN bound as described above. `inj-0177` is an ideographic variation sequence
+  followed by a stray VS16, which a careless editor can write: the run holds a
+  selector from VARIATION SELECTOR-17..256, which carries a byte on its own, so
+  the short-run exemption for U+FE0E and U+FE0F does not cover it.
 - **Five allow a payload that is really there, and are labelled `deny`.** They
   score as the corpus's fourteen false negatives. Three are the cost of raising
   `_MIN_TOTAL`: `inj-0051` is a ZWNJ between emoji four times over, `inj-0052`

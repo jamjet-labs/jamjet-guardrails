@@ -7,7 +7,7 @@ every score. How to read them is under the table.
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
 | confusables | confusables/in-repo | in-repo | `e53f03d3527e` | 115 | 0.942 | 0.891 | 0.916 | 49 | 3 | 6 | 9 |
 | encoded-content | encoded-content/in-repo | in-repo | `ffddd0cd3c29` | 81 | 1.000 | 0.875 | 0.933 | 35 | 0 | 5 | 5 |
-| injection-structural | injection-structural/in-repo | in-repo | `d559325769de` | 174 | 0.975 | 0.891 | 0.931 | 115 | 3 | 14 | 7 |
+| injection-structural | injection-structural/in-repo | in-repo | `635fcdcd46c2` | 178 | 0.967 | 0.892 | 0.928 | 116 | 4 | 14 | 8 |
 | pii | pii/in-repo | in-repo | `06fb3b601aba` | 81 | 0.631 | 0.872 | 0.732 | 41 | 24 | 6 | 24 |
 | pii | pii/third-party | nvidia/Nemotron-PII@b70ffaf | `c25ef538d677` | 300 | 0.960 | 0.997 | 0.978 | 340 | 14 | 1 | 6 |
 | rules | rules/in-repo | in-repo | `8fe119ddb734` | 42 | 1.000 | 1.000 | 1.000 | 29 | 0 | 0 | 0 |
@@ -92,13 +92,13 @@ above clamped it.
 | ENCODED_INSTRUCTION | 1.000 | 0.818 | 18 | 0 | 4 |
 | ENCODED_MARKUP | 1.000 | 0.875 | 7 | 0 | 1 |
 
-## Per type: injection-structural on injection-structural/in-repo (in-repo, `d559325769de`)
+## Per type: injection-structural on injection-structural/in-repo (in-repo, `635fcdcd46c2`)
 
 | Type | Precision | Recall | TP | FP | FN |
 |---|---:|---:|---:|---:|---:|
 | BIDI_OVERRIDE | 0.889 | 1.000 | 16 | 2 | 0 |
 | INVISIBLE_TAG_CHARS | 1.000 | 1.000 | 21 | 0 | 0 |
-| VARIATION_SELECTOR_SMUGGLING | 1.000 | 1.000 | 12 | 0 | 0 |
+| VARIATION_SELECTOR_SMUGGLING | 0.929 | 1.000 | 13 | 1 | 0 |
 | ZERO_WIDTH_SMUGGLING | 0.985 | 0.825 | 66 | 1 | 14 |
 
 ## Per type: pii on pii/in-repo (in-repo, `06fb3b601aba`)
@@ -188,7 +188,7 @@ above clamped it.
 
 ...and 5 more, in `benchmarks.json`.
 
-## Worst misses: injection-structural on injection-structural/in-repo (in-repo, `d559325769de`)
+## Worst misses: injection-structural on injection-structural/in-repo (in-repo, `635fcdcd46c2`)
 
 | Case | Kind | Expected | Predicted |
 |---|---|---|---|
@@ -198,7 +198,7 @@ above clamped it.
 | `inj-0091` | decision_mismatch | allow | deny |
 | `inj-0097` | decision_mismatch | deny | allow |
 
-...and 19 more, in `benchmarks.json`.
+...and 21 more, in `benchmarks.json`.
 
 ## Worst misses: pii on pii/in-repo (in-repo, `06fb3b601aba`)
 

@@ -246,15 +246,15 @@
       "detector_version": "0.3.0",
       "corpus_name": "injection-structural/in-repo",
       "corpus_source": "in-repo",
-      "corpus_version": "d559325769de",
-      "cases": 174,
-      "precision": 0.9746,
-      "recall": 0.8915,
-      "f1": 0.9312,
-      "true_positives": 115,
-      "false_positives": 3,
+      "corpus_version": "635fcdcd46c2",
+      "cases": 178,
+      "precision": 0.9667,
+      "recall": 0.8923,
+      "f1": 0.928,
+      "true_positives": 116,
+      "false_positives": 4,
       "false_negatives": 14,
-      "decision_mismatches": 7,
+      "decision_mismatches": 8,
       "per_type": {
         "BIDI_OVERRIDE": {
           "precision": 0.8889,
@@ -271,10 +271,10 @@
           "false_negatives": 0
         },
         "VARIATION_SELECTOR_SMUGGLING": {
-          "precision": 1.0,
+          "precision": 0.9286,
           "recall": 1.0,
-          "true_positives": 12,
-          "false_positives": 0,
+          "true_positives": 13,
+          "false_positives": 1,
           "false_negatives": 0
         },
         "ZERO_WIDTH_SMUGGLING": {
@@ -324,6 +324,12 @@
         },
         {
           "case_id": "inj-0129",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "deny"
+        },
+        {
+          "case_id": "inj-0177",
           "kind": "decision_mismatch",
           "expected": "allow",
           "predicted": "deny"
@@ -429,6 +435,12 @@
           "kind": "false_positive",
           "expected": "nothing",
           "predicted": "ZERO_WIDTH_SMUGGLING@(10, 12)"
+        },
+        {
+          "case_id": "inj-0177",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "VARIATION_SELECTOR_SMUGGLING@(1, 3)"
         }
       ]
     },

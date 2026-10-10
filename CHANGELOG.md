@@ -62,16 +62,25 @@ a number that changes quietly is a number nobody can rely on.
   such as U+FFF9 and U+13430, U+FFFC, U+0600, U+070F, U+1D159 and combining
   marks all work as covers.
 
-  The published row moved, on a corpus that grew from 154 cases to 168 (six
-  positives, eight hard negatives) with `inj-0098` relabelled from one
+  A run of at most three selectors that are all U+FE0E or U+FE0F is not
+  reported. Doubled VS16 is real text, from pasted social posts and from emoji
+  filters that strip the pictograph and leave its selector, and three
+  presentation selectors carry at most three bits. A run that holds any other
+  selector is still reported, so an ideographic variation sequence followed by
+  a stray VS16 denies; `inj-0177` is that case, labelled `allow`, and it is a
+  disclosed false positive.
+
+  The published row moved, on a corpus that grew from 154 cases to 178 (twelve
+  positives, twelve hard negatives) with `inj-0098` relabelled from one
   `ZERO_WIDTH_SMUGGLING` finding to one `VARIATION_SELECTOR_SMUGGLING` finding:
-  precision 0.972 to 0.973, recall 0.873 to 0.887, wrong decisions 8 to 7.
+  precision 0.972 to 0.967, recall 0.873 to 0.892, wrong decisions 8 to 8.
+  The precision drop is `inj-0177`.
 
   The ship bar does not move. `training/ship_bar.json` stays at the 0.891
   structural floor on the 154-case corpus the verdict was judged on, and
   `tests/test_ship_bar.py` now holds the bar to that corpus instead of to the
   one that ships; the shipped corpus is gated by `corpora/baselines.json`. The
-  structural layer's decision-level recall on the new corpus, 0.918, is recorded
+  structural layer's decision-level recall on the new corpus, 0.925, is recorded
   in `docs/measurements/2026-10-10-structural-decision-recall.md`.
 
 ### Fixed

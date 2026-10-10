@@ -352,7 +352,7 @@ failures is a number you cannot check.
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
 | confusables | confusables/in-repo | in-repo | `e53f03d3527e` | 115 | 0.942 | 0.891 | 0.916 | 49 | 3 | 6 | 9 |
 | encoded-content | encoded-content/in-repo | in-repo | `ffddd0cd3c29` | 81 | 1.000 | 0.875 | 0.933 | 35 | 0 | 5 | 5 |
-| injection-structural | injection-structural/in-repo | in-repo | `d559325769de` | 174 | 0.975 | 0.891 | 0.931 | 115 | 3 | 14 | 7 |
+| injection-structural | injection-structural/in-repo | in-repo | `635fcdcd46c2` | 178 | 0.967 | 0.892 | 0.928 | 116 | 4 | 14 | 8 |
 | pii | pii/in-repo | in-repo | `06fb3b601aba` | 81 | 0.631 | 0.872 | 0.732 | 41 | 24 | 6 | 24 |
 | pii | pii/third-party | nvidia/Nemotron-PII@b70ffaf | `c25ef538d677` | 300 | 0.960 | 0.997 | 0.978 | 340 | 14 | 1 | 6 |
 | rules | rules/in-repo | in-repo | `8fe119ddb734` | 42 | 1.000 | 1.000 | 1.000 | 29 | 0 | 0 | 0 |
@@ -394,13 +394,13 @@ applies limits correctly. It says nothing about whether any rule is well
 chosen, and the fixture behind it sets a character limit only, so the row never
 reaches the byte or line paths.
 
-Fourteen `injection-structural` cases are disclosed, and seven of them are the
-check's wrong decisions: two deny text somebody wrote deliberately, and five
-allow a payload that really is in there. The other seven PASS, and are disclosed
+Fifteen `injection-structural` cases are disclosed, and eight of them are the
+check's wrong decisions: three deny text somebody wrote, and five allow a
+payload that really is in there. The other seven PASS, and are disclosed
 because a reader can reasonably expect the opposite of each. This sentence once
 said every disclosed case carried a label the check gets wrong, which was nearly
 twice the check's error rate and contradicted the wrong-decision column in the
-table above; the guard read the count and never the predicate. All fourteen are
+table above; the guard read the count and never the predicate. All fifteen are
 named by case id in [corpora/NOTICE.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/corpora/NOTICE.md), along with the
 invisible-character families this check does not count and one measured encoder
 for each.

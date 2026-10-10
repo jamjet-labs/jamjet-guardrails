@@ -617,6 +617,7 @@ _INJECTION_DISCLOSED = {
     # False positives. Each denies; each is labelled allow and scores as an FP.
     "inj-0091": "allow",  # FSI around a multi-line value, the idiom Unicode recommends
     "inj-0129": "allow",  # musical notation: an END BEAM abuts the next BEGIN BEAM
+    "inj-0177": "allow",  # an ideographic variation sequence, then a stray VS16
     # False negatives that pre-date the raise. Each allows; each is labelled deny.
     # `inj-0098`, the same encoding between variation selectors, was the third
     # and left this list when VARIATION_SELECTOR_SMUGGLING began reporting it.
@@ -662,7 +663,7 @@ def test_a_disclosed_injection_shape_is_in_the_corpus_and_in_the_notice(
     Both halves, because either one alone is half a disclosure. A case dropped
     from the file leaves the notice describing evidence that is not there; an id
     dropped from the notice leaves a case whose label reads as an ordinary
-    expectation, which for these fourteen it is not.
+    expectation, which for these fifteen it is not.
     """
     case = next(
         (c for c in _load("injection-structural", "in-repo").cases if c.id == case_id), None

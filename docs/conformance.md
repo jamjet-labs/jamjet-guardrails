@@ -524,7 +524,7 @@ their type names are the labels their corpora use, and their bar is the score on
 section on `secrets` below adds no requirement to that; it discloses which cases sit behind that check's
 published score. This check
 constrains how a document is ENCODED rather than what it says, and reproducing its numbers is not the same
-as reproducing it. 37 of its 108 `allow` cases stop allowing when one of the exemptions or exclusions below
+as reproducing it. 39 of its 111 `allow` cases stop allowing when one of the exemptions or exclusions below
 is switched off, and neither an exemption nor an exclusion is visible in a precision figure.
 
 Its `kind` is `constraint`, so the invariant above applies unchanged: no finding
@@ -572,6 +572,19 @@ sequences each carry at most one selector per visible base, and none of them
 reaches the rule: `inj-0161`, `inj-0162`, `inj-0163` and `inj-0164` are those
 negatives. The four Mongolian free variation selectors are not in the rule's
 alphabet, and `inj-0166` is Mongolian text that carries them.
+
+**A short run of presentation selectors is allowed.** A run whose selectors are
+all U+FE0E or U+FE0F, and number three or fewer, is not reported. Doubled VS16
+is real text: pasted social posts, an emoji filter that strips the pictograph
+and leaves its selector, an editor that appends VS16 to an emoji already
+carrying one. Two symbols carry one bit each, so the exemption admits at most
+three bits per run, and a cover that repeats it pays at least one character
+outside the gap per three bits. `inj-0175` (doubled VS16) and `inj-0176` (VS16 then
+VS15) are the negatives it holds; `inj-0178`, a payload one presentation
+selector per bit, is the positive on the other side of the bound, and so is
+`inj-0098`. The exemption does NOT cover a run holding any other selector:
+`inj-0177`, an ideographic variation sequence followed by a stray VS16, is
+labelled `allow` and denied, and is one of the corpus's false positives.
 
 What the rule does not see is one selector after each character that is none of
 those: not default-ignorable, not White_Space and not U+2800. That costs two
@@ -699,11 +712,11 @@ otherwise assume closed, pulled out because they are the ones that surprise.
   those channels ride on are load-bearing there. Measured:
 
   - counting variation selectors denies `inj-0143`, `inj-0144`, `inj-0145`,
-    `inj-0162`, `inj-0163` and `inj-0166`, all labelled `allow`: five keycaps,
-    five emoji carrying U+FE0F, five Japanese names taking variant glyphs, text
-    and emoji presentation beside three hearts, four emoji ZWJ sequences
-    carrying variation selectors, and Mongolian words ending in free variation
-    selectors. Counting them in the zero-width signal is a different rule from
+    `inj-0162`, `inj-0163`, `inj-0166`, `inj-0175` and `inj-0176`, all labelled
+    `allow`: five keycaps, five emoji carrying U+FE0F, five Japanese names taking
+    variant glyphs, text and emoji presentation beside three hearts, four emoji
+    ZWJ sequences carrying variation selectors, Mongolian words ending in free
+    variation selectors, a doubled VS16, and VS16 followed by VS15. Counting them in the zero-width signal is a different rule from
     `VARIATION_SELECTOR_SMUGGLING`, which never counts a selector that has a
     visible base of its own.
   - dropping the exclusion for the directional format characters denies

@@ -1365,6 +1365,15 @@ _SELECTOR_RANGES: tuple[tuple[int, int], ...] = ((0xFE00, 0xFE0F), (0xE0100, 0xE
 # before the next visible character modifies nothing: there is no glyph for it
 # to choose. One selector is a variation sequence and is never reported here.
 _MIN_SELECTORS = 2
+# A run made ONLY of U+FE0E and U+FE0F, the text and emoji presentation
+# selectors, is allowed up to this many selectors. Doubled VS16 is real text:
+# pasted social posts, an emoji filter that strips the pictograph and leaves
+# its selector, an editor that appends VS16 to an emoji already carrying one.
+# A two-symbol alphabet carries one bit per selector, so the exemption carries
+# at most three bits per run, and it is bounded by length rather than by
+# content: `inj-0098` is a 119-character run of U+FE0F and stays denied.
+_PRESENTATION_SELECTORS = frozenset("\ufe0e\ufe0f")
+_MAX_PRESENTATION_RUN = 3
 
 
 def _ranges_without(
@@ -1416,9 +1425,7 @@ _BLANK_RANGES: tuple[tuple[int, int], ...] = (
 # selectors are taken OUT of the gap so that the two classes are disjoint: every
 # character then has exactly one way to match, and the pattern cannot backtrack
 # into a second reading of a run.
-_GAP_RANGES = tuple(
-    sorted(_ranges_without(_DEFAULT_IGNORABLE, _SELECTOR_RANGES) + _BLANK_RANGES)
-)
+_GAP_RANGES = tuple(sorted(_ranges_without(_DEFAULT_IGNORABLE, _SELECTOR_RANGES) + _BLANK_RANGES))
 _SELECTOR_RUN = re.compile(
     f"[{_class(_SELECTOR_RANGES)}]"
     f"(?:[{_class(_GAP_RANGES)}]*[{_class(_SELECTOR_RANGES)}]){{{_MIN_SELECTORS - 1},}}"
@@ -1441,6 +1448,12 @@ def _selector_spans(content: str) -> list[tuple[int, int]]:
     sequence has a blank base: a selector after each space would otherwise put
     nothing but whitespace on the page. `inj-0169` to `inj-0173` are those.
 
+    A run of at most `_MAX_PRESENTATION_RUN` selectors that are all U+FE0E or
+    U+FE0F is not reported: that is doubled VS16 from copy and paste, and it
+    carries at most three bits.
+    `test_a_short_run_of_presentation_selectors_is_copy_paste_and_allows` holds
+    the exemption and `test_four_presentation_selectors_are_a_run` its bound.
+
     What it does not see is one selector after each character outside the gap,
     which is a variation sequence every time, even where that character draws
     nothing. `test_one_selector_per_visible_character_is_a_known_miss` and
@@ -1455,7 +1468,18 @@ def _selector_spans(content: str) -> list[tuple[int, int]]:
     reading; what the engine gives back is the trailing gap after a run's last
     selector, once, and the gaps of different runs do not overlap.
     """
-    return [match.span() for match in _SELECTOR_RUN.finditer(content)]
+    spans = []
+    for match in _SELECTOR_RUN.finditer(content):
+        selectors = [char for char in match.group() if _is_selector(char)]
+        if len(selectors) <= _MAX_PRESENTATION_RUN and set(selectors) <= _PRESENTATION_SELECTORS:
+            continue
+        spans.append(match.span())
+    return spans
+
+
+def _is_selector(char: str) -> bool:
+    point = ord(char)
+    return any(low <= point <= high for low, high in _SELECTOR_RANGES)
 
 
 class InjectionStructuralGuardrail:
