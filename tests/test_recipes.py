@@ -471,6 +471,263 @@ def test_agents_audit_record_names_the_check_its_version_and_the_hash(
     json.dumps(record)
 
 
+def _no_trace(agents: ModuleType) -> Any:
+    return agents.RunConfig(tracing_disabled=True)
+
+
+def test_agents_input_guardrail_trips_on_redact_as_well_as_deny(
+    agents: ModuleType, recipe: ModuleType
+) -> None:
+    """An input that skips `screen_input` and only needs redacting must still
+    stop the run, because the input guardrail cannot rewrite it."""
+    model = _scripted_model(agents, ["unused"])
+    agent = recipe.guarded_agent("probe", "Be brief.", tools=[], model=model)
+    with pytest.raises(agents.InputGuardrailTripwireTriggered) as tripped:
+        _run(agents.Runner.run(agent, f"I am {EMAIL}", run_config=_no_trace(agents)))
+    assert [r["decision"] for r in tripped.value.guardrail_result.output.output_info] == ["redact"]
+    assert model.inputs == []
+
+
+def _reply_types() -> tuple[Any, Any]:
+    import dataclasses
+
+    BaseModel = _from("pydantic", "BaseModel")
+
+    class ModelReply(BaseModel):  # type: ignore[misc,valid-type]
+        text: str
+
+    @dataclasses.dataclass
+    class DataclassReply:
+        text: str
+
+    return ModelReply, DataclassReply
+
+
+@pytest.mark.parametrize("kind", [0, 1], ids=["pydantic", "dataclass"])
+def test_agents_structured_output_is_checked_with_its_hidden_characters(
+    agents: ModuleType, recipe: ModuleType, kind: int
+) -> None:
+    """A repr escapes tag characters as `\\U000e0069`, which no check reads as a
+    tag character, so structured output has to be checked as JSON text."""
+    output_type = _reply_types()[kind]
+    # The SDK asks for a dataclass wrapped in an object with one `response` key.
+    reply = {"text": SMUGGLED} if kind == 0 else {"response": {"text": SMUGGLED}}
+    model = _scripted_model(agents, [json.dumps(reply, ensure_ascii=False)])
+    agent = recipe.guarded_agent(
+        "probe", "Be brief.", tools=[], model=model, output_type=output_type
+    )
+    with pytest.raises(agents.OutputGuardrailTripwireTriggered) as tripped:
+        _run(recipe.answer(agent, "Summarise."))
+    assert tripped.value.guardrail_result.output.output_info["decision"] == "deny"
+
+
+def test_agents_answer_returns_a_redacted_structured_reply_as_its_type(
+    agents: ModuleType, recipe: ModuleType
+) -> None:
+    ModelReply, _ = _reply_types()
+    model = _scripted_model(agents, [json.dumps({"text": f"Mail {EMAIL}."})])
+    agent = recipe.guarded_agent(
+        "probe", "Be brief.", tools=[], model=model, output_type=ModelReply
+    )
+    reply = _run(recipe.answer(agent, "Who?"))
+    assert isinstance(reply, ModelReply)
+    assert reply.text == "Mail [REDACTED:EMAIL]."
+
+
+def test_agents_a_structured_tool_output_is_checked_with_its_hidden_characters(
+    agents: ModuleType, recipe: ModuleType
+) -> None:
+    ModelReply, _ = _reply_types()
+
+    def fetch_page(url: str) -> Any:
+        """Fetch a page."""
+        return ModelReply(text=SMUGGLED)
+
+    model = _scripted_model(agents, [("fetch_page", {"url": "https://example.com"}), "unused"])
+    agent = recipe.guarded_agent("probe", "Be brief.", tools=[fetch_page], model=model)
+    with pytest.raises(agents.ToolOutputGuardrailTripwireTriggered):
+        _run(recipe.answer(agent, "Fetch it."))
+    assert len(model.inputs) == 1
+
+
+def test_agents_tool_arguments_are_checked_before_the_tool_runs(
+    agents: ModuleType, recipe: ModuleType
+) -> None:
+    """The exfiltration direction: what the model writes into a tool call."""
+    sent: list[str] = []
+
+    def send_note(body: str) -> str:
+        """Send a note."""
+        sent.append(body)
+        return "sent"
+
+    model = _scripted_model(agents, [("send_note", {"body": f"key {OPENAI_KEY}"}), "Done."])
+    agent = recipe.guarded_agent("probe", "Be brief.", tools=[send_note], model=model)
+    assert _run(recipe.answer(agent, "Send it.")) == "Done."
+    assert sent == []
+    returned = [i for i in model.inputs[1] if i.get("type") == "function_call_output"]
+    assert "refused" in json.dumps(returned)
+
+    model = _scripted_model(agents, [("send_note", {"body": SMUGGLED}), "unused"])
+    agent = recipe.guarded_agent("probe", "Be brief.", tools=[send_note], model=model)
+    with pytest.raises(agents.ToolInputGuardrailTripwireTriggered):
+        _run(recipe.answer(agent, "Send it."))
+    assert sent == []
+
+
+def _mcp_server(agents: ModuleType, text: str, called: list[Any]) -> Any:
+    """An MCP server held in memory, so the SDK's real MCP path runs offline."""
+    MCPServer = _from("agents.mcp", "MCPServer")
+    Tool = _from("mcp.types", "Tool")
+    CallToolResult = _from("mcp.types", "CallToolResult")
+    TextContent = _from("mcp.types", "TextContent")
+
+    class InMemory(MCPServer):  # type: ignore[misc,valid-type]
+        @property
+        def name(self) -> str:
+            return "in-memory"
+
+        async def connect(self) -> None:
+            pass
+
+        async def cleanup(self) -> None:
+            pass
+
+        async def list_tools(self, run_context: Any = None, agent: Any = None) -> list[Any]:
+            schema = {
+                "type": "object",
+                "properties": {"url": {"type": "string"}},
+                "required": ["url"],
+            }
+            return [Tool(name="fetch_page", description="Fetch a page.", inputSchema=schema)]
+
+        async def call_tool(self, tool_name: str, arguments: Any, meta: Any = None) -> Any:
+            called.append(arguments)
+            return CallToolResult(content=[TextContent(type="text", text=text)])
+
+        async def list_prompts(self) -> Any:
+            raise NotImplementedError
+
+        async def get_prompt(self, name: str, arguments: Any = None) -> Any:
+            raise NotImplementedError
+
+    return InMemory()
+
+
+def test_agents_mcp_tool_outputs_are_checked(agents: ModuleType, recipe: ModuleType) -> None:
+    called: list[Any] = []
+    model = _scripted_model(agents, [("fetch_page", {"url": "https://example.com"}), "Done."])
+    server = _mcp_server(agents, f"Contact {EMAIL} for access.", called)
+    agent = recipe.guarded_agent("probe", "Be brief.", tools=[], model=model, mcp_servers=[server])
+    assert _run(recipe.answer(agent, "Fetch it.")) == "Done."
+    second = json.dumps(model.inputs[1], default=str)
+    assert EMAIL not in second
+    assert "[REDACTED:EMAIL]" in second
+
+    model = _scripted_model(agents, [("fetch_page", {"url": "https://example.com"}), "unused"])
+    server = _mcp_server(agents, SMUGGLED, called)
+    agent = recipe.guarded_agent("probe", "Be brief.", tools=[], model=model, mcp_servers=[server])
+    with pytest.raises(agents.ToolOutputGuardrailTripwireTriggered):
+        _run(recipe.answer(agent, "Fetch it."))
+    assert len(model.inputs) == 1
+
+
+def test_agents_mcp_tool_arguments_are_checked(agents: ModuleType, recipe: ModuleType) -> None:
+    called: list[Any] = []
+    model = _scripted_model(agents, [("fetch_page", {"url": SMUGGLED}), "unused"])
+    server = _mcp_server(agents, "page", called)
+    agent = recipe.guarded_agent("probe", "Be brief.", tools=[], model=model, mcp_servers=[server])
+    with pytest.raises(agents.ToolInputGuardrailTripwireTriggered):
+        _run(recipe.answer(agent, "Fetch it."))
+    assert called == []
+
+
+def test_agents_mcp_server_constructor_takes_the_tool_guardrails(
+    agents: ModuleType, recipe: ModuleType
+) -> None:
+    """The constructor form the page shows, built without starting a process."""
+    MCPServerStdio = _from("agents.mcp", "MCPServerStdio")
+
+    server = MCPServerStdio(
+        {"command": "unused"},
+        tool_input_guardrails=[recipe.jamjet_tool_input],
+        tool_output_guardrails=[recipe.jamjet_tool_output],
+    )
+    assert server.tool_input_guardrails == [recipe.jamjet_tool_input]
+    assert server.tool_output_guardrails == [recipe.jamjet_tool_output]
+
+
+def test_agents_a_value_with_no_json_form_is_refused_not_checked_as_a_repr(
+    agents: ModuleType, recipe: ModuleType
+) -> None:
+    class Opaque:
+        def __repr__(self) -> str:
+            return "clean"
+
+    with pytest.raises(TypeError):
+        recipe.as_text({"page": Opaque()})
+
+
+def test_agents_pii_refuses_a_tool_whose_arguments_carry_an_email_address(
+    agents: ModuleType, recipe: ModuleType
+) -> None:
+    """The cost the page names for checking tool arguments."""
+    sent: list[str] = []
+
+    def send_email(to: str) -> str:
+        """Send an email."""
+        sent.append(to)
+        return "sent"
+
+    model = _scripted_model(agents, [("send_email", {"to": EMAIL}), "Done."])
+    agent = recipe.guarded_agent("probe", "Be brief.", tools=[send_email], model=model)
+    assert _run(recipe.answer(agent, "Send it.")) == "Done."
+    assert sent == []
+
+
+def test_agents_guarded_agent_accepts_an_already_decorated_tool(
+    agents: ModuleType, recipe: ModuleType
+) -> None:
+    def allow(data: Any) -> Any:
+        return agents.ToolGuardrailFunctionOutput.allow()
+
+    theirs = agents.tool_output_guardrail(allow)
+
+    tool = agents.function_tool(_fetch(f"Contact {EMAIL}."), tool_output_guardrails=[theirs])
+    model = _scripted_model(agents, [("fetch_page", {"url": "https://example.com"}), "Done."])
+    agent = recipe.guarded_agent("probe", "Be brief.", tools=[tool], model=model)
+    assert _run(recipe.answer(agent, "Fetch it.")) == "Done."
+    assert EMAIL not in json.dumps(model.inputs[1], default=str)
+    (attached,) = agent.tools
+    assert theirs in attached.tool_output_guardrails
+    assert recipe.jamjet_tool_input in attached.tool_input_guardrails
+    assert tool.tool_output_guardrails == [theirs], "the caller's tool object was changed"
+
+
+def test_agents_guarded_agent_refuses_a_hosted_tool_by_name(
+    agents: ModuleType, recipe: ModuleType
+) -> None:
+    with pytest.raises(TypeError, match="function tools"):
+        recipe.guarded_agent("probe", "Be brief.", tools=[agents.WebSearchTool()])
+
+
+@pytest.mark.parametrize("info", ["not a dict", {"redacted": "attacker text"}])
+def test_agents_answer_reraises_a_tripwire_from_another_output_guardrail(
+    agents: ModuleType, recipe: ModuleType, info: Any
+) -> None:
+    async def trip(ctx: Any, agent: Any, output: Any) -> Any:
+        return agents.GuardrailFunctionOutput(output_info=info, tripwire_triggered=True)
+
+    theirs = agents.output_guardrail(trip)
+
+    model = _scripted_model(agents, ["Paris."])
+    agent = recipe.guarded_agent("probe", "Be brief.", tools=[], model=model)
+    agent.output_guardrails = [theirs]
+    with pytest.raises(agents.OutputGuardrailTripwireTriggered) as tripped:
+        _run(recipe.answer(agent, "Capital of France?"))
+    assert tripped.value.guardrail_result.guardrail is theirs
+
+
 # ==========================================================================
 # LiteLLM proxy
 # ==========================================================================

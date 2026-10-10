@@ -14,9 +14,11 @@ a number that changes quietly is a number nobody can rely on.
 
 - **Recipes for putting the library in an agent's request path.**
   `docs/recipes/openai-agents-sdk.md` attaches one chain to an OpenAI Agents
-  SDK agent's input, its function tools' outputs and its final output.
-  `docs/recipes/litellm.md` runs one chain as a LiteLLM proxy guardrail on
-  requests and replies. Each page quotes its recipe files verbatim, and
+  SDK agent's input, the arguments and outputs of its function and MCP tools,
+  and its final output. `docs/recipes/litellm.md` runs one chain as a LiteLLM
+  proxy guardrail on chat completions, `/v1/messages` and `/v1/responses`
+  requests and their replies, and refuses streamed requests unless
+  `allow_streaming` is set. Each page quotes its recipe files verbatim, and
   `tests/test_recipes.py` fails if a page and its file differ.
 
 - **The recipes are executed, not read.** Two new CI jobs install the pinned

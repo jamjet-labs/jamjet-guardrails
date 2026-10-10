@@ -130,8 +130,8 @@ Two recipes put a chain in an agent's request path. Each is code you copy, and
 CI runs it against the framework release its page names.
 
 - [OpenAI Agents SDK](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/docs/recipes/openai-agents-sdk.md):
-  guardrails on the input, on every function tool's output and on the final
-  output.
+  guardrails on the input, on the arguments and output of every function and
+  MCP tool, and on the final output.
 - [LiteLLM proxy](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/docs/recipes/litellm.md):
   one custom guardrail on chat completions, `/v1/messages` and `/v1/responses`
   requests and their replies. It refuses `stream: true` unless you set
