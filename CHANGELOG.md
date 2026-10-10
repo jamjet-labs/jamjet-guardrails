@@ -10,6 +10,33 @@ a number that changes quietly is a number nobody can rely on.
 
 ## [Unreleased]
 
+### Added
+
+- **Recipes for putting the library in an agent's request path.**
+  `docs/recipes/openai-agents-sdk.md` attaches one chain to an OpenAI Agents
+  SDK agent's input, its function tools' outputs and its final output.
+  `docs/recipes/litellm.md` runs one chain as a LiteLLM proxy guardrail on
+  requests and replies. Each page quotes its recipe files verbatim, and
+  `tests/test_recipes.py` fails if a page and its file differ.
+
+- **The recipes are executed, not read.** Two new CI jobs install the pinned
+  framework, `openai-agents` 0.23.1 and `litellm[proxy]` 1.104.2, and run
+  `tests/test_recipes.py` against it with no network and no API key. Two jobs
+  because the frameworks cannot share an environment: they require
+  incompatible versions of `openai`. The main job runs the same module with
+  neither framework installed, where the framework tests skip. The package
+  still has no dependencies, and the pins are not an extra, so nothing about
+  them reaches the published metadata.
+
+- **Each page says what its framework will not let a guardrail do.** Agents
+  SDK input and output guardrails can trip but cannot rewrite, so they trip on
+  `redact` too, and the page shows where the redaction happens instead: before
+  the run for input, and from the tripwire's `output_info` for the reply. Tool
+  output guardrails can replace a result, and that is where the recipe
+  redacts in flight. The LiteLLM page records that litellm 1.104.2 starts the
+  proxy without a guardrail whose constructor raises `ValueError` or
+  `TypeError`, and the recipe re-raises both so a typo stops the proxy instead.
+
 ### Fixed
 
 - **The README called the third-party PII corpus the one to read for ordinary
