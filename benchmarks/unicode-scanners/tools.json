@@ -1,0 +1,77 @@
+{
+  "tools": [
+    {
+      "id": "jamjet-guardrails",
+      "name": "jamjet-guardrails scan",
+      "repo": "https://github.com/jamjet-labs/jamjet-guardrails",
+      "registry": "this checkout",
+      "version": "this checkout",
+      "license": "Apache-2.0",
+      "argv": ["{jamjet}", "scan", "--", "{file}"],
+      "flagged": "exit 1",
+      "settings": "defaults: injection-structural only"
+    },
+    {
+      "id": "unicode-smuggling-guard",
+      "name": "unicode-smuggling-guard",
+      "repo": "https://github.com/raulkivi/unicode-smuggling-guard",
+      "registry": "PyPI unicode-smuggling-guard==1.2.0",
+      "version": "1.2.0",
+      "commit": "5b1ddb1fa7a53872832315f8ead14d4aeeb8af9f",
+      "license": "MIT",
+      "wheel_sha256": "22aff6d88ceb9ce390648eed2b0175071f7a400a01957d25d5430d4edb842a61",
+      "argv": ["{tools}/venv/bin/unicode-smuggling-guard", "--", "{file}"],
+      "flagged": "exit 1",
+      "settings": "defaults"
+    },
+    {
+      "id": "ghostchars",
+      "name": "ghostchars",
+      "repo": "https://github.com/antonsoo/ghostchars",
+      "registry": "npm @antonsoloviev/ghostchars@0.1.5",
+      "version": "0.1.5",
+      "commit": "74b1c603a43aefc6a6b86fa2a24a72a037a8483b",
+      "license": "MIT",
+      "argv": ["node", "{tools}/npm/node_modules/@antonsoloviev/ghostchars/dist/cli.js", "--no-config", "{file}"],
+      "flagged": "exit 1 (error-level findings; warnings exit 0)",
+      "settings": "defaults, with --no-config so no stray .ghostcharsrc.json is read"
+    },
+    {
+      "id": "hidden-content-scan",
+      "name": "hidden-content-scan",
+      "repo": "https://github.com/kukv/hidden-content-scan",
+      "registry": "scripts/scan.py at tag v1.0.0",
+      "version": "1.0.0",
+      "commit": "4643ed6ddf226db042fbce9a41a7f41a30aea6b6",
+      "license": "MIT",
+      "url": "https://raw.githubusercontent.com/kukv/hidden-content-scan/4643ed6ddf226db042fbce9a41a7f41a30aea6b6/scripts/scan.py",
+      "sha256": "7de1eae6e2bdbe26d3b85d9a0519969f292d9da515e620c53666873b2ea8b178",
+      "argv": ["{python}", "{tools}/hidden-content-scan.py", "{file}"],
+      "flagged": "exit 1 (blocking rules; its report-only rules exit 0)",
+      "settings": "defaults"
+    },
+    {
+      "id": "anti-trojan-source",
+      "name": "anti-trojan-source",
+      "repo": "https://github.com/lirantal/anti-trojan-source",
+      "registry": "npm anti-trojan-source@1.13.0",
+      "version": "1.13.0",
+      "commit": "5c95bf53b3768b895038165d4dc086108db1b12a",
+      "license": "Apache-2.0",
+      "argv": ["node", "{tools}/npm/node_modules/anti-trojan-source/bin/anti-trojan-source.js", "{file}"],
+      "flagged": "exit 1",
+      "settings": "defaults (no --extended)"
+    },
+    {
+      "id": "naive-cf-cc",
+      "name": "naive baseline: any Cf or Cc character",
+      "repo": "run.py",
+      "registry": "this checkout",
+      "version": "this checkout",
+      "license": "Apache-2.0",
+      "argv": [],
+      "flagged": "any character of category Cf, or Cc other than tab, LF and CR",
+      "settings": "the rule Snyk Agent Scan's W021 issue code describes, written here; Snyk's scanner itself was not run"
+    }
+  ]
+}

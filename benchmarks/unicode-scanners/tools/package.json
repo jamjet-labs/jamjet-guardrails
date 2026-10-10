@@ -1,0 +1,9 @@
+{
+  "name": "unicode-scanners-benchmark-tools",
+  "private": true,
+  "description": "The npm scanners benchmarks/unicode-scanners measures, pinned exactly. Not a dependency of jamjet-guardrails.",
+  "dependencies": {
+    "@antonsoloviev/ghostchars": "0.1.5",
+    "anti-trojan-source": "1.13.0"
+  }
+}

@@ -8,6 +8,51 @@ A published precision or recall figure is part of the interface here. A release
 that moves one says so in its entry, with the old value and the new one, because
 a number that changes quietly is a number nobody can rely on.
 
+## [Unreleased]
+
+### Added
+
+- **`jamjet-guardrails scan`, for instructions hidden in the files an AI coding
+  agent reads as its rules.** By default it walks a directory for agent
+  instruction files (AGENTS.md, CLAUDE.md, .cursor/rules/, SKILL.md,
+  .github/agents/, .claude/skills/, MCP configuration and more; the full
+  list is in `docs/scanning.md`) and runs `injection-structural` over them.
+  Output is text, JSON or SARIF 2.1.0, and `--sarif PATH` writes SARIF in the
+  same run as the text log. Exit codes match the eval command: `0` clean, `1`
+  findings, `2` a bad invocation. The existing `jamjet-guardrails --corpora-dir
+  ...` command is unchanged; `scan` as a first argument was always a usage
+  error before.
+
+- **The scan does not look away from a file.** An agent instruction file, or a
+  file named on the command line, that is not UTF-8, holds a NUL byte or is
+  over the 2,000,000-byte cap is decoded leniently, scanned, and reported as a
+  `deny` finding of its own, because each was a one-byte way past a scanner
+  that skipped it. Agent file names match at any depth and without regard to
+  case, relative to the directory being walked. Directory symlinks are
+  followed with a loop guard. Any `\u` or `\U` escape in a scanned file is
+  decoded and scanned again, so a tag payload written as escapes in an MCP
+  config, a Gemini TOML command or a skill's YAML frontmatter is found.
+  Paths, excerpts and decoded text are escaped before printing, including
+  every `::`, so a file name cannot
+  forge a GitHub Actions workflow command.
+
+- **An open benchmark of hidden-Unicode scanners.**
+  `benchmarks/unicode-scanners/` scores this scan, unicode-smuggling-guard
+  1.2.0, ghostchars 0.1.5, hidden-content-scan 1.0.0, anti-trojan-source 1.13.0
+  and a naive any-Cf-or-Cc rule on 54 files: 27 hidden payloads and 27 hard
+  negatives. `benchmarks/unicode-scanners/RESULTS.md` lists every wrong decision each scanner makes, ours
+  first, including the variation-selector encoding `injection-structural` is
+  already disclosed as missing. CI re-measures our row and the naive row on
+  every run; the other four are measured at pinned versions with one command.
+
+### Changed
+
+- **The README starts with what a new user needs.** What the library is,
+  the install line, an executed five-line example, three paths in (your own
+  calls, an agent framework, a repository scan), how it fails and what it
+  does not catch, then links for people coming from llm-guard, Guardrails AI
+  and NeMo Guardrails. The reference material below is unchanged.
+
 ## [0.5.0] - 2026-10-10
 
 ### Added
