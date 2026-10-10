@@ -823,6 +823,16 @@ an adjacent pair, so the run bound reports it and the volume bound never did.
   labelled `deny`. That is a relabel, so it is named here: the label says which
   signal should report the case, and while the zero-width signal was the only
   one that could, it named that one.
+
+  The relabel moves two published numbers, and neither move is the detector
+  getting better. Scored on the 154-case corpus as it stood before this change,
+  with `inj-0098` still labelled `ZERO_WIDTH_SMUGGLING`, the check that ships
+  now gets 0.963 precision and 0.873 recall (103 true positives, 4 false
+  positives, 15 false negatives): the selector finding on `inj-0098` counts as
+  a false positive there and the joiner finding it does not make counts as a
+  miss. And `ZERO_WIDTH_SMUGGLING`'s per-type recall went from 0.815 to 0.825
+  (15 misses to 14) with no change to the zero-width signal: the one expected
+  finding that left its denominator was `inj-0098`'s.
 - **Three are labelled `allow` and pass, and they are one construct rather
   than three cases.** `inj-0030`, `inj-0038` and `inj-0096` are each a BALANCED
   override whose scope contains characters whose order it reverses. Measured

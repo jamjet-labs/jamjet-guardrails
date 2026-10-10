@@ -74,7 +74,12 @@ a number that changes quietly is a number nobody can rely on.
   positives, twelve hard negatives) with `inj-0098` relabelled from one
   `ZERO_WIDTH_SMUGGLING` finding to one `VARIATION_SELECTOR_SMUGGLING` finding:
   precision 0.972 to 0.967, recall 0.873 to 0.892, wrong decisions 8 to 8.
-  The precision drop is `inj-0177`.
+  The precision drop is `inj-0177`. The relabel matters to both numbers: on
+  the 154-case corpus as it was, without the relabel, the shipped check scores
+  0.963 precision and 0.873 recall, because the selector finding on `inj-0098`
+  counts as a false positive there. And `ZERO_WIDTH_SMUGGLING`'s per-type
+  recall in `BENCHMARKS.md` went from 0.815 to 0.825 with no change to the
+  zero-width signal, only because `inj-0098`'s miss left its denominator.
 
   The ship bar does not move. `training/ship_bar.json` stays at the 0.891
   structural floor on the 154-case corpus the verdict was judged on, and
