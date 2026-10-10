@@ -124,6 +124,24 @@ reported as redacted.
 On a `deny` the returned content is the audit record, not something to send.
 Branch on the decision first.
 
+## Use it in your agent
+
+Two recipes put a chain in an agent's request path. Each is code you copy, and
+CI runs it against the framework release its page names.
+
+- [OpenAI Agents SDK](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/docs/recipes/openai-agents-sdk.md):
+  guardrails on the input, on the arguments and output of every function and
+  MCP tool, and on the final output.
+- [LiteLLM proxy](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/docs/recipes/litellm.md):
+  one custom guardrail on chat completions, `/v1/messages` and `/v1/responses`
+  requests and their replies. It refuses `stream: true` unless you set
+  `allow_streaming`, because a streamed reply cannot be rewritten.
+
+The frameworks differ in what a guardrail may do. LiteLLM lets it rewrite a
+request and a reply that is not streamed. In the Agents SDK only a tool guardrail can replace
+content, so the recipe's input and output guardrails stop the run on `redact`,
+and the page shows where the redaction goes instead.
+
 ## The checks
 
 | Name | Kind | Runs on | Types |

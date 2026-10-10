@@ -1,0 +1,14 @@
+model_list:
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+guardrails:
+  - guardrail_name: jamjet
+    litellm_params:
+      # litellm_guardrail.py sits beside this file.
+      guardrail: litellm_guardrail.JamjetGuardrail
+      mode: [pre_call, post_call]
+      default_on: true
+      jamjet_checks: [injection-structural, pii, secrets]
