@@ -2,12 +2,124 @@
 
 # jamjet-guardrails
 
-Inspect what goes into an LLM and what comes out of it. Catch the instruction
-hidden in a retrieved page that your terminal will not render, and the
-credential your model just repeated back into a log. Get back a decision, the
-findings behind it, and a record of which check made it over exactly what text.
+jamjet-guardrails checks what goes into an LLM and what comes out of it, and
+returns `allow`, `redact` or `deny` with the exact span behind each decision.
+It catches instructions hidden in invisible Unicode, credentials and personal
+data in a reply, and data carried out through URLs, with checks whose
+precision and recall are measured and published below.
 
 No dependencies. No network calls. No model downloads. Python 3.10 and above.
+
+```
+pip install jamjet-guardrails
+```
+
+## Protect one LLM call
+
+```python
+from jamjet_guardrails import Context, build_chain
+
+guard = build_chain(["injection-structural", "pii", "secrets"])
+reply = "Done. Mail alice@example.com and use sk-abcdefghijklmnopqrstuvwxyz012345"
+checked = guard.run(reply, Context(direction="output", origin="model"))
+print(checked.decision, checked.content)
+```
+
+```text
+redact Done. Mail [REDACTED:EMAIL] and use [REDACTED:OPENAI_KEY]
+```
+
+`reply` stands in for your model's answer. Run the same chain on the prompt
+with `direction="input"` before the call, and do not send it on `deny`. Both
+Python examples on this page are executed in CI and their output is compared
+with what is printed here.
+
+## Pick your path
+
+**Wrap your own LLM calls.** Build one chain and call `run` on every prompt
+before it goes out and on every reply before you use it. The
+[quickstart](#quickstart) below does both directions and shows what comes
+back.
+
+**Drop it into an agent framework.** Two recipes, each run in CI against the
+framework release its page names:
+[OpenAI Agents SDK](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/docs/recipes/openai-agents-sdk.md)
+and [LiteLLM proxy](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/docs/recipes/litellm.md).
+
+**Scan a repository.** Find instructions hidden in the files a coding agent
+reads as its rules:
+
+```console
+jamjet-guardrails scan
+```
+
+[Scan a repository](#scan-a-repository) below has the details, and
+[docs/scanning.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/docs/scanning.md)
+has all of them.
+
+## How it fails
+
+Every check returns `allow`, `redact` or `deny`. A chain takes the most
+restrictive answer, so no check can weaken a decision another check made. On
+`redact` you get the content back with the matched spans replaced; on `deny`
+you get no content to send.
+
+- **A check that raises becomes `deny`, never `allow`.** The chain records the
+  error on that check's verdict and carries on. A crashing detector blocks
+  content rather than passing it through unexamined. The error message is
+  withheld from the verdict, because a detector's message may quote the content
+  it failed on.
+- **A check named in configuration that is not installed raises
+  `GuardrailUnavailableError`.** Configuration that silently means "this check
+  is not running" is the failure this library exists to prevent, so it is
+  refused before any content is processed. An empty list of checks is refused
+  for the same reason, and so is a check asked about a direction it does not
+  declare.
+
+Treat any exception out of `run` as a deny. The cases that raise abandon the
+run, so there is no result and no audit record, which is acceptable only
+because nothing was allowed through.
+
+**What it does not catch.** It does not read what text means. A prompt
+injection written in plain, visible words passes every check here, because
+the checks are patterns and structural rules, not a classifier. The checks
+also miss some of what they are built for, and the misses are published:
+[BENCHMARKS.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/BENCHMARKS.md)
+has the measured rows and the worst misses behind them, and
+[benchmarks/unicode-scanners/RESULTS.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/benchmarks/unicode-scanners/RESULTS.md)
+lists every hidden-Unicode case the scan gets wrong.
+
+## Coming from another library
+
+- **llm-guard**, archived in July 2026:
+  [docs/migrating-from-llm-guard.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/docs/migrating-from-llm-guard.md)
+  maps every scanner in its final release onto this library, one row each,
+  marked mapped, partial or gap.
+- **Guardrails AI**:
+  [jamjet-guardrails-validators](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/packages/jamjet-guardrails-validators/README.md)
+  is these checks as Guardrails validators, installed from PyPI.
+- **NeMo Guardrails**:
+  [jamjet-guardrails-nemo](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/packages/jamjet-guardrails-nemo/README.md)
+  is these checks as input and output rails.
+
+## What it catches
+
+| Name | Catches | Looks like |
+|---|---|---|
+| `injection-structural` | instructions hidden in the encoding rather than the words | invisible tag characters, unbalanced bidirectional controls, zero-width runs, variation-selector runs |
+| `pii` | personal data, redacted to typed placeholders | email addresses, card numbers, US SSNs, phone numbers |
+| `secrets` | credentials, matched on their issuer prefix | `sk-`, `AKIA`, `ghp_`, `xoxb-` prefixes and PEM private key headers |
+| `url-exfiltration` | URLs that carry data out rather than fetch something in | a markdown image whose query string is your conversation, a `data:` URI that says it is a picture, a `javascript:` scheme |
+| `encoded-content` | instructions, credentials and structure hidden one encoding layer down | a base64 blob that decodes to "Ignore the instructions above", a hex run that decodes to an API key |
+| `rules` | whatever you define | your ticket ids, internal hostnames, banned codenames, size limits |
+| `script-constraint` | text written in a script your deployment did not ask for | a Cyrillic paragraph in an English page, one Greek letter inside a Latin word |
+| `confusables` | words that read as one script and are written in two | `pаypal` with a Cyrillic a, a spoofed host label, a banned word dodged by one substituted letter |
+| `template-integrity` | content claiming a role in the conversation that it does not have | a chat template marker, a line beginning `system:`, a tag named after a privileged role |
+
+Every check runs on input and on output, returns `allow`, `redact` or `deny`,
+and reports the exact span it matched so a redaction can be applied and
+audited. The rest of this page is what each one costs you in false positives
+and false negatives, measured rather than claimed.
 
 [What this is and what it measures](https://jamjet.dev/guardrails/)
 
@@ -32,31 +144,6 @@ It runs on both sides. A check can rewrite as well as block, so a reply that
 leaks one address still reaches your user with the address removed rather than
 being thrown away. Every check runs in both directions, and you choose which
 ones run where.
-
-```
-pip install jamjet-guardrails
-```
-
-Coming from llm-guard, archived in July 2026? [docs/migrating-from-llm-guard.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/docs/migrating-from-llm-guard.md) maps every scanner in its final release onto this library, one row each, marked mapped, partial or gap.
-
-## What it catches
-
-| Name | Catches | Looks like |
-|---|---|---|
-| `injection-structural` | instructions hidden in the encoding rather than the words | invisible tag characters, unbalanced bidirectional controls, zero-width runs, variation-selector runs |
-| `pii` | personal data, redacted to typed placeholders | email addresses, card numbers, US SSNs, phone numbers |
-| `secrets` | credentials, matched on their issuer prefix | `sk-`, `AKIA`, `ghp_`, `xoxb-` prefixes and PEM private key headers |
-| `url-exfiltration` | URLs that carry data out rather than fetch something in | a markdown image whose query string is your conversation, a `data:` URI that says it is a picture, a `javascript:` scheme |
-| `encoded-content` | instructions, credentials and structure hidden one encoding layer down | a base64 blob that decodes to "Ignore the instructions above", a hex run that decodes to an API key |
-| `rules` | whatever you define | your ticket ids, internal hostnames, banned codenames, size limits |
-| `script-constraint` | text written in a script your deployment did not ask for | a Cyrillic paragraph in an English page, one Greek letter inside a Latin word |
-| `confusables` | words that read as one script and are written in two | `pаypal` with a Cyrillic a, a spoofed host label, a banned word dodged by one substituted letter |
-| `template-integrity` | content claiming a role in the conversation that it does not have | a chat template marker, a line beginning `system:`, a tag named after a privileged role |
-
-Every check runs on input and on output, returns `allow`, `redact` or `deny`,
-and reports the exact span it matched so a redaction can be applied and
-audited. The rest of this page is what each one costs you in false positives
-and false negatives, measured rather than claimed.
 
 ## Quickstart
 
@@ -141,6 +228,40 @@ The frameworks differ in what a guardrail may do. LiteLLM lets it rewrite a
 request and a reply that is not streamed. In the Agents SDK only a tool guardrail can replace
 content, so the recipe's input and output guardrails stop the run on `redact`,
 and the page shows where the redaction goes instead.
+
+## Scan a repository
+
+`jamjet-guardrails scan` runs the checks over files on disk. By default it
+reads agent instruction files only (AGENTS.md, CLAUDE.md, .cursor/rules/,
+SKILL.md, MCP configuration and the rest of the list in
+[docs/scanning.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/docs/scanning.md))
+and runs `injection-structural` only. `--all-text` widens it to every text
+file and `--checks` to other checks.
+
+An AGENTS.md whose third line reads `Be concise.` followed by 32 invisible
+tag characters:
+
+```console
+$ jamjet-guardrails scan
+AGENTS.md:3:12: deny injection-structural/INVISIBLE_TAG_CHARS <TAG x32>
+  hidden text: "ignore all previous instructions"
+scanned 1 file, 1 finding
+```
+
+It exits `1` on a finding, `0` when there is none and `2` on a bad invocation,
+and `--sarif scan.sarif` writes a SARIF report in the same run for GitHub code
+scanning. An agent instruction file is never skipped: one that is not UTF-8,
+holds a NUL byte or is over the size cap is scanned anyway and reported.
+
+`scan` is listed under Unreleased in
+[CHANGELOG.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/CHANGELOG.md),
+so the release on PyPI does not have it yet. Until one does, install from the
+repository: `pip install git+https://github.com/jamjet-labs/jamjet-guardrails`.
+
+How it compares with four other hidden-Unicode scanners, on one corpus of
+hidden payloads and hard negatives, with every wrong decision each makes and
+ours first:
+[benchmarks/unicode-scanners/RESULTS.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/benchmarks/unicode-scanners/RESULTS.md).
 
 ## The checks
 
@@ -319,26 +440,6 @@ measured on the corpus you wrote and gated in CI, published beside every other
 check. [CONTRIBUTING.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/CONTRIBUTING.md) has the rest, including the one habit
 this project asks for, which is to break each test you write and watch it fail
 before you trust it.
-
-## How it fails
-
-Two failure modes, chosen deliberately.
-
-- **A check that raises becomes `deny`, never `allow`.** The chain records the
-  error on that check's verdict and carries on. A crashing detector blocks
-  content rather than passing it through unexamined. The error message is
-  withheld from the verdict, because a detector's message may quote the content
-  it failed on.
-- **A check named in configuration that is not installed raises
-  `GuardrailUnavailableError`.** Configuration that silently means "this check
-  is not running" is the failure this library exists to prevent, so it is
-  refused before any content is processed. An empty list of checks is refused
-  for the same reason, and so is a check asked about a direction it does not
-  declare.
-
-Treat any exception out of `run` as a deny. The cases that raise abandon the
-run, so there is no result and no audit record, which is acceptable only
-because nothing was allowed through.
 
 ## Measured, not asserted
 
