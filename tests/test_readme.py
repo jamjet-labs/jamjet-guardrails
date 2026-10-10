@@ -823,6 +823,12 @@ def test_the_unreleased_claim_matches_the_changelog() -> None:
     is_unreleased = "`jamjet-guardrails scan`" in unreleased
     assert says_unreleased == is_unreleased
     assert installs_from_git == is_unreleased
+    # Released: the scan section names the plain PyPI install itself, so a
+    # reader who lands there is not left without one.
+    installs_from_pypi = "`pip install jamjet-guardrails`" in _flat(
+        _section("## Scan a repository")
+    )
+    assert installs_from_pypi == (not is_unreleased)
 
 
 def test_the_number_of_other_scanners_the_readme_compares_with_is_the_number_measured() -> None:
