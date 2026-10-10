@@ -151,7 +151,13 @@ class ManifestLoader(yaml.SafeLoader):
         this class's.
         """
         event = self._next_event()
-        where = f"line {event.start_mark.line + 1}"
+        # An event's marks are Optional in types-PyYAML from 6.0.12.20260906,
+        # which matches PyYAML's own `Event.__init__` defaults. The parser
+        # always sets them on events it emits, so the fallback is for an event
+        # built by hand, and it changes only the wording: the refusals below
+        # still run.
+        mark = event.start_mark
+        where = f"line {mark.line + 1}" if mark is not None else "line unknown"
         if self.check_event(yaml.events.AliasEvent):
             raise SourceError(
                 f"{where}: an alias (`*name`) takes another field's text, and a source has "
