@@ -551,7 +551,7 @@ def _subsection(heading: str, sub: str) -> str:
 
 
 def test_the_document_lists_every_type_this_check_can_produce() -> None:
-    """Derived from `INJECTION_TYPES`, so a fourth signal is a red test here.
+    """Derived from `INJECTION_TYPES`, so a fifth signal is a red test here.
 
     A type is contract by the rule this document already states: a finding
     `type` has to match the label the corpus uses, because that is what a
@@ -560,7 +560,7 @@ def test_the_document_lists_every_type_this_check_can_produce() -> None:
     a type listed here and not produced makes the document overstate the check.
     """
     documented = set(
-        re.findall(r"`([A-Z][A-Z_]+)`", _subsection(INJECTION, "### Three finding types"))
+        re.findall(r"`([A-Z][A-Z_]+)`", _subsection(INJECTION, "### Four finding types"))
     )
     assert documented == set(INJECTION_TYPES), (
         f"the document lists {sorted(documented)}; the check produces {sorted(INJECTION_TYPES)}"

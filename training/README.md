@@ -134,9 +134,15 @@ so `training` resolves as a package from the repository root.
 `training/ship_bar.json` is committed and is the one artifact in this tree
 written BEFORE the thing it judges exists. Nothing in it may be edited after a
 model is trained. `tests/test_ship_bar.py` re-derives every rate from the
-counts recorded beside it, holds the recorded revisions to the pins
-`benchmarks/run.py` loads, and recomputes the structural floor from the shipped
-corpus, so a number moved by hand fails rather than persuades.
+counts recorded beside it and holds the recorded revisions to the pins
+`benchmarks/run.py` loads, so a number moved by hand fails rather than
+persuades. The structural floor is held to the corpus the verdict was judged on,
+`b704703f431d` (154 cases), and is not re-derived when the shipped corpus moves:
+the shipped corpus is gated by `corpora/baselines.json` like every other one.
+Later decision-level measurements of the structural layer are recorded in
+`docs/measurements/`, not here.
+Corrections to the bar and to the verdict are in [ERRATA.md](ERRATA.md), because
+neither file is edited after the fact.
 
 ### Why 3.13 and not 3.14
 

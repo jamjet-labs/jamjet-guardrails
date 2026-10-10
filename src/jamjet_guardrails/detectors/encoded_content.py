@@ -287,7 +287,11 @@ def _is_credential(text: str) -> bool:
 
 
 def _is_markup(text: str) -> bool:
-    """The three structural signals of `injection-structural`, one layer down.
+    """Three structural signals of `injection-structural`, one layer down.
+
+    Three of its four. `_selector_spans` arrived after this check and is not
+    asked here: no case in this check's corpus encodes a selector run, so
+    asking it would change a published row nothing measures.
 
     Imported from that module for the reason the credential patterns are
     imported from `secrets`: the definitions of a tag run, an unbalanced bidi

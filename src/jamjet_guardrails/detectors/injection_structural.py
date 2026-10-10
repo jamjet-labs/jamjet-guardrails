@@ -12,16 +12,18 @@ is why Private Use Area characters are NOT a signal -- see the note by
 `_ZERO_WIDTH` for what happens to a check that fires on a developer's shell
 prompt.
 
-Cost, and the shape of it. Linear in the content length. 124 ms median for one
+Cost, and the shape of it. Linear in the content length. 125 ms median for one
 megabyte of the seeded input recorded in `docs/performance.md`, on an Apple M3
 Max under CPython 3.14.5, with the median rising 4.0x per 4x of input across the
-whole range from 1 KB. That measurement denies rather than redacts, so it is the
+whole range from 1 KB. Re-measured on 2026-10-10 when the variation-selector
+signal was added; it was 124 ms before. That measurement denies rather than redacts, so it is the
 scan plus the construction of the findings and no rewrite. `scripts/measure_throughput.py`
 reruns it, and `docs/performance.md` states the machine, the input and the method.
 """
 
 from __future__ import annotations
 
+import re
 import unicodedata
 
 from jamjet_guardrails._spans import _rewrite
@@ -41,10 +43,11 @@ INJECTION_TYPES = frozenset(
         "INVISIBLE_TAG_CHARS",
         "BIDI_OVERRIDE",
         "ZERO_WIDTH_SMUGGLING",
+        "VARIATION_SELECTOR_SMUGGLING",
     }
 )
 
-_VERSION = "0.2.0"
+_VERSION = "0.3.0"
 
 # U+E0000..U+E007F. TAG SPACE (U+E0020) through TAG TILDE (U+E007E) mirror
 # printable ASCII one-for-one, which is the whole smuggling primitive: any
@@ -294,9 +297,10 @@ def _bidi_spans(content: str) -> list[tuple[int, int]]:
 # U+1D173/U+1D174 and U+1BCA0/U+1BCA1. That 1.0000 is the cost of THAT encoding.
 # It is not a ranking: an earlier version of this comment called it cheaper than
 # every residual the module records, which is false against the module's own
-# list -- `_invisible` publishes encoders at 0.1250, 0.1992, 0.2070, 0.2500,
-# 0.2695 and 0.6289, and the variation-selector row is 0.1250, not the 1.5000
-# that the presence-and-absence encoding over ONE selector costs.
+# list -- `_invisible` publishes encoders at 0.1992, 0.2070, 0.2500, 0.2695
+# and 0.6289, and the variation-selector row is 0.2500, not the 1.5000 that the
+# presence-and-absence encoding over ONE selector costs. That row was 0.1250
+# until `_selector_spans` began reporting a run of selectors.
 #
 # FOUR OF THE SEVENTEEN ROWS CONTRIBUTE NOTHING TO THE SET, and that is the
 # table doing its job rather than dead weight. U+00AD, U+061C, U+202A..U+202E
@@ -426,10 +430,17 @@ def _invisible() -> frozenset[str]:
     figure is the cost of THAT ENCODING and not a bound on anything.
 
     Every one returns zero findings and decodes back to the payload verbatim,
-    measured against this file:
+    measured against this file. The variation-selector rows were 0.1250, one
+    selector per byte with nothing on the page, until `_selector_spans` began
+    reporting two selectors with nothing visible between them; what that signal
+    leaves is one selector after each character that is not default-ignorable,
+    White_Space or U+2800. That cover costs one character per byte, and it need
+    not render: U+FFFC, U+FFF9, U+13430, U+0600, U+070F, U+1D159 and a
+    combining mark all serve:
 
-      256 variation selectors, one per byte             0.1250 chars/bit
-      the same plus the 3 marks and 4 Mongolian ones    0.1250
+      256 variation selectors, one per byte, each
+        after a non-blank cover character              0.2500 chars/bit
+      the same plus the 3 marks and 4 Mongolian ones    0.2500
       32 C1 controls, base 32                           0.1992
       29 C0 controls, base 29                           0.2070
       16 Egyptian hieroglyph format controls, base 16   0.2500
@@ -1204,9 +1215,11 @@ def _is_contextually_legitimate(content: str, index: int) -> bool:
     over exactly two of them. This said "with nothing visible" of all 503, which
     is false of the 501: not one of them is default-ignorable, so a font draws
     `.notdef` for each and the cover is a row of tofu boxes. Only U+FE0E and
-    U+FE0F carry it invisibly.
-    `test_a_variation_selector_bitstream_is_a_known_miss` is that measurement.
-    It is the cost of that encoding and not a minimum: `_invisible` records the
+    U+FE0F carry it invisibly, and for those two this branch is no longer the
+    last word: a cover of selectors is a run of selectors, which
+    `_selector_spans` reports whatever this branch excuses.
+    `test_a_variation_selector_bitstream_passes_the_joiner_rule_and_not_the_selector_rule`
+    is that measurement. It is the cost of that encoding and not a minimum: `_invisible` records the
     families this module does not count at all, with a measured encoder for
     each, and records why no minimum is stated.
     """
@@ -1339,6 +1352,136 @@ def _zero_width_spans(content: str) -> list[tuple[int, int]]:
     return sorted(spans)
 
 
+# VARIATION SELECTOR-1..16 and VARIATION SELECTOR-17..256. 256 code points, so
+# one selector carries one byte, which is the published ASCII-smuggler encoding:
+# a payload written as selectors after an emoji renders as the emoji alone. The
+# four Mongolian free variation selectors are NOT here. They are orthography
+# inside Mongolian words, they are four symbols rather than 256, and the
+# zero-width signal's exclusion already names them; this signal is about the
+# two blocks a byte encoder uses.
+_SELECTOR_RANGES: tuple[tuple[int, int], ...] = ((0xFE00, 0xFE0F), (0xE0100, 0xE01EF))
+# Two selectors with nothing visible between them. A Unicode variation sequence
+# is ONE base character followed by exactly ONE selector, so a second selector
+# before the next visible character modifies nothing: there is no glyph for it
+# to choose. One selector is a variation sequence and is never reported here.
+_MIN_SELECTORS = 2
+# A run made ONLY of U+FE0E and U+FE0F, the text and emoji presentation
+# selectors, is allowed up to this many selectors. Doubled VS16 is real text:
+# pasted social posts, an emoji filter that strips the pictograph and leaves
+# its selector, an editor that appends VS16 to an emoji already carrying one.
+# A two-symbol alphabet carries one bit per selector, so the exemption carries
+# at most three bits per run, and it is bounded by length rather than by
+# content: `inj-0098` is a 119-character run of U+FE0F and stays denied.
+_PRESENTATION_SELECTORS = frozenset("\ufe0e\ufe0f")
+_MAX_PRESENTATION_RUN = 3
+
+
+def _ranges_without(
+    ranges: tuple[tuple[int, int], ...], holes: tuple[tuple[int, int], ...]
+) -> tuple[tuple[int, int], ...]:
+    """`ranges` with every code point in `holes` removed, as ranges again."""
+    kept: list[tuple[int, int]] = []
+    for low, high in ranges:
+        pieces = [(low, high)]
+        for hole_low, hole_high in holes:
+            pieces = [
+                part
+                for piece_low, piece_high in pieces
+                for part in (
+                    (piece_low, min(piece_high, hole_low - 1)),
+                    (max(piece_low, hole_high + 1), piece_high),
+                )
+                if part[0] <= part[1]
+            ]
+        kept += pieces
+    return tuple(kept)
+
+
+def _class(ranges: tuple[tuple[int, int], ...]) -> str:
+    return "".join(f"{re.escape(chr(low))}-{re.escape(chr(high))}" for low, high in ranges)
+
+
+# The Unicode White_Space property (PropList.txt), plus U+2800 BRAILLE PATTERN
+# BLANK, which is not White_Space but draws as an empty cell. No standardized
+# variation sequence has any of these as its base, so a selector after one
+# modifies nothing, and one selector after each space or newline would
+# otherwise carry a payload with nothing on the page but whitespace.
+_BLANK_RANGES: tuple[tuple[int, int], ...] = (
+    (0x0009, 0x000D),
+    (0x0020, 0x0020),
+    (0x0085, 0x0085),
+    (0x00A0, 0x00A0),
+    (0x1680, 0x1680),
+    (0x2000, 0x200A),
+    (0x2028, 0x2029),
+    (0x202F, 0x202F),
+    (0x205F, 0x205F),
+    (0x2800, 0x2800),
+    (0x3000, 0x3000),
+)
+# What may stand between two selectors without ending their run: characters a
+# conforming renderer draws as nothing, which is `_DEFAULT_IGNORABLE`, the
+# property the zero-width signal is built on, and the blanks above. The
+# selectors are taken OUT of the gap so that the two classes are disjoint: every
+# character then has exactly one way to match, and the pattern cannot backtrack
+# into a second reading of a run.
+_GAP_RANGES = tuple(sorted(_ranges_without(_DEFAULT_IGNORABLE, _SELECTOR_RANGES) + _BLANK_RANGES))
+_SELECTOR_RUN = re.compile(
+    f"[{_class(_SELECTOR_RANGES)}]"
+    f"(?:[{_class(_GAP_RANGES)}]*[{_class(_SELECTOR_RANGES)}]){{{_MIN_SELECTORS - 1},}}"
+)
+
+
+def _selector_spans(content: str) -> list[tuple[int, int]]:
+    """Runs of variation selectors with nothing visible between them.
+
+    A run is `_MIN_SELECTORS` or more selectors where every character between
+    consecutive selectors is default-ignorable, and the span runs from the
+    first selector to the end of the last. Adjacent selectors are the plain
+    case. The invisible gap is the case an adjacency rule would miss: a
+    left-to-right mark, a joiner or a Mongolian free variation selector after
+    each selector is not counted by any other signal here on its own, and it
+    would carry the same payload at two characters per byte with nothing on the
+    page. `test_an_invisible_spacer_between_selectors_does_not_break_the_run`
+    holds that, and `inj-0098`, where U+FE0F is spaced by ZWJ, is the corpus
+    case. White_Space and U+2800 are in the gap too, because no variation
+    sequence has a blank base: a selector after each space would otherwise put
+    nothing but whitespace on the page. `inj-0169` to `inj-0173` are those.
+
+    A run of at most `_MAX_PRESENTATION_RUN` selectors that are all U+FE0E or
+    U+FE0F is not reported: that is doubled VS16 from copy and paste, and it
+    carries at most three bits.
+    `test_a_short_run_of_presentation_selectors_is_copy_paste_and_allows` holds
+    the exemption and `test_four_presentation_selectors_are_a_run` its bound.
+
+    What it does not see is one selector after each character outside the gap,
+    which is a variation sequence every time, even where that character draws
+    nothing. `test_one_selector_per_visible_character_is_a_known_miss` and
+    `test_the_cover_for_the_known_miss_need_not_be_visible` are that residual.
+
+    The span can enclose characters another signal reports, a run of joiners
+    between selectors among them, so this signal's spans can OVERLAP another's.
+    `_merge` collapses overlapping spans into one region, which is the
+    direction a redactor has to fail in, and `_matches` sorts before it does.
+
+    Linear. The selector class and the gap class are disjoint, so a run has one
+    reading; what the engine gives back is the trailing gap after a run's last
+    selector, once, and the gaps of different runs do not overlap.
+    """
+    spans = []
+    for match in _SELECTOR_RUN.finditer(content):
+        selectors = [char for char in match.group() if _is_selector(char)]
+        if len(selectors) <= _MAX_PRESENTATION_RUN and set(selectors) <= _PRESENTATION_SELECTORS:
+            continue
+        spans.append(match.span())
+    return spans
+
+
+def _is_selector(char: str) -> bool:
+    point = ord(char)
+    return any(low <= point <= high for low, high in _SELECTOR_RANGES)
+
+
 class InjectionStructuralGuardrail:
     """Detects instruction smuggling in the encoding rather than in the words."""
 
@@ -1417,12 +1560,26 @@ class InjectionStructuralGuardrail:
         consume in one pass -- provably sufficient rather than merely adequate
         on the inputs anybody has tried. Widening one of the three ranges into
         another's territory is what would break it, silently, so
-        `test_the_three_signals_claim_pairwise_disjoint_character_sets` asserts
+        `test_the_signals_claim_pairwise_disjoint_character_sets` asserts
         the disjointness rather than leaving it to this paragraph.
+
+        The fourth signal keeps half of that. `_selector_spans` is TRIGGERED
+        only by the 256 selectors in `_SELECTOR_RANGES`, which none of the other
+        three alphabets holds, and the same test asserts it. But its span runs
+        from the first selector to the last and encloses whatever invisible
+        characters stand between them, a joiner the zero-width signal also
+        reports among them, so its spans can OVERLAP another signal's. One sort
+        is still enough, for a weaker reason than the one above: `_merge` tests
+        each span against the running end of the region it is extending, so
+        overlapping spans in start order collapse into one region whichever
+        signal produced them.
+        `test_redacting_a_selector_run_that_encloses_joiners_leaves_neither`
+        is that input.
         """
         found = [("INVISIBLE_TAG_CHARS", span) for span in _tag_spans(content)]
         found += [("BIDI_OVERRIDE", span) for span in _bidi_spans(content)]
         found += [("ZERO_WIDTH_SMUGGLING", span) for span in _zero_width_spans(content)]
+        found += [("VARIATION_SELECTOR_SMUGGLING", span) for span in _selector_spans(content)]
         return sorted(found, key=lambda pair: pair[1])
 
     def check(self, content: str, context: Context) -> Verdict:

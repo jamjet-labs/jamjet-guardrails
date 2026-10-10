@@ -39,7 +39,66 @@ a number that changes quietly is a number nobody can rely on.
   proxy without a guardrail whose constructor raises `ValueError` or
   `TypeError`, and the recipe re-raises both so a typo stops the proxy instead.
 
+- **`injection-structural` reports variation-selector smuggling.** A payload
+  written one byte per variation selector after an emoji, the published
+  ASCII-smuggler encoding, used to allow with no findings; `inj-0098` disclosed
+  the shape. The new finding type `VARIATION_SELECTOR_SMUGGLING` reports a run
+  of two or more selectors from U+FE00..U+FE0F and U+E0100..U+E01EF with
+  nothing visible between them, because a Unicode variation sequence is one
+  base character and exactly one selector. Invisible characters between two
+  selectors do not break the run, so a left-to-right mark or a joiner after
+  each one does not get the payload through, and neither does a space, a
+  no-break space, a newline, an ideographic space or U+2800 BRAILLE PATTERN
+  BLANK, since no variation sequence has a blank base. Keycaps, text and emoji
+  presentation, emoji ZWJ sequences, ideographic variation sequences, the
+  subdivision flags and Mongolian free variation selectors all still allow.
+  Detector version 0.2.0 to 0.3.0, because input that allowed now denies.
+
+  One selector after each character that is not default-ignorable, White_Space
+  or U+2800 is a well-formed variation sequence every time and still passes.
+  The published family table now prices that at 0.2500 characters per bit, one
+  cover character per byte, where the selector row was 0.1250 with nothing on
+  the page. The cover character does not have to be visible: format controls
+  such as U+FFF9 and U+13430, U+FFFC, U+0600, U+070F, U+1D159 and combining
+  marks all work as covers.
+
+  A run of at most three selectors that are all U+FE0E or U+FE0F is not
+  reported. Doubled VS16 is real text, from pasted social posts and from emoji
+  filters that strip the pictograph and leave its selector, and three
+  presentation selectors carry at most three bits. A run that holds any other
+  selector is still reported, so an ideographic variation sequence followed by
+  a stray VS16 denies; `inj-0177` is that case, labelled `allow`, and it is a
+  disclosed false positive.
+
+  The published row moved, on a corpus that grew from 154 cases to 178 (twelve
+  positives, twelve hard negatives) with `inj-0098` relabelled from one
+  `ZERO_WIDTH_SMUGGLING` finding to one `VARIATION_SELECTOR_SMUGGLING` finding:
+  precision 0.972 to 0.967, recall 0.873 to 0.892, wrong decisions 8 to 8.
+  The precision drop is `inj-0177`. The relabel matters to both numbers: on
+  the 154-case corpus as it was, without the relabel, the shipped check scores
+  0.963 precision and 0.873 recall, because the selector finding on `inj-0098`
+  counts as a false positive there. And `ZERO_WIDTH_SMUGGLING`'s per-type
+  recall in `BENCHMARKS.md` went from 0.815 to 0.825 with no change to the
+  zero-width signal, only because `inj-0098`'s miss left its denominator.
+
+  The ship bar does not move. `training/ship_bar.json` stays at the 0.891
+  structural floor on the 154-case corpus the verdict was judged on, and
+  `tests/test_ship_bar.py` now holds the bar to that corpus instead of to the
+  one that ships; the shipped corpus is gated by `corpora/baselines.json`. The
+  structural layer's decision-level recall on the new corpus, 0.925, is recorded
+  in `docs/measurements/2026-10-10-structural-decision-recall.md`.
+
 ### Fixed
+
+- **A benchmark guard compared two different corpora and agreed by
+  coincidence.** `benchmarks/RESULTS.md` was measured on 146 inputs and
+  `BENCHMARKS.md` on 154, and both happened to count 8 wrong decisions. The
+  guard now runs today's check over the 146 inputs `benchmarks/RESULTS.md`
+  measured and compares each decision against the `flagged` list
+  `benchmarks/results/measurements.json` keeps. A decision that moved fails it
+  unless it is disclosed with a reason in the test; today that is `inj-0098`,
+  which RESULTS.md recorded as a miss and the variation-selector signal now
+  catches.
 
 - **The README called the third-party PII corpus the one to read for ordinary
   text, and it is not ordinary text.** `nvidia/Nemotron-PII` is tagged

@@ -410,49 +410,88 @@ def test_the_published_results_claim_no_pint_score() -> None:
             )
 
 
-def test_the_two_published_tables_agree_on_how_many_decisions_were_wrong() -> None:
-    """`BENCHMARKS.md` and `benchmarks/RESULTS.md` measure one corpus twice.
+#: Inputs whose DECISION today differs from the one `benchmarks/RESULTS.md`
+#: recorded, each with the reason. Anything else that moved fails
+#: `test_results_md_decisions_are_still_what_the_check_decides`.
+RESULTS_DECISIONS_CHANGED_SINCE: dict[str, str] = {
+    "inj-0098": (
+        "U+FE0F after an emoji, spaced by ZWJ: a byte payload in variation "
+        "selectors. RESULTS.md recorded it as a miss; injection-structural 0.3.0 "
+        "reports VARIATION_SELECTOR_SMUGGLING on it and denies. Disclosed until "
+        "RESULTS.md is re-run."
+    ),
+}
 
-    They are deliberately different measurements. `BENCHMARKS.md` is
-    finding-level, counting located spans; `RESULTS.md` is decision-level,
-    counting inputs. RESULTS.md says in as many words that the two must not be
-    quoted as one, and that stays true.
 
-    What they cannot disagree about is the DECISION each input got, so the
-    number of inputs decided wrongly has to be the same in both. `BENCHMARKS.md`
-    is regenerated and gated by CI on every push and `RESULTS.md` can never be,
-    so a change to the check moves one file and not the other, and both look
-    right on their own. The column is found by its header rather than by
-    position, because a reordered table would otherwise compare the wrong cell
-    and still pass.
+def test_results_md_decisions_are_still_what_the_check_decides() -> None:
+    """`benchmarks/RESULTS.md` recorded one decision per input. Re-decided here, live.
+
+    `BENCHMARKS.md` is regenerated and gated by CI on every push and
+    `RESULTS.md` can never be, because it needs two ONNX models. The structural
+    half of it needs neither, so it is checked by running today's check over the
+    inputs RESULTS.md measured and comparing against the `flagged` list
+    `results/measurements.json` keeps, id for id. A change to the check that
+    moves a decision on those inputs fails here until it is disclosed in
+    `RESULTS_DECISIONS_CHANGED_SINCE` or RESULTS.md is re-run.
+
+    This replaced a comparison of wrong-decision COUNTS between the two tables.
+    That held only while both measured the same corpus, and RESULTS.md measured
+    146 inputs while BENCHMARKS.md moved on to 154 and then 168; a count can
+    also agree across a relabel that changes which inputs are wrong. The inputs
+    RESULTS.md measured are the input-direction cases up to `inj-0154`, which
+    the corpus record in measurements.json pins by count and by positives.
     """
-    lines = (ROOT / "BENCHMARKS.md").read_text(encoding="utf-8").splitlines()
-    rows = [[cell.strip() for cell in line.strip().strip("|").split("|")] for line in lines]
-    header = next(r for r in rows if "Wrong decisions" in r)
-    column = header.index("Wrong decisions")
-    check, corpus = header.index("Check"), header.index("Corpus")
-    matching = [
-        r
-        for r in rows
-        if len(r) == len(header)
-        and r[check] == "injection-structural"
-        and r[corpus] == "injection-structural/in-repo"
-    ]
-    assert len(matching) == 1, f"expected one injection-structural in-repo row, got {matching}"
-    published = int(matching[0][column])
-
     data = json.loads((BENCHMARKS / "results" / "measurements.json").read_text(encoding="utf-8"))
     run = next(
         r
         for r in data["runs"]
         if r["detector"]["id"] == "structural" and r["corpus"]["id"] == "in-repo"
     )
-    measured = run["overall"]["fp"] + run["overall"]["fn"]
-    assert measured == published, (
-        f"BENCHMARKS.md reports {published} wrong decisions for injection-structural on "
-        f"injection-structural/in-repo; benchmarks/RESULTS.md reports {measured} "
-        f"(FP {run['overall']['fp']} + FN {run['overall']['fn']}) on the same corpus"
+    corpus = next(c for c in data["corpora"] if c["id"] == "in-repo")
+    rows = [
+        json.loads(line)
+        for line in (ROOT / "corpora" / "injection-structural" / "in-repo.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line.strip()
+    ]
+    measured_ids = {
+        row["id"]
+        for row in rows
+        if row["direction"] == "input" and int(row["id"].removeprefix("inj-")) <= 154
+    }
+
+    harness = _harness()
+    cases = [case for case in harness.load_structural_cases()[0] if case.id in measured_ids]
+    assert len(cases) == corpus["cases"] == sum(run["overall"].values()), (
+        f"{len(cases)} inputs selected; RESULTS.md measured {corpus['cases']}"
     )
+    assert sum(case.label for case in cases) == corpus["positives"], (
+        "the inputs RESULTS.md measured have been relabelled across the allow/deny line"
+    )
+    today = set(harness.score(cases, harness.structural_evaluator())["flagged"])
+    then = set(run["flagged"])
+    changed = today ^ then
+    assert changed == set(RESULTS_DECISIONS_CHANGED_SINCE), (
+        f"decisions flagged now and not in RESULTS.md: {sorted(today - then)}; "
+        f"flagged in RESULTS.md and not now: {sorted(then - today)}; disclosed: "
+        f"{sorted(RESULTS_DECISIONS_CHANGED_SINCE)}"
+    )
+    results = (BENCHMARKS / "RESULTS.md").read_text(encoding="utf-8")
+    assert f"`corpora/injection-structural/in-repo.jsonl` ({corpus['cases']} inputs" in results, (
+        "benchmarks/RESULTS.md does not say how many inputs it measured"
+    )
+
+
+def _harness() -> ModuleType:
+    """`benchmarks/run.py`, with its directory on the path for its bare imports."""
+    import sys
+
+    if str(BENCHMARKS) not in sys.path:
+        sys.path.insert(0, str(BENCHMARKS))
+    import importlib
+
+    return importlib.import_module("run")
 
 
 def test_the_readme_commands_are_the_commands_that_ran() -> None:
