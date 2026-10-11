@@ -98,10 +98,22 @@ def test_every_action_the_doc_pins_is_pinned_the_same_way_in_this_repo() -> None
 
 
 def test_the_workflow_installs_a_version_that_has_scan() -> None:
-    """While `scan` is unreleased, `pip install jamjet-guardrails` lacks it."""
+    """Install from GitHub while `scan` is unreleased, from PyPI once it ships.
+
+    Both directions: a git install left in after the release sends every user
+    to an unpinned branch, and a PyPI install before it fails with "invalid
+    argument: scan".
+    """
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     unreleased = changelog.split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
     workflow = _text().split("## In GitHub Actions", 1)[1].split("\n## ", 1)[0]
+    from_git = "pip install git+https://github.com/jamjet-labs/jamjet-guardrails" in workflow
+    from_pypi = "pip install jamjet-guardrails\n" in workflow
     if "`jamjet-guardrails scan`" in unreleased:
-        assert "pip install jamjet-guardrails\n" not in workflow
-        assert "pip install git+https://github.com/jamjet-labs/jamjet-guardrails" in workflow
+        assert from_git and not from_pypi
+    else:
+        from jamjet_guardrails import __version__
+
+        released = changelog.split(f"## [{__version__}]", 1)[1].split("\n## [", 1)[0]
+        assert "`jamjet-guardrails scan`" in released
+        assert from_pypi and not from_git

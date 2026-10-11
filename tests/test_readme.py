@@ -805,19 +805,30 @@ def test_the_default_check_the_scan_section_names_is_the_default() -> None:
 
 
 def test_the_unreleased_claim_matches_the_changelog() -> None:
-    """The README says the PyPI release lacks `scan` exactly while it is unreleased.
+    """The README sends readers to git for `scan` exactly while it is unreleased.
 
     When a release carries it, the CHANGELOG entry moves under that version's
-    heading, this test fails, and the install sentence has to go.
+    heading, and both the "listed under Unreleased" sentence and the git
+    install have to go.
     """
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    says_unreleased = "`scan` is listed under Unreleased" in _flat(_text())
+    text = _flat(_text())
+    says_unreleased = "`scan` is listed under Unreleased" in text
+    installs_from_git = "pip install git+https://github.com/jamjet-labs/jamjet-guardrails" in text
     unreleased = (
         changelog.split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
-        if ("## [Unreleased]" in changelog)
+        if "## [Unreleased]" in changelog
         else ""
     )
-    assert says_unreleased == ("`jamjet-guardrails scan`" in unreleased)
+    is_unreleased = "`jamjet-guardrails scan`" in unreleased
+    assert says_unreleased == is_unreleased
+    assert installs_from_git == is_unreleased
+    # Released: the scan section names the plain PyPI install itself, so a
+    # reader who lands there is not left without one.
+    installs_from_pypi = "`pip install jamjet-guardrails`" in _flat(
+        _section("## Scan a repository")
+    )
+    assert installs_from_pypi == (not is_unreleased)
 
 
 def test_the_number_of_other_scanners_the_readme_compares_with_is_the_number_measured() -> None:
