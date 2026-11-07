@@ -132,6 +132,44 @@ def test_skips_vendored_directories(tmp_path: Path) -> None:
     assert _rels(tmp_path) == []
 
 
+def test_agent_files_under_build_and_dist_are_read(tmp_path: Path) -> None:
+    """`docs/scanning.md` says an agent instruction file is always read.
+
+    The walk pruned `build/` and `dist/` whole, so a `.cursor/rules` file or an
+    `AGENTS.md` placed there was never seen, while the page promised every reason
+    to look away from such a file is a way to hide something in it. Both names
+    are committed in ordinary repositories (a JavaScript GitHub Action commits
+    `dist/`, and `build/` is a source directory in plenty of projects), and an
+    agent opened in that tree reads its rules files.
+
+    MUTATION: put `dist` and `build` back into `SKIP_DIRS`. Watched to fail.
+    """
+    _w(tmp_path, "build/AGENTS.md")
+    _w(tmp_path, "dist/.cursor/rules/style.mdc")
+    _w(tmp_path, "pkg/build/CLAUDE.md")
+    assert _rels(tmp_path) == [
+        "build/AGENTS.md",
+        "dist/.cursor/rules/style.mdc",
+        "pkg/build/CLAUDE.md",
+    ]
+
+
+def test_all_text_does_not_widen_into_build_output(tmp_path: Path) -> None:
+    """Below `build/` and `dist/` only agent files are read, even with `--all-text`.
+
+    Generated output is not where a person writes text, and reading every
+    bundle in it would bury the files that matter under minified JavaScript. The
+    agent files there are read because an agent reads them.
+
+    MUTATION: drop the `output` test in `_walk`, so `--all-text` reads every text
+    file below `dist/`. Watched to fail.
+    """
+    _w(tmp_path, "notes.txt")
+    _w(tmp_path, "dist/bundle.js")
+    _w(tmp_path, "dist/AGENTS.md")
+    assert _rels(tmp_path, all_text=True) == ["dist/AGENTS.md", "notes.txt"]
+
+
 def test_an_agent_file_that_is_not_utf8_is_read_and_reported(tmp_path: Path) -> None:
     _w(tmp_path, "AGENTS.md", b"rules \xff\xfe here")
     (target,) = discover([tmp_path], all_text=False, root=tmp_path)

@@ -2,7 +2,9 @@
 
 The scan is adversarial, so every way a file can avoid being read is a bypass.
 Two kinds of file are therefore never skipped: an agent instruction file (a
-path matching ``AGENT_FILE_PATTERNS``), and any file named on the command line.
+path matching ``AGENT_FILE_PATTERNS``) anywhere the walk goes, which is
+everywhere outside ``SKIP_DIRS`` and includes build output, and any file named
+on the command line.
 Each is decoded leniently and scanned, and whatever stopped a clean read is
 returned as a problem the scanner reports as a finding:
 
@@ -92,6 +94,10 @@ AGENT_FILE_PATTERNS: tuple[str, ...] = (
 
 MAX_BYTES = 2_000_000
 
+# Directories the walk never enters: version control internals, dependency
+# trees, virtual environments and tool caches. None of them is a place an agent
+# working in this repository reads its instructions from, and walking a
+# dependency tree reads other people's rules for other people's repositories.
 SKIP_DIRS = frozenset(
     {
         ".git",
@@ -99,14 +105,22 @@ SKIP_DIRS = frozenset(
         ".venv",
         "venv",
         "__pycache__",
-        "dist",
-        "build",
         ".tox",
         ".mypy_cache",
         ".ruff_cache",
         ".pytest_cache",
     }
 )
+
+# Build output, which the walk ENTERS and reads only agent files from. These
+# two were in `SKIP_DIRS`, so an `AGENTS.md` or a `.cursor/rules` file below
+# either was never seen, while the module docstring and `docs/scanning.md` both
+# say an agent file is never skipped. Both names are committed in ordinary
+# repositories, a JavaScript GitHub Action commits `dist/` and plenty of
+# projects keep source under `build/`, and an agent opened in that tree reads
+# the rules it finds. `--all-text` does not widen into them: generated bundles
+# are not text a person wrote, and reading them buries what matters.
+OUTPUT_DIRS = frozenset({"dist", "build"})
 
 _SNIFF = 8192
 
@@ -199,9 +213,11 @@ def _walk(top: Path, root: Path, all_text: bool) -> tuple[list[Target], int]:
     found: list[Target] = []
     skipped = 0
     ancestors: dict[str, frozenset[str]] = {str(top): frozenset()}
+    in_output: dict[str, bool] = {str(top): False}
     for dirpath, dirnames, filenames in os.walk(top, followlinks=True):
         real = os.path.realpath(dirpath)
         chain = ancestors.pop(dirpath, frozenset())
+        output = in_output.pop(dirpath, False)
         if real in chain:
             dirnames[:] = []
             continue
@@ -209,6 +225,7 @@ def _walk(top: Path, root: Path, all_text: bool) -> tuple[list[Target], int]:
         dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
         for d in dirnames:
             ancestors[os.path.join(dirpath, d)] = below
+            in_output[os.path.join(dirpath, d)] = output or d in OUTPUT_DIRS
         for name in filenames:
             path = Path(dirpath) / name
             if not path.is_file():
@@ -216,7 +233,7 @@ def _walk(top: Path, root: Path, all_text: bool) -> tuple[list[Target], int]:
             rel = _rel(path, root)
             if is_agent_file(_rel(path, top)):
                 found.append(Target(path, rel, forced=True))
-            elif all_text:
+            elif all_text and not output:
                 if _readable_text(path):
                     found.append(Target(path, rel, forced=False))
                 else:
@@ -296,6 +313,7 @@ __all__ = [
     "AGENT_FILE_PATTERNS",
     "DEFAULT_CHECKS",
     "MAX_BYTES",
+    "OUTPUT_DIRS",
     "SKIP_DIRS",
     "Loaded",
     "Target",
