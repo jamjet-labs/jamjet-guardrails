@@ -252,8 +252,8 @@ why](#what-is-deliberately-absent-and-why).
 
 ### `corpora/url-exfiltration/in-repo.jsonl`
 
-Written for this repository and covered by its Apache-2.0 licence. 100 cases, 42
-positives and 58 negatives, in both directions.
+Written for this repository and covered by its Apache-2.0 licence. 128 cases, 56
+positives and 72 negatives, in both directions.
 
 Every attacker value in it is invented and every attacker host uses a label RFC
 2606 reserves for documentation: `attacker.example`, `evil.example`,
@@ -311,13 +311,28 @@ the check also reads a component the way `jamjet_guardrails._normalise` does.
 a percent-encoded Japanese `alt`, a percent-encoded Japanese search link, and a
 logo whose file name is fullwidth.
 
-**The disclosed misses.** 0.929 precision, 0.929 recall, 6 wrong decisions over
-100 cases. All six are below, and there are no other failures. They are the same
-six the 88-case corpus disclosed: every case added since is answered correctly,
-which is why the row moved from 0.914 / 0.914 to 0.923 / 0.923 to 0.929 / 0.929
-and the wrong-decision count did not move at all.
+**Twenty-eight cases were added for payloads that do not read as prose.** Until
+then a URL fired only when a component read as a sentence, so a key, an SSN or
+an address in an image URL, a sentence split one word per parameter, and base32
+all allowed. On the code before the change the 128 cases score 0.929 precision
+and 0.696 recall with 20 wrong decisions. `url-0101` to `url-0114` are the
+positives: an AWS key id raw and base64-encoded, a GitHub token base32-encoded in
+a file name, an SSN, an address percent-encoded in a path, a grouped card, a
+sentence one word per parameter and one word per path segment, base32 prose,
+ideographic spaces inside a markdown destination, a link carrying a credential
+in its fragment and one carrying an SSN, prose with no-break spaces in an
+unquoted HTML `src`, and a reference-style image whose definition carries a Slack
+token on input. `url-0115` to `url-0128` are the negatives: image CDN
+parameters, an avatar, a badge, the long numeric ids a photo CDN puts in a path,
+a heading and a route in a fragment, contact links carrying an address and a
+telephone number, a QR image carrying binary, two blog cover slugs, a tracking
+pixel, a static map, and a presigned object URL.
 
-Three cost precision:
+**The disclosed misses.** 0.929 precision, 0.929 recall, 8 wrong decisions over
+128 cases. All eight are below, and there are no other failures. Six are the
+ones the 88-case corpus disclosed, and two arrived with the 28 cases above.
+
+Four cost precision:
 
 - `url-0083` and `url-0084` are a share intent and a prefilled GitHub issue,
   carrying 206 and 263 characters of ordinary prose in a query string. Both are
@@ -328,8 +343,12 @@ Three cost precision:
   prose in an image URL, labelled `allow` and denied. The argument for the image
   signal is that an image request does not need to say anything. A charting
   endpoint is where that argument stops being true.
+- `url-0128` is an S3 presigned image URL, labelled `allow` and denied. Its
+  `X-Amz-Credential` parameter carries an access key id, and an image URL
+  carrying a credential is the signal. The key id is Amazon's documented
+  example, and `secrets` redacts it in the same place.
 
-Three cost recall, and each is a residual named in `docs/conformance.md` as
+Four cost recall, and each is a residual named in `docs/conformance.md` as
 well:
 
 - `url-0078` carries the payload as a hex DNS label and `url-0079` as a
@@ -338,6 +357,9 @@ well:
   close to ordinary hostnames to defend a number.
 - `url-0080` is base64 of percent-encoded prose. **A doubly encoded payload
   passes**, because decoded text is never fed back to the decoder.
+- `url-0108` is a sentence written one word per path segment. Query values are
+  joined and read as one component, and path segments are not, because joining
+  them read the blog cover slugs in `url-0124` and `url-0125` as prose.
 
 **Two more residuals carry no failing case, because they are allowed by design
 and the corpus says so.** A `redirect_uri` whose inner absolute URL is plainly
@@ -347,13 +369,13 @@ every OAuth link there is. And a search link longer than the 136-character floor
 would fire: `url-0088` is a 135-character search query that passes by one
 character, which is what a floor fitted to a corpus looks like from the inside.
 
-**The floors were swept, and one sweep result was rejected.** Each of the four
+**The floors were swept, and one sweep result was rejected.** Each of the five
 decode floors and both prose floors was swept from 1 to 259 in steps of one over
 this corpus, one at a time with everything else at its shipped setting. The two
 prose floors are the smallest value reaching the best F1: 30 for an image query
 (29 costs precision, 65 costs recall) and 136 for a link query (135 costs
 precision, 177 costs recall). Both plateaus are where they were on the 88-case
-corpus. The four decode floors are NOT the sweep's argmax and the module says
+corpus. The five decode floors are NOT the sweep's argmax and the module says
 why: their curves are flat from 1 up to a ceiling, so the sweep bounds them and
 does not choose them.
 
@@ -375,9 +397,9 @@ down instead of argued.
 **Rot13 ships, and here is the measurement it shipped on.** Every alphabetic run
 is a rot13 candidate, so the test is two-sided: the original run must fail the
 prose test and the rotated run must pass it. Removing rot13 with nothing else
-changed moves this corpus from 0.9286 / 0.9286 / 6 wrong to 0.9250 precision,
-0.8810 recall and 8 wrong. Two positives are lost, `url-0071` and `url-0072`, and
-the false-positive count does not move: 3 either way, over 58 negatives that are
+changed moves this corpus from 0.9286 / 0.9286 / 8 wrong to 0.9259 precision,
+0.8929 recall and 10 wrong. Two positives are lost, `url-0071` and `url-0072`, and
+the false-positive count does not move: 4 either way, over 72 negatives that are
 almost entirely ordinary English prose and therefore rot13 candidates every one.
 
 **The function-word list behind the prose test is a substitute, and it is named

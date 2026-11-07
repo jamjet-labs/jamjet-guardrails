@@ -1696,15 +1696,15 @@
       "detector_version": "0.2.0",
       "corpus_name": "url-exfiltration/in-repo",
       "corpus_source": "in-repo",
-      "corpus_version": "d1007078b258",
-      "cases": 100,
+      "corpus_version": "4be494e8e961",
+      "cases": 128,
       "precision": 0.9286,
       "recall": 0.9286,
       "f1": 0.9286,
-      "true_positives": 39,
-      "false_positives": 3,
-      "false_negatives": 3,
-      "decision_mismatches": 6,
+      "true_positives": 52,
+      "false_positives": 4,
+      "false_negatives": 4,
+      "decision_mismatches": 8,
       "per_type": {
         "DATA_URI_PAYLOAD": {
           "precision": 1.0,
@@ -1714,18 +1714,18 @@
           "false_negatives": 0
         },
         "LINK_QUERY_PAYLOAD": {
-          "precision": 0.7143,
+          "precision": 0.7778,
           "recall": 1.0,
-          "true_positives": 5,
+          "true_positives": 7,
           "false_positives": 2,
           "false_negatives": 0
         },
         "MARKDOWN_IMAGE_EXFIL": {
-          "precision": 0.9333,
-          "recall": 0.8235,
-          "true_positives": 14,
-          "false_positives": 1,
-          "false_negatives": 3
+          "precision": 0.9259,
+          "recall": 0.8621,
+          "true_positives": 25,
+          "false_positives": 2,
+          "false_negatives": 4
         },
         "NESTED_REDIRECT": {
           "precision": 1.0,
@@ -1780,6 +1780,18 @@
           "predicted": "allow"
         },
         {
+          "case_id": "url-0108",
+          "kind": "decision_mismatch",
+          "expected": "deny",
+          "predicted": "allow"
+        },
+        {
+          "case_id": "url-0128",
+          "kind": "decision_mismatch",
+          "expected": "allow",
+          "predicted": "deny"
+        },
+        {
           "case_id": "url-0078",
           "kind": "false_negative",
           "expected": "MARKDOWN_IMAGE_EXFIL@(8, 106)",
@@ -1795,6 +1807,12 @@
           "case_id": "url-0080",
           "kind": "false_negative",
           "expected": "MARKDOWN_IMAGE_EXFIL@(8, 244)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "url-0108",
+          "kind": "false_negative",
+          "expected": "MARKDOWN_IMAGE_EXFIL@(0, 109)",
           "predicted": "nothing"
         },
         {
@@ -1814,6 +1832,12 @@
           "kind": "false_positive",
           "expected": "nothing",
           "predicted": "LINK_QUERY_PAYLOAD@(14, 497)"
+        },
+        {
+          "case_id": "url-0128",
+          "kind": "false_positive",
+          "expected": "nothing",
+          "predicted": "MARKDOWN_IMAGE_EXFIL@(0, 329)"
         }
       ]
     }

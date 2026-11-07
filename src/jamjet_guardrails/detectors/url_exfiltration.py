@@ -14,6 +14,15 @@ rather than a ``PatternGuardrail``: what fires is a property of the URL's parts
 after they are taken apart and decoded, and no regex over the raw text expresses
 "this query value decodes to a sentence".
 
+**A payload is anything the URL carries that a picture does not need.** Prose
+was the first signal and for a while the only one, so a credential, an SSN or an
+address in an image URL, a sentence split one word per parameter, and a base32
+body all allowed: none of them reads as a sentence. Each component is now also
+asked whether it carries a credential `secrets` recognises or personal data
+`pii` recognises, at the same one payload level, and the one-word query values
+are read joined. `_carries_data` and `_joined` say what each costs and what was
+measured and refused, path-segment joining and an entropy test among them.
+
 **No host list.** There is no safe-domain list, no allowlist and no exemption by
 enumeration anywhere in this module, and that is decision 9 of the phase-3
 design rather than an omission. An exemption that approximates a set with a
@@ -75,6 +84,8 @@ from html import unescape
 from jamjet_guardrails._decode import decode, is_prose
 from jamjet_guardrails._normalise import fold_character, normalise
 from jamjet_guardrails._spans import _rewrite
+from jamjet_guardrails.detectors.pii import _PATTERNS as _PII_PATTERNS
+from jamjet_guardrails.detectors.secrets import _claims as _credential_claims
 from jamjet_guardrails.errors import GuardrailUnavailableError
 from jamjet_guardrails.protocol import saw
 from jamjet_guardrails.types import (
@@ -131,11 +142,11 @@ _OUTPUT_ONLY = frozenset({"LINK_QUERY_PAYLOAD"})
 #
 # | Floor | Value | Plateau | One below | One above the plateau |
 # |---|---:|---|---|---|
-# | image | 30 | 30 to 64 | 29: P 0.9070, F1 0.9176 | 65: R 0.9048, F1 0.9157 |
-# | link | 136 | 136 to 176 | 135: P 0.9070, F1 0.9176 | 177: R 0.8095, F1 0.8608 |
+# | image | 30 | 30 to 64 | 29: P 0.9123, F1 0.9204 | 65: R 0.9107, F1 0.9189 |
+# | link | 136 | 136 to 176 | 135: P 0.9123, F1 0.9204 | 177: R 0.8393, F1 0.8785 |
 #
-# Re-taken over the 100-case corpus. Both plateaus are where they were on the
-# 88-case and 94-case ones and every figure beside them moved, which is what a floor fitted
+# Re-taken over the 128-case corpus. Both plateaus are where they were on the
+# 88-, 94- and 100-case ones and every figure beside them moved, which is what a floor fitted
 # to a corpus looks like when the corpus grows and the fit survives.
 #
 # The image floor is bounded from below by legitimate caption parameters: at 29
@@ -164,12 +175,22 @@ _LINK_PROSE_FLOOR = 136
 # does and because `javascript:fetch('...')` is exactly that shape: a
 # destination class of `[^\s)]*` stops at the first `)` and reports a construct
 # whose closing parenthesis is still in the content, so a redaction leaves it
-# standing. The two alternatives cannot both match at one position (`[^\s()]`
-# excludes the parenthesis the other one requires), so there is no ambiguity for
-# the engine to backtrack over.
+# standing. The two alternatives cannot both match at one position (the first
+# class excludes the parenthesis the other one requires), so there is no
+# ambiguity for the engine to backtrack over.
+#
+# What ends a destination is CommonMark's rule, ASCII space and the ASCII
+# controls, and NOT `\s`. The class was `[^\s()]`, and `\s` on a str pattern is
+# Unicode whitespace, so a no-break or ideographic space ended the destination
+# here while every renderer kept going: `![x](https://host/p.png?d=the` U+3000
+# `user` U+3000 ... `)` failed this pattern outright, and the bare-URL pass then
+# found the URL up to the first ideographic space, as a link rather than an
+# image, with the payload left behind it. The reference definition and an
+# unquoted HTML attribute had the same hole and take their own specification's
+# rule below.
 _MD_INLINE = re.compile(
     r"(!?)\[[^\]\n]*\]\(\s*"
-    r"(<[^>\n]*>|(?:[^\s()]|\([^\s()]*\))*)"
+    r"(<[^>\n]*>|(?:[^\x00-\x20\x7f()]|\([^\x00-\x20\x7f()]*\))*)"
     r"(?:\s+(?:\"[^\"\n]*\"|'[^'\n]*'|\([^)\n]*\)))?"
     r"\s*\)"
 )
@@ -178,7 +199,9 @@ _MD_INLINE = re.compile(
 # is where the span goes; whether it is an image is decided by how the LABEL is
 # used, which is the only place that information exists.
 _MD_REF_USE = re.compile(r"(!?)\[[^\]\n]*\]\[([^\]\n]*)\]")
-_MD_REF_DEF = re.compile(r"^[ ]{0,3}\[([^\]\n]+)\]:[ \t]*(<[^>\n]*>|\S+)", re.MULTILINE)
+_MD_REF_DEF = re.compile(
+    r"^[ ]{0,3}\[([^\]\n]+)\]:[ \t]*(<[^>\n]*>|[^\x00-\x20\x7f]+)", re.MULTILINE
+)
 
 # An HTML attribute carrying a URL, found in two halves that are joined by
 # `_html_attributes` rather than by one regex.
@@ -190,8 +213,8 @@ _MD_REF_DEF = re.compile(r"^[ ]{0,3}\[([^\]\n]+)\]:[ \t]*(<[^>\n]*>|\S+)", re.MU
 # joining them is two bisects per attribute rather than a rescan per tag.
 _HTML_OPEN_IMG = re.compile(r"<img\b", re.IGNORECASE)
 _HTML_OPEN_A = re.compile(r"<a\b", re.IGNORECASE)
-_HTML_SRC = re.compile(r"\bsrc\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s>]+)", re.IGNORECASE)
-_HTML_HREF = re.compile(r"\bhref\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s>]+)", re.IGNORECASE)
+_HTML_SRC = re.compile(r"\bsrc\s*=\s*(\"[^\"]*\"|'[^']*'|[^\t\n\f\r >]+)", re.IGNORECASE)
+_HTML_HREF = re.compile(r"\bhref\s*=\s*(\"[^\"]*\"|'[^']*'|[^\t\n\f\r >]+)", re.IGNORECASE)
 
 # Where a tag stops. `[^>]*` inside the old single regex said this and said it
 # per tag; found once for the whole content, it says the same thing once.
@@ -491,13 +514,8 @@ def _consumer_views(url: str) -> tuple[str, ...]:
     return (url,) if resolved == url else (url, resolved)
 
 
-def _url_parts(url: str) -> tuple[list[str], list[str]]:
-    """Path segments and query keys and values of a hierarchical URL.
-
-    Hand-rolled because ``urllib`` may not be imported here; see the module
-    docstring. The fragment is dropped: it never leaves the client, so it is not
-    a channel, and treating it as one would fire on every deep link to a heading.
-    """
+def _url_pieces(url: str) -> tuple[list[str], list[str], list[str]]:
+    """Path segments, query keys and values in order, and the values alone."""
     body = url.split("#", 1)[0]
     after_scheme = body.split("://", 1)[-1]
     ends = _AUTHORITY_END.search(after_scheme)
@@ -505,6 +523,7 @@ def _url_parts(url: str) -> tuple[list[str], list[str]]:
     path, _, query = rest.partition("?")
     segments = [segment for segment in path.split("/") if segment]
     fields: list[str] = []
+    values: list[str] = []
     for pair in query.split("&"):
         if not pair:
             continue
@@ -512,7 +531,77 @@ def _url_parts(url: str) -> tuple[list[str], list[str]]:
         fields.append(key)
         if sep:
             fields.append(value)
+            values.append(value)
+    return segments, fields, values
+
+
+def _url_parts(url: str) -> tuple[list[str], list[str]]:
+    """Path segments and query keys and values of a hierarchical URL.
+
+    Hand-rolled because ``urllib`` may not be imported here; see the module
+    docstring. The fragment is not here: a browser never sends it, so an image
+    request cannot carry it. A LINK is different, because the page it opens can
+    read its own fragment, and `_fragment_fields` hands it to the link signal
+    alone.
+    """
+    segments, fields, _ = _url_pieces(url)
     return segments, fields
+
+
+# A fragment is split on more than a query is, because single-page applications
+# write routes into it: `#/settings/profile?tab=security`.
+_FRAGMENT_SEPARATORS = re.compile(r"[&/?]")
+
+
+def _fragment_fields(url: str) -> list[str]:
+    """The fragment of a URL, as keys and values, for the link signal only.
+
+    A link's destination page reads its own fragment, so a credential written
+    there reaches whoever runs that page the moment it is opened. An image
+    request never sends one, which is why the image signal does not read it.
+    """
+    _, sep, fragment = url.partition("#")
+    fields: list[str] = []
+    if not sep:
+        return fields
+    for piece in _FRAGMENT_SEPARATORS.split(fragment):
+        if not piece:
+            continue
+        key, has_value, value = piece.partition("=")
+        fields.append(key)
+        if has_value:
+            fields.append(value)
+    return fields
+
+
+# A query value that is one word: letters only, once its escapes are undone.
+_ONE_WORD = re.compile(r"[^\W\d_]+")
+
+
+def _joined(url: str) -> list[str]:
+    """The query values that are one word each, as one string.
+
+    One word per query parameter is a sentence the receiving server reads back
+    by joining them, and no single component is long enough to clear a prose
+    floor: `?a=the&b=user&c=said...` allowed. Joined with spaces the one-word
+    values are offered to the prose test like any component.
+
+    ONE-WORD VALUES ONLY, and the first version of this joined every value and
+    cost six false positives, measured: a caption beside a width, a share
+    intent beside its URL and a search query beside `hl=en` each cleared a floor
+    together that none cleared alone. A value with a space in it is already read
+    whole as a component; the join exists for the shape that splits a sentence
+    into words, and it now takes only that shape.
+
+    PATH SEGMENTS ARE NOT JOINED, and it was measured rather than assumed. The
+    same join over segments read every blog cover image as prose:
+    `/blog/2024/how-we-cut-our-build-times-in-half/cover.png` denied, because the
+    slug's words and the spaces the join adds clear the prose test together.
+    One word per path segment is therefore a disclosed miss, `url-0108`.
+    """
+    _, _, values = _url_pieces(url)
+    words = [value for value in values if _ONE_WORD.fullmatch(_url_decoded(value))]
+    return [" ".join(words)] if len(words) > 1 else []
 
 
 def _url_decoded(component: str) -> str:
@@ -526,6 +615,12 @@ def _url_decoded(component: str) -> str:
     """
     decoded = decode(component, "percent")
     return (decoded if decoded is not None else component).replace("+", " ")
+
+
+# A file extension at the end of a path segment. `<payload>.png` is the natural
+# way to write an image path, and the extension is what stops the payload
+# decoding: no alphabet here accepts a `.`.
+_EXTENSION = re.compile(r"\.[A-Za-z0-9]{1,5}\Z")
 
 
 def _readings(component: str) -> list[str]:
@@ -548,9 +643,13 @@ def _readings(component: str) -> list[str]:
     reader can see, which is why the one-level rule on payloads still holds.
     """
     readings: dict[str, None] = {}
-    for plain in (_url_decoded(component), normalise(component).text.replace("+", " ")):
+    stem = _EXTENSION.sub("", component)
+    transports = [_url_decoded(component), normalise(component).text.replace("+", " ")]
+    if stem != component and stem:
+        transports.append(_url_decoded(stem))
+    for plain in transports:
         readings[plain] = None
-        for encoding in ("base64", "hex", "rot13"):
+        for encoding in ("base64", "base32", "hex", "rot13"):
             text = decode(plain, encoding)
             if text is not None:
                 readings[text] = None
@@ -621,6 +720,46 @@ def _nested_redirect(components: list[str]) -> bool:
         for encoding in ("base64", "hex"):
             text = decode(plain, encoding)
             if text is not None and _ABSOLUTE_URL.match(text):
+                return True
+    return False
+
+
+# The personal data a LINK may not carry. A link that prefills an email address
+# or a telephone number is an ordinary contact or sign-up link, so those two are
+# left to `pii`; a link carrying a social security number or a grouped card
+# number has no such reading. An image request carries any of the four, because
+# nothing about drawing a picture needs any of them.
+_LINK_IDENTIFIERS = frozenset({"US_SSN", "CREDIT_CARD"})
+_IMAGE_IDENTIFIERS = frozenset(pii_type for pii_type, _ in _PII_PATTERNS)
+
+
+def _carries_data(components: list[str], identifiers: frozenset[str]) -> bool:
+    """A component that reads, at one payload level, as a credential or as personal data.
+
+    The prose test asks whether a component SAYS something. This asks whether
+    it CARRIES something, and it is the half that was missing: a key, an SSN or
+    an address in an image URL is one or two components long and reads as no
+    sentence at all, so `![x](https://host/p.png?k=AKIA...)` and the same key
+    base64-encoded both allowed. The credential patterns are `secrets`' own and
+    the personal-data patterns are `pii`'s, applied to every reading of the
+    component: as written, percent-decoded, as a reader sees it, and through
+    one base64, base32, hex or rot13 layer.
+
+    `pii`'s bare-digit card scan is NOT applied, deliberately. A Luhn-valid run
+    is one in twenty of the long numeric ids image CDNs put in every path, so it
+    would fire on ordinary photo URLs; a bare card number in a URL is still
+    redacted by `pii` itself wherever it stands. No entropy test either, and the
+    reason is the one `_decode` gives: signatures, digests, UUIDs and tokens are
+    all high-entropy, and they are most of what an ordinary image URL carries.
+    """
+    for component in components:
+        for reading in _readings(component):
+            if _credential_claims(reading):
+                return True
+            if any(
+                pii_type in identifiers and pattern.search(reading)
+                for pii_type, pattern in _PII_PATTERNS
+            ):
                 return True
     return False
 
@@ -794,17 +933,26 @@ class UrlExfiltrationGuardrail:
             if not _HTTP_SCHEME.match(scheme_view):
                 continue
             seen: dict[str, None] = {}
+            joined: dict[str, None] = {}
+            fragment: dict[str, None] = {}
             for view in views:
                 segments, fields = _url_parts(view)
                 for component in segments + fields:
                     seen[component] = None
+                joined.update(dict.fromkeys(_joined(view)))
+                fragment.update(dict.fromkeys(_fragment_fields(view)))
             components = list(seen)
             if _nested_redirect(components):
                 claim(target, "NESTED_REDIRECT")
             if target.image:
-                if _prose_component(components, _IMAGE_PROSE_FLOOR):
+                if _prose_component(components + list(joined), _IMAGE_PROSE_FLOOR) or _carries_data(
+                    components, _IMAGE_IDENTIFIERS
+                ):
                     claim(target, "MARKDOWN_IMAGE_EXFIL")
-            elif direction == "output" and _prose_component(components, _LINK_PROSE_FLOOR):
+            elif direction == "output" and (
+                _prose_component(components + list(joined) + list(fragment), _LINK_PROSE_FLOOR)
+                or _carries_data(components + list(fragment), _LINK_IDENTIFIERS)
+            ):
                 claim(target, "LINK_QUERY_PAYLOAD")
 
         return sorted(((type_name, span) for span, type_name in found), key=lambda pair: pair[1])

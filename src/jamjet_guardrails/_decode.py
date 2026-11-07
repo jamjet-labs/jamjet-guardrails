@@ -44,20 +44,24 @@ scores F1 0.9286 on that corpus.
 
 | Alphabet | Floor | Plateau at F1 0.9286 | First floor that costs | Cost there |
 |---|---:|---|---:|---|
-| base64 | 16 | 1 to 32 | 33 | one true positive, F1 to 0.9157 |
-| hex | 16 | 1 to 42 | 43 | one true positive, F1 to 0.9157 |
+| base64 | 16 | 1 to 28 | 29 | two true positives, F1 to 0.9091 |
+| base32 | 16 | 1 to 64 | 65 | one true positive, F1 to 0.9189 |
+| hex | 16 | 1 to 42 | 43 | one true positive, F1 to 0.9189 |
 | percent | 6 | every value | none | see below |
-| rot13 | 24 | 1 to 109 | 110 | one true positive, F1 to 0.9157 |
+| rot13 | 24 | 1 to 109 | 110 | one true positive, F1 to 0.9189 |
 
-**The sweep bounds these four from ABOVE and does not choose them, and saying
+**The sweep bounds these five from ABOVE and does not choose them, and saying
 otherwise would be dressing noise as a measurement.** Every alphabet's curve is
 flat from 1 up to its ceiling, so "the smallest floor reaching the best F1" is
-1 for all four, and a base64 floor of 1 decodes every letter in every path
+1 for all five, and a base64 floor of 1 decodes every letter in every path
 segment. The shipped value is instead the shortest run each alphabet can carry a
-payload in: 12 bytes for base64, 8 bytes for hex, one triplet beside a word for
-percent, three words for rot13. What the sweep contributes is the margin, which
-is the part that could have been wrong: 16 is half the base64 ceiling and 38% of
-the hex one, and 24 is 22% of the rot13 ceiling.
+payload in: 12 bytes for base64, 10 for base32, 8 for hex, one triplet beside a
+word for percent, three words for rot13. What the sweep contributes is the
+margin, which is the part that could have been wrong: 16 is 57% of the base64
+ceiling, a quarter of the base32 one and 38% of the hex one, and 24 is 22% of
+the rot13 ceiling. The base64 ceiling came down from 32 to 28 with the
+128-case corpus, because `url-0102` carries an AWS key id as a 28-character
+base64 query value; that is the margin doing its job.
 
 **The percent floor no longer moves ``url-exfiltration`` at all**, and that is
 a consequence rather than a choice about the floor. That check now also reads
@@ -93,10 +97,10 @@ wearing an encoding's name.
 **It ships, and the ablation is why.** Removing rot13 from the readings
 ``url-exfiltration`` takes of a URL component, with nothing else changed, moves
 that check on its own corpus from precision 0.9286, recall 0.9286, F1 0.9286 and
-6 wrong decisions to precision 0.9250, recall 0.8810, F1 0.9024 and 8 wrong
+8 wrong decisions to precision 0.9259, recall 0.8929, F1 0.9091 and 10 wrong
 decisions. Two positives are lost, ``url-0071`` and ``url-0072``, and NO case
-changes the other way: the false-positive count is 3 with rot13 and 3 without,
-over a corpus whose 58 negatives are almost entirely ordinary English prose, all
+changes the other way: the false-positive count is 4 with rot13 and 4 without,
+over a corpus whose 72 negatives are almost entirely ordinary English prose, all
 of it a rot13 candidate. The two-sided test is what buys that, and the ablation
 is re-run by
 ``tests/test_url_exfiltration.py::test_rot13_buys_two_positives_and_costs_no_precision``
@@ -139,13 +143,15 @@ import binascii
 import re
 from collections.abc import Mapping
 
-# The four alphabets. A caller loops these rather than importing a regex table,
+# The five alphabets. Base32 is read by `url-exfiltration` only: `candidates`
+# does not offer base32 runs, so `encoded-content` sees the other four.
+# A caller loops these rather than importing a regex table,
 # and `decode` refuses anything outside them by name: an encoding argument that
 # is a typo must not resolve to "this run does not decode", which is what a
 # `return None` default would make it.
-ENCODINGS: tuple[str, ...] = ("base64", "hex", "percent", "rot13")
+ENCODINGS: tuple[str, ...] = ("base64", "base32", "hex", "percent", "rot13")
 
-FLOORS: Mapping[str, int] = {"base64": 16, "hex": 16, "percent": 6, "rot13": 24}
+FLOORS: Mapping[str, int] = {"base64": 16, "base32": 16, "hex": 16, "percent": 6, "rot13": 24}
 
 # Decoded bytes that are valid UTF-8 and still mostly unprintable are a binary
 # body that happened to survive the decoder, not text. 0.9 rather than 1.0
@@ -333,6 +339,44 @@ def _decode_base64(run: str) -> str | None:
         return None
 
 
+_B32_UPPER_FULL = re.compile(r"\A[A-Z2-7]+={0,6}\Z")
+_B32_LOWER_FULL = re.compile(r"\A[a-z2-7]+={0,6}\Z")
+# The lengths an unpadded base32 run can have, modulo 8: 1, 3 and 6 are never
+# produced by any number of whole bytes.
+_B32_TAILS = frozenset({0, 2, 4, 5, 7})
+
+
+def _decode_base32(run: str) -> str | None:
+    """RFC 4648 base32, one case at a time, strict about length and padding.
+
+    One case at a time because a run mixing the two is not base32 from any
+    encoder; accepting it would make every mixed-case word of letters and the
+    digits 2 to 7 a decode attempt. Lower case is accepted because encoders that
+    write DNS labels or URL paths emit it.
+
+    Only `url-exfiltration` reads this alphabet. `candidates` does not offer
+    base32 runs, so `encoded-content` is unchanged by it, and that is a scope
+    decision for that check's corpus rather than a claim that it could not
+    carry a payload there.
+    """
+    if not (_B32_UPPER_FULL.match(run) or _B32_LOWER_FULL.match(run)):
+        return None
+    stripped = run.rstrip("=")
+    if len(run) != len(stripped) and len(run) % 8 != 0:
+        return None
+    if len(stripped) % 8 not in _B32_TAILS:
+        return None
+    padded = stripped.upper() + "=" * (-len(stripped) % 8)
+    try:
+        raw = base64.b32decode(padded)
+    except (binascii.Error, ValueError):
+        return None
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
+
 def _decode_hex(run: str) -> str | None:
     """Half a byte is not a byte, and ``bytes.fromhex`` is what says so.
 
@@ -406,6 +450,7 @@ def _decode_rot13(run: str) -> str | None:
 
 _DECODERS = {
     "base64": _decode_base64,
+    "base32": _decode_base32,
     "hex": _decode_hex,
     "percent": _decode_percent,
     "rot13": _decode_rot13,

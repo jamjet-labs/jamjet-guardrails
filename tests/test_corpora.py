@@ -387,6 +387,19 @@ _RECORDS_A_MISS = {
     # The confusable-dodged codename, caught only with `fold_confusables=True`,
     # which the published row now leaves at its default.
     "rules": ("rules-0041",),
+    # The eight `corpora/NOTICE.md` discloses: three long benign prose queries,
+    # a chart title and a presigned object URL that fire, and two hostname
+    # payloads, a doubly encoded one and one word per path segment that do not.
+    "url-exfiltration": (
+        "url-0076",
+        "url-0078",
+        "url-0079",
+        "url-0080",
+        "url-0083",
+        "url-0084",
+        "url-0108",
+        "url-0128",
+    ),
     # Seventeen, and the twelve added when the corpus grew from 39 cases to 160
     # are mostly SPAN ARITHMETIC rather than leaks: the credential is redacted in
     # full and the audit record is what is wrong. They are here because a corpus

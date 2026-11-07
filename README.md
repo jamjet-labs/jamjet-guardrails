@@ -458,7 +458,7 @@ failures is a number you cannot check.
 | script-constraint | script-constraint/in-repo | in-repo | `1e1374cfecc3` | 85 | 0.960 | 0.980 | 0.970 | 48 | 2 | 1 | 0 |
 | secrets | secrets/in-repo | in-repo | `ffc4d7ce8979` | 174 | 0.889 | 0.881 | 0.885 | 104 | 13 | 14 | 8 |
 | template-integrity | template-integrity/in-repo | in-repo | `afb0a7245664` | 152 | 0.820 | 0.965 | 0.886 | 109 | 24 | 4 | 19 |
-| url-exfiltration | url-exfiltration/in-repo | in-repo | `d1007078b258` | 100 | 0.929 | 0.929 | 0.929 | 39 | 3 | 3 | 6 |
+| url-exfiltration | url-exfiltration/in-repo | in-repo | `4be494e8e961` | 128 | 0.929 | 0.929 | 0.929 | 52 | 4 | 4 | 8 |
 
 See [BENCHMARKS.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/BENCHMARKS.md) for the per-type scores and the worst misses
 behind these numbers, and [corpora/NOTICE.md](https://github.com/jamjet-labs/jamjet-guardrails/blob/main/corpora/NOTICE.md) for what each

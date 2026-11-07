@@ -1084,6 +1084,42 @@ spaces, or with a zero-width space between every two letters is the sentence it 
 image `alt`, a search query and a file name that stay allowed. The fold changes no character a
 reader can see, so it is not a second decoding level.
 
+### A payload is prose, a credential or personal data
+
+An image URL fires `MARKDOWN_IMAGE_EXFIL` when any component, read as written, percent-decoded, as a
+reader sees it, or through one base64, base32, hex or rot13 layer, does any of three things:
+
+- **reads as prose** of 30 characters or more;
+- **contains a credential** `secrets` recognises, by its own patterns;
+- **contains personal data** `pii` recognises by its pattern table: an email address, an SSN, a
+  grouped card number or a telephone number. Its bare-digit card scan is not applied here, because
+  one Luhn-valid run in twenty of the long numeric ids image CDNs put in every path would fire, and
+  `pii` itself still redacts a bare card wherever it stands.
+
+The query values that are one word each, joined with spaces, are one more component for the prose
+test, so a sentence split one word per parameter is the sentence. A path segment is also read with
+its file extension removed, so `<payload>.png` decodes. A link fires `LINK_QUERY_PAYLOAD`, on output
+only, under the same rules with three differences: the prose floor is 136 characters, the personal
+data is SSNs and grouped card numbers only, because a link prefilling an address or a telephone
+number is an ordinary contact link, and its fragment is read as well, split on `&`, `/` and `?`,
+because the page a link opens can read its own fragment.
+
+**There is no entropy test, and it was measured rather than argued.** Firing on any component of 24
+characters or more at 4.5 bits per character, the least costly setting tried, finds one more payload
+in the corpus and costs five more false positives, moving precision from 0.929 to 0.869: signatures,
+digests, tokens and UUIDs are most of what an ordinary image URL carries.
+
+**A destination ends where its specification says.** A markdown inline destination and a reference
+definition end at ASCII space or an ASCII control, which is CommonMark's rule, and an unquoted HTML
+attribute value at ASCII whitespace or `>`, which is HTML's. Unicode whitespace does not end either:
+`url-0110` puts an ideographic space between the words of a payload, and every renderer keeps the
+whole URL.
+
+`url-0101` to `url-0114` are the positives and `url-0115` to `url-0128` the negatives that hold the
+signals down: image CDN parameters, an avatar, a badge, numeric CDN ids, a heading and a route in a
+fragment, contact links carrying an address and a telephone number, a QR image carrying binary,
+blog cover slugs, a tracking pixel, a static map, and a presigned object URL.
+
 ### There are no exemptions, and this is what stands in their place
 
 There is no host allowlist, no safe-domain list and no scheme allowlist. The only thing that excuses
@@ -1097,8 +1133,9 @@ those bound the check in the same way and would otherwise go unstated.
   text. The cost of closing that is a check that reports `Note:` and `Warning:` in prose, and a
   markdown or HTML construct is discovered whatever its scheme, so what this misses is text that no
   renderer links either.
-- **The authority is not a component.** Only path segments and query keys and values are decoded and
-  tested. Hostname labels are not, and two corpus cases pay for it; see below.
+- **The authority is not a component.** Only path segments, query keys and values and, for a link,
+  the fragment are decoded and tested. An image URL's fragment is not read, because a browser never
+  sends it. Hostname labels are not, and two corpus cases pay for it; see below.
   **The authority ends at the first `/` OR the first `?`.** `https://host?d=...` carries a query and
   no path, RFC 3986 permits it and every browser resolves it to `https://host/?d=...`, so a port that
   splits on `/` alone puts the whole query inside the authority and then discards it. Three of the
@@ -1108,8 +1145,8 @@ those bound the check in the same way and would otherwise go unstated.
 
 ### Where this implementation falls short of its own corpus
 
-The published row is 0.929 precision and 0.929 recall over 100 cases with 6 wrong decisions, and every
-one of the six is named here. Three are false positives and three are false negatives, and they are
+The published row is 0.929 precision and 0.929 recall over 128 cases with 8 wrong decisions, and every
+one of the eight is named here. Four are false positives and four are false negatives, and they are
 the same trade seen from both ends.
 
 - **A benign link whose query really is a long piece of prose fires.** `url-0083` is a share intent
@@ -1128,10 +1165,18 @@ the same trade seen from both ends.
 - **A doubly encoded payload is not detected.** `url-0080` is base64 of percent-encoded prose,
   labelled `deny` and allowed. Decoded text is never fed back to the decoder: one level is the rule,
   and a decode loop would make every span a claim about a string the caller never had.
+- **One word per path segment is not detected.** `url-0108` writes a sentence as
+  `/the/user/said/.../four.png`, labelled `deny` and allowed. Joining segments the way one-word query
+  values are joined read every blog cover image as prose, because a slug's words and the spaces the
+  join adds clear the prose test together; `url-0124` and `url-0125` are those images, labelled
+  `allow`.
+- **A presigned object URL fires.** `url-0128` is an S3 presigned image URL, labelled `allow` and
+  denied, because `X-Amz-Credential` carries an access key id and an image URL carrying a credential
+  is the signal. The key id is the documented example and `secrets` redacts it in the same place.
 
-These six are the corpus's bar and not a licence. A port that denies `url-0078`, `url-0079` or
-`url-0080` matches the label where this implementation does not; what a port is held to is the `allow`
-side.
+These eight are the corpus's bar and not a licence. A port that denies `url-0078`, `url-0079`,
+`url-0080` or `url-0108` matches the label where this implementation does not; what a port is held
+to is the `allow` side.
 ## The script-constraint constraint
 
 `script-constraint` is the second check here whose behaviour is chosen by the
@@ -1906,9 +1951,9 @@ choice for every one of them:
   given, which is the string `saw` hashes, whatever view the match was found
   in.
 - **How a run of characters is decided to decode to text, and the floors that
-  decide it.** `url-exfiltration` reads a URL component through four alphabets
+  decide it.** `url-exfiltration` reads a URL component through five alphabets
   and a function-word list, and `encoded-content` reads a run anywhere in the
-  content through the same four, at floors recorded in the source with the sweep
+  content through four of them, all but base32, at floors recorded in the source with the sweep
   that bounded each. Those are this implementation's means: the function-word list is
   derived from a file in this repository and is not a specification of English,
   and a port reaching the same verdicts with a different list, different ratios

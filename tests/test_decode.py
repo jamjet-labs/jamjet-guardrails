@@ -87,9 +87,10 @@ def _f1_with_floor(alphabet: str, value: int) -> float:
 @pytest.mark.parametrize(
     ("alphabet", "floor", "plateau_top", "cost_above"),
     [
-        ("base64", 16, 32, 0.9157),
-        ("hex", 16, 42, 0.9157),
-        ("rot13", 24, 109, 0.9157),
+        ("base64", 16, 28, 0.9091),
+        ("base32", 16, 64, 0.9189),
+        ("hex", 16, 42, 0.9189),
+        ("rot13", 24, 109, 0.9189),
     ],
 )
 def test_every_floor_sits_inside_the_flat_region_the_sweep_measures(
@@ -149,7 +150,7 @@ def test_decode_refuses_an_encoding_it_does_not_know() -> None:
     `return None`. FAILS.
     """
     with pytest.raises(ValueError, match="unknown encoding"):
-        decode("aGVsbG8gd29ybGQ=", "base32")
+        decode("aGVsbG8gd29ybGQ=", "base85")
 
 
 @pytest.mark.parametrize("encoding", sorted(ENCODINGS))
@@ -168,6 +169,7 @@ def test_a_run_below_its_alphabet_floor_does_not_decode(encoding: str) -> None:
     floor = FLOORS[encoding]
     sample = {
         "base64": "aGVsbG8gd29ybGQhIQ==",
+        "base32": "NBSWY3DPEB3W64TMMQQSC===",
         "hex": PROSE.encode().hex(),
         "percent": "the%20user%20said%20so%20and%20so",
         "rot13": PROSE.translate(_decode._ROT13_TABLE),
@@ -417,8 +419,8 @@ def test_the_detector_that_consumes_this_module_still_scores_its_published_row()
     result = evaluate(build("url-exfiltration"), corpus)
     assert round(result.overall.precision, 3) == 0.929
     assert round(result.overall.recall, 3) == 0.929
-    assert result.decision_mismatches == 6
-    assert result.cases == 100
+    assert result.decision_mismatches == 8
+    assert result.cases == 128
 
 
 def test_the_module_names_no_encoding_it_cannot_decode() -> None:
