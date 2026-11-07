@@ -25,6 +25,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterator
 
+from jamjet_guardrails._normalise import matched_both_ways
 from jamjet_guardrails._spans import _rewrite, _scan
 from jamjet_guardrails.protocol import saw
 from jamjet_guardrails.types import (
@@ -471,7 +472,18 @@ def _private_key_spans(content: str) -> list[tuple[int, int]]:
     return spans
 
 
-_VERSION = "0.1.0"
+def _claims(text: str) -> list[tuple[str, tuple[int, int]]]:
+    """Every span every pattern and the PEM walk claim in one string."""
+    found = [
+        (secret_type, match.span())
+        for secret_type, pattern in _PATTERNS
+        for match in _scan(pattern, text)
+    ]
+    found += [("PRIVATE_KEY", span) for span in _private_key_spans(text)]
+    return found
+
+
+_VERSION = "0.2.0"
 
 
 class SecretsGuardrail:
@@ -508,14 +520,14 @@ class SecretsGuardrail:
         is what keeps that true of a table someone adds to later, and `_merge`
         depends on it: it compares each span against the running end of the
         region it is extending.
+
+        Over the content AND over what a reader sees in it, which is
+        `jamjet_guardrails._normalise`: one zero-width space inside a GitHub
+        token, a fullwidth `ＡＫＩＡ` or a `%5F` for the underscore of `ghp_` each
+        took a whole credential past this check, and past every other check in
+        the output chain with it. The spans still index into the content.
         """
-        found = [
-            (secret_type, match.span())
-            for secret_type, pattern in _PATTERNS
-            for match in _scan(pattern, content)
-        ]
-        found += [("PRIVATE_KEY", span) for span in _private_key_spans(content)]
-        return sorted(found, key=lambda pair: pair[1])
+        return matched_both_ways(content, _claims)
 
     def check(self, content: str, context: Context) -> Verdict:
         provenance = Provenance(kind="constraint", detector=self.name, version=self.version)

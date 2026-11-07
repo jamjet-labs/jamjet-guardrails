@@ -378,12 +378,15 @@ def test_the_published_report_carries_the_attribution_pointer() -> None:
 _RECORDS_A_MISS = {
     "pii": (
         "pii-0031",  # a bare nine-digit SSN, which the pattern deliberately skips
-        "pii-0032",  # a space-separated SSN, the same deliberate gap
         "pii-0033",  # the shifted four-group window, leading group left standing
         "pii-0034",  # the same window shifting left, final group left standing
         "pii-0035",  # a TLD carrying a Devanagari spacing mark
         "pii-0036",  # punycode, whose final label the letters-only TLD class drops
+        "pii-0101",  # `512 64 1024`, three numbers that are a valid spaced SSN by every rule
     ),
+    # The confusable-dodged codename, caught only with `fold_confusables=True`,
+    # which the published row now leaves at its default.
+    "rules": ("rules-0041",),
     # Seventeen, and the twelve added when the corpus grew from 39 cases to 160
     # are mostly SPAN ARITHMETIC rather than leaks: the credential is redacted in
     # full and the audit record is what is wrong. They are here because a corpus

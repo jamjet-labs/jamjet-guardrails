@@ -663,8 +663,8 @@ def _f1_with_prose_floor(attribute: str, value: int) -> float:
 @pytest.mark.parametrize(
     ("attribute", "value", "plateau_top", "below", "above"),
     [
-        ("_IMAGE_PROSE_FLOOR", 30, 64, 0.9114, 0.9091),
-        ("_LINK_PROSE_FLOOR", 136, 176, 0.9114, 0.8493),
+        ("_IMAGE_PROSE_FLOOR", 30, 64, 0.9176, 0.9157),
+        ("_LINK_PROSE_FLOOR", 136, 176, 0.9176, 0.8608),
     ],
 )
 def test_each_prose_floor_is_the_smallest_value_reaching_the_best_f1(
@@ -678,7 +678,7 @@ def test_each_prose_floor_is_the_smallest_value_reaching_the_best_f1(
     link case, at the shipped-value assertion.
     """
     assert getattr(url_exfiltration, attribute) == value
-    baseline = 0.9231
+    baseline = 0.9286
     assert _f1_with_prose_floor(attribute, value) == baseline
     assert _f1_with_prose_floor(attribute, plateau_top) == baseline
     assert _f1_with_prose_floor(attribute, value - 1) == below
@@ -693,7 +693,7 @@ def test_rot13_buys_two_positives_and_costs_no_precision(
     Rot13 is the one alphabet with nothing to recognise it by, so it was shipped
     on a measurement rather than on an argument: removing it from the readings
     this check takes of a URL component, with nothing else changed, loses two
-    true positives and returns no precision, over 55 negatives that are almost
+    true positives and returns no precision, over 58 negatives that are almost
     entirely ordinary English and therefore rot13 candidates every one.
 
     Mutation watched: `_decode_rot13` changed to `return None`. FAILS on the
@@ -713,7 +713,7 @@ def test_rot13_buys_two_positives_and_costs_no_precision(
         round(shipped.overall.recall, 4),
         shipped.overall.false_positives,
         shipped.decision_mismatches,
-    ) == (0.9231, 0.9231, 3, 6)
+    ) == (0.9286, 0.9286, 3, 6)
 
     original = url_exfiltration._readings
 
@@ -730,7 +730,7 @@ def test_rot13_buys_two_positives_and_costs_no_precision(
         round(ablated.overall.recall, 4),
         ablated.overall.false_positives,
         ablated.decision_mismatches,
-    ) == (0.9189, 0.8718, 3, 8)
+    ) == (0.925, 0.881, 3, 8)
 
     lost = {f.case_id for f in ablated.failures} - {f.case_id for f in shipped.failures}
     assert lost == {"url-0071", "url-0072"}

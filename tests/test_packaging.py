@@ -756,6 +756,7 @@ def test_no_credential_shaped_literal_in_the_repository_reads_as_a_live_one() ->
     is.
     """
     from jamjet_guardrails import Context
+    from jamjet_guardrails._normalise import normalise
     from jamjet_guardrails.detectors.secrets import SecretsGuardrail
 
     guardrail = SecretsGuardrail()
@@ -772,7 +773,11 @@ def test_no_credential_shaped_literal_in_the_repository_reads_as_a_live_one() ->
             # this library exists to refuse.
             assert span is not None, f"{finding.type} finding in {name} carries no span"
             body = text[span[0] : span[1]]
-            if any(marker in body for marker in _MARKERS):
+            # The marker is read where the check read the credential: since
+            # `secrets` matches over the normalised view too, it finds a token
+            # written as percent escapes, and that body says EXAMPLEONLY only
+            # once decoded, which is how anyone lifting it would read it.
+            if any(marker in normalise(body).text for marker in _MARKERS):
                 continue
             if body in _INSPECTED_UNMARKED:
                 continue

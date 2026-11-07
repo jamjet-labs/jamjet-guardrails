@@ -316,7 +316,13 @@ def _nfd(source: str) -> _Folded:
 def skeleton(text: str) -> _Folded:
     """The UTS #39 section 4 skeleton of `text`, and the way back to `text`.
 
-    NFD, map every code point through the confusables table, NFD again. The
+    NFD, REMOVE every default-ignorable code point, map every code point through
+    the confusables table, NFD again. That is `internalSkeleton` as UTS #39
+    16.0.0 states it, four steps. This function had three: the removal was
+    missing, so `project` U+200B `bluebird` kept its zero-width space in the
+    skeleton and a banned substring under `fold_confusables=True` was dodged by
+    one invisible character. The removal is folded into the mapping pass, which
+    is the same thing, since a removed code point has no prototype to map. The
     result is a view: a match found in `skeleton(content).text` is reported to
     the caller as `view.span(start, end)`, which is the run of ORIGINAL
     characters that produced it, because that is what the chain rewrites and
@@ -349,8 +355,13 @@ def skeleton(text: str) -> _Folded:
     lookup, and this function is called once per piece of content rather than
     once per character, so the cost is paid where it is used and nowhere else.
     """
+    from jamjet_guardrails._normalise import _ignorable
     from jamjet_guardrails._unicode.confusables import PROTOTYPES
 
+    ignorable = _ignorable()
     decomposed = _nfd(text)
-    mapped = fold(decomposed.text, lambda character: PROTOTYPES.get(character, character))
+    mapped = fold(
+        decomposed.text,
+        lambda character: "" if character in ignorable else PROTOTYPES.get(character, character),
+    )
     return compose(compose(decomposed, mapped), _nfd(mapped.text))

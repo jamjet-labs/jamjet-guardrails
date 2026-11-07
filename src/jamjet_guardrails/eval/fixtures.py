@@ -30,7 +30,12 @@ FIXTURES: Mapping[str, Mapping[str, object]] = {
         "banned": {"PROJECT_CODENAME": ("project bluebird",)},
         "limits": Limits(max_chars=2000),
         "on_match": "redact",
-        "fold_confusables": True,
+        # `fold_confusables` is deliberately NOT set, so the row measures the
+        # default a caller gets. It was set to True here while the engine
+        # defaults it to False, and the published 1.000 / 1.000 was a figure
+        # the default configuration could not reach: `rules-0041` is the
+        # Cyrillic-dodged codename only the skeleton catches, and it is a
+        # labelled miss now. `tests/test_rules.py` holds the two together.
     },
     # Chosen so the row measures the two things that separate this check from a
     # naive one, on text where both occur naturally. Japanese needs all three

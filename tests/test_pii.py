@@ -1308,6 +1308,15 @@ _NEW_FALSE_POSITIVES = [
         ),
     ),
     (
+        "buffer sizes 512 64 1024",
+        "US_SSN",
+        (
+            "three numbers of exactly the 3-2-4 shape standing alone. The spaced SSN "
+            "branch keeps the issuance rules and turns away a neighbouring digit group, "
+            "and this passes both: 512 is an issued area, 64 a group, 1024 a serial."
+        ),
+    ),
+    (
         "sha256 4111111111111111abc",
         "CREDIT_CARD",
         (

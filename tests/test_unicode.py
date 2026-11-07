@@ -753,18 +753,31 @@ def test_canonical_ordering_moves_a_mark_and_the_span_still_covers_the_run() -> 
 
 
 def test_the_skeleton_matches_the_algorithm_uts_39_states() -> None:
-    """NFD, map, NFD, checked against the three steps written out plainly.
+    """internalSkeleton, checked against its four steps written out plainly.
 
-    The implementation composes three folds so that it can carry the offsets;
-    this is the same computation with no offsets at all, which is what every
-    other implementation of UTS #39 section 4 does. They must agree, or this
-    package's skeletons are its own.
+    UTS #39 16.0.0, section 4: convert to NFD, REMOVE every
+    Default_Ignorable_Code_Point, concatenate the prototypes, reapply NFD. The
+    implementation composes folds so that it can carry the offsets; this is the
+    same computation with no offsets at all, which is what every other
+    implementation does. They must agree, or this package's skeletons are its
+    own.
+
+    This reference used to have three steps, and the implementation matched
+    it, so the two agreed with each other and not with the standard: the
+    removal step was missing from both. `hello` U+200B `world` kept its
+    zero-width space in the skeleton, so a banned substring under
+    `fold_confusables=True` was dodged by one invisible character, which is the
+    exact substitution the option exists to see through.
     """
+    from jamjet_guardrails.detectors.injection_structural import _DEFAULT_IGNORABLE
+
     prototypes = confusables_table.PROTOTYPES
+    ignorable = {chr(p) for low, high in _DEFAULT_IGNORABLE for p in range(low, high + 1)}
 
     def reference(text: str) -> str:
         decomposed = unicodedata.normalize("NFD", text)
-        mapped = "".join(prototypes.get(character, character) for character in decomposed)
+        visible = "".join(character for character in decomposed if character not in ignorable)
+        mapped = "".join(prototypes.get(character, character) for character in visible)
         return unicodedata.normalize("NFD", mapped)
 
     for source in (
@@ -781,8 +794,11 @@ def test_the_skeleton_matches_the_algorithm_uts_39_states() -> None:
         "\U0001d400\U0001d401\U0001d402",
         "パスワード",
         "hello\u200bworld",
+        "p\u0430y\u2060pal\u00ad",
+        "e\u200d\u0301",
     ):
         assert skeleton(source).text == reference(source), repr(source)
+    assert skeleton("hello\u200bworld").text == skeleton("helloworld").text
 
 
 def test_the_second_normalisation_pass_is_not_redundant() -> None:

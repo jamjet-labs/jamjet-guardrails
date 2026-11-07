@@ -32,7 +32,7 @@ from __future__ import annotations
 from jamjet_guardrails.authoring import PatternGuardrail
 from jamjet_guardrails.protocol import Guardrail
 
-_VERSION = "0.1.0"
+_VERSION = "0.2.0"
 
 # LENGTH_LIMIT is the one type this check reports that a caller does not name,
 # so it is the one type that is always in its domain. Everything else is the
