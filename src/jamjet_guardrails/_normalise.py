@@ -225,6 +225,27 @@ class Normalised:
         return self._source_of(start)[0], self._source_of(end - 1)[1]
 
 
+def _decoded_at(raw: bytes, index: int) -> tuple[int, str] | None:
+    """The width in bytes and the reading of the sequence starting at ``index``.
+
+    ``None`` where it stays encoded: a control character, a lone continuation
+    byte, a truncated or overlong sequence, or a C1 control.
+    """
+    byte = raw[index]
+    if _ASCII_LOW <= byte <= _ASCII_HIGH:
+        return 1, chr(byte)
+    if not 0xC2 <= byte <= 0xF4:
+        return None
+    width = 2 if byte < 0xE0 else 3 if byte < 0xF0 else 4
+    try:
+        text = raw[index : index + width].decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    if len(text) != 1 or ord(text) < _FIRST_DECODED:
+        return None
+    return width, fold_character(text)
+
+
 def _percent_edits(content: str, run: re.Match[str]) -> list[tuple[int, int, str]]:
     """The triplets in one run that decode safely, each with what it reads as."""
     raw = bytes.fromhex(run.group().replace("%", ""))
@@ -232,27 +253,12 @@ def _percent_edits(content: str, run: re.Match[str]) -> list[tuple[int, int, str
     edits: list[tuple[int, int, str]] = []
     index = 0
     while index < len(raw):
-        byte = raw[index]
-        width = 1
-        decoded = ""
-        if _ASCII_LOW <= byte <= _ASCII_HIGH:
-            decoded = chr(byte)
-        elif 0xC2 <= byte <= 0xF4:
-            width = 2 if byte < 0xE0 else 3 if byte < 0xF0 else 4
-            try:
-                text = raw[index : index + width].decode("utf-8")
-            except UnicodeDecodeError:
-                text = ""
-            if len(text) == 1 and ord(text) >= _FIRST_DECODED:
-                decoded = fold_character(text)
-            else:
-                width, decoded = 1, ""
-                index += 1
-                continue
-        else:
+        decoded = _decoded_at(raw, index)
+        if decoded is None:
             index += 1
             continue
-        edits.append((base + 3 * index, base + 3 * (index + width), decoded))
+        width, reading = decoded
+        edits.append((base + 3 * index, base + 3 * (index + width), reading))
         index += width
     return edits
 
