@@ -9,9 +9,9 @@ Its version is this module's, not the primitive's, because what a caller pins
 when they pin `rules` is the behaviour of this registration: the name on the
 verdict, the default decision, and which directions it declares.
 
-Cost, and the shape of it. Near-linear in the content length. 275 ms median for
+Cost, and the shape of it. Near-linear in the content length. 273 ms median for
 one megabyte of the seeded input recorded in `docs/performance.md`, on an Apple
-M3 Max under CPython 3.14.5, with the median rising 4.20x over the last 4x step
+M3 Max under CPython 3.14.5, with the median rising 4.08x over the last 4x step
 of input rather than 4.0x. The drift is span merging over a finding count that
 grows faster than the input does, not the scan.
 

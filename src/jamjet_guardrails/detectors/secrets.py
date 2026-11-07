@@ -9,7 +9,7 @@ about their own bytes, so anything that keeps one and walks past the other
 leaves the other's bytes in the output. In a redactor an ambiguous span has to
 resolve toward more redaction, never less.
 
-Cost, and the shape of it. Linear in the content length from 16 KB up. 20.2 ms
+Cost, and the shape of it. Linear in the content length from 16 KB up. 25.3 ms
 median for one megabyte of the seeded input recorded in `docs/performance.md`, on
 an Apple M3 Max under CPython 3.14.5, rising 4.0x per 4x of input; below 16 KB
 fixed overhead dominates and the ratios are smaller. It was 4.7 ms before the
@@ -529,7 +529,7 @@ class SecretsGuardrail:
         took a whole credential past this check, and past every other check in
         the output chain with it. The spans still index into the content.
         """
-        return matched_both_ways(content, _claims)
+        return matched_both_ways(content, _claims, marks=True)
 
     def check(self, content: str, context: Context) -> Verdict:
         provenance = Provenance(kind="constraint", detector=self.name, version=self.version)

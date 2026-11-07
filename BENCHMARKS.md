@@ -8,11 +8,11 @@ every score. How to read them is under the table.
 | confusables | confusables/in-repo | in-repo | `e53f03d3527e` | 115 | 0.942 | 0.891 | 0.916 | 49 | 3 | 6 | 9 |
 | encoded-content | encoded-content/in-repo | in-repo | `ffddd0cd3c29` | 81 | 1.000 | 0.875 | 0.933 | 35 | 0 | 5 | 5 |
 | injection-structural | injection-structural/in-repo | in-repo | `635fcdcd46c2` | 178 | 0.967 | 0.892 | 0.928 | 116 | 4 | 14 | 8 |
-| pii | pii/in-repo | in-repo | `af3d99fc8758` | 101 | 0.671 | 0.911 | 0.773 | 51 | 25 | 5 | 24 |
+| pii | pii/in-repo | in-repo | `a42702feacef` | 108 | 0.691 | 0.918 | 0.789 | 56 | 25 | 5 | 24 |
 | pii | pii/third-party | nvidia/Nemotron-PII@b70ffaf | `c25ef538d677` | 300 | 0.960 | 0.997 | 0.978 | 340 | 14 | 1 | 6 |
 | rules | rules/in-repo | in-repo | `e9c84e60d79e` | 46 | 1.000 | 0.969 | 0.984 | 31 | 0 | 1 | 1 |
 | script-constraint | script-constraint/in-repo | in-repo | `1e1374cfecc3` | 85 | 0.960 | 0.980 | 0.970 | 48 | 2 | 1 | 0 |
-| secrets | secrets/in-repo | in-repo | `ffc4d7ce8979` | 174 | 0.889 | 0.881 | 0.885 | 104 | 13 | 14 | 8 |
+| secrets | secrets/in-repo | in-repo | `f6b5be59464c` | 182 | 0.893 | 0.879 | 0.886 | 109 | 13 | 15 | 9 |
 | template-integrity | template-integrity/in-repo | in-repo | `afb0a7245664` | 152 | 0.820 | 0.965 | 0.886 | 109 | 24 | 4 | 19 |
 | url-exfiltration | url-exfiltration/in-repo | in-repo | `d1007078b258` | 100 | 0.929 | 0.929 | 0.929 | 39 | 3 | 3 | 6 |
 
@@ -101,14 +101,14 @@ above clamped it.
 | VARIATION_SELECTOR_SMUGGLING | 0.929 | 1.000 | 13 | 1 | 0 |
 | ZERO_WIDTH_SMUGGLING | 0.985 | 0.825 | 66 | 1 | 14 |
 
-## Per type: pii on pii/in-repo (in-repo, `af3d99fc8758`)
+## Per type: pii on pii/in-repo (in-repo, `a42702feacef`)
 
 | Type | Precision | Recall | TP | FP | FN |
 |---|---:|---:|---:|---:|---:|
-| CREDIT_CARD | 0.737 | 0.875 | 14 | 5 | 2 |
-| EMAIL | 0.500 | 0.895 | 17 | 17 | 2 |
-| PHONE_NUMBER | 0.818 | 1.000 | 9 | 2 | 0 |
-| US_SSN | 0.917 | 0.917 | 11 | 1 | 1 |
+| CREDIT_CARD | 0.750 | 0.882 | 15 | 5 | 2 |
+| EMAIL | 0.528 | 0.905 | 19 | 17 | 2 |
+| PHONE_NUMBER | 0.833 | 1.000 | 10 | 2 | 0 |
+| US_SSN | 0.923 | 0.923 | 12 | 1 | 1 |
 
 ## Per type: pii on pii/third-party (nvidia/Nemotron-PII@b70ffaf, `c25ef538d677`)
 
@@ -134,17 +134,17 @@ above clamped it.
 |---|---:|---:|---:|---:|---:|
 | DISALLOWED_SCRIPT | 0.960 | 0.980 | 48 | 2 | 1 |
 
-## Per type: secrets on secrets/in-repo (in-repo, `ffc4d7ce8979`)
+## Per type: secrets on secrets/in-repo (in-repo, `f6b5be59464c`)
 
 | Type | Precision | Recall | TP | FP | FN |
 |---|---:|---:|---:|---:|---:|
-| ANTHROPIC_KEY | 0.900 | 0.818 | 9 | 1 | 2 |
+| ANTHROPIC_KEY | 0.909 | 0.833 | 10 | 1 | 2 |
 | AWS_ACCESS_KEY | 0.964 | 1.000 | 27 | 1 | 0 |
-| GITHUB_TOKEN | 0.870 | 0.800 | 20 | 3 | 5 |
+| GITHUB_TOKEN | 0.880 | 0.786 | 22 | 3 | 6 |
 | JWT | 0.846 | 0.846 | 11 | 2 | 2 |
-| OPENAI_KEY | 0.867 | 0.929 | 13 | 2 | 1 |
+| OPENAI_KEY | 0.875 | 0.933 | 14 | 2 | 1 |
 | PRIVATE_KEY | 0.786 | 1.000 | 11 | 3 | 0 |
-| SLACK_TOKEN | 0.929 | 0.765 | 13 | 1 | 4 |
+| SLACK_TOKEN | 0.933 | 0.778 | 14 | 1 | 4 |
 
 ## Per type: template-integrity on template-integrity/in-repo (in-repo, `afb0a7245664`)
 
@@ -200,7 +200,7 @@ above clamped it.
 
 ...and 21 more, in `benchmarks.json`.
 
-## Worst misses: pii on pii/in-repo (in-repo, `af3d99fc8758`)
+## Worst misses: pii on pii/in-repo (in-repo, `a42702feacef`)
 
 | Case | Kind | Expected | Predicted |
 |---|---|---|---|
@@ -239,7 +239,7 @@ above clamped it.
 | `sc-0020` | false_positive | nothing | DISALLOWED_SCRIPT@(0, 5) |
 | `sc-0020` | false_positive | nothing | DISALLOWED_SCRIPT@(6, 7) |
 
-## Worst misses: secrets on secrets/in-repo (in-repo, `ffc4d7ce8979`)
+## Worst misses: secrets on secrets/in-repo (in-repo, `f6b5be59464c`)
 
 | Case | Kind | Expected | Predicted |
 |---|---|---|---|
@@ -249,7 +249,7 @@ above clamped it.
 | `sec-0034` | decision_mismatch | allow | redact |
 | `sec-0109` | decision_mismatch | redact | allow |
 
-...and 30 more, in `benchmarks.json`.
+...and 32 more, in `benchmarks.json`.
 
 ## Worst misses: template-integrity on template-integrity/in-repo (in-repo, `afb0a7245664`)
 

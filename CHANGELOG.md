@@ -133,11 +133,15 @@ a number that changes quietly is a number nobody can rely on.
 - **Published figures, old to new.** Each corpus gained the cases for the
   shapes under Fixed, positives and the negatives that hold the view down, so
   every version key below moved too.
-  - `secrets`: 0.881 / 0.873 over 160 cases, 8 wrong, to **0.889 / 0.881**
-    over 174, 8 wrong. The code before this change scores the 174 at 0.873 /
-    0.814 with 15 wrong.
-  - `pii` in-repo: 0.631 / 0.872 over 81, 24 wrong, to **0.671 / 0.911** over
-    101, 24 wrong (0.631 / 0.732 with 33 wrong before the change). The
+  - `secrets`: 0.881 / 0.873 over 160 cases, 8 wrong, to **0.893 / 0.879**
+    over 182, 9 wrong. The code before this change scores the first 174 of
+    them at 0.873 / 0.814 with 15 wrong; the last eight, combining marks,
+    dash variants and a token split by a line break, took the first version
+    of this change from 0.889 / 0.839 with 14 wrong to the published row.
+  - `pii` in-repo: 0.631 / 0.872 over 81, 24 wrong, to **0.691 / 0.918** over
+    108, 24 wrong (0.631 / 0.732 with 33 wrong on the first 101 before the
+    change; the last seven, dash variants and ideographic full stops, took
+    the first version of it from 0.675 / 0.853 with 28 wrong). The
     Nemotron row does not move: 0.960 / 0.997.
   - `url-exfiltration`: 0.923 / 0.923 over 94, 6 wrong, to **0.929 / 0.929**
     over 100, 6 wrong (0.923 / 0.857 with 9 wrong before the change). Every
@@ -147,8 +151,11 @@ a number that changes quietly is a number nobody can rely on.
     wrong. Under the old fixture and the old code the 46 score 1.000 / 0.906
     with 3 wrong.
 - **Published latency, old to new, per megabyte of the seeded input:**
-  `secrets` 4.7 to 20.2 ms, `pii` 207 to 459 ms, `rules` 731 to 275 ms (its
-  fixture no longer builds a skeleton), `url-exfiltration` 129.7 to 129.4 ms.
+  `secrets` 4.7 to 25.3 ms, `pii` 207 to 473 ms, `rules` 731 to 273 ms (its
+  fixture no longer builds a skeleton), `url-exfiltration` 129.7 to 123.3 ms,
+  each call timed cold. Dense non-ASCII input, a megabyte of fullwidth letters
+  or of `a` and U+200B alternating, gets its own table in
+  `docs/performance.md`: `secrets` 4.4 to 55 ms and 4.0 to 260 ms.
   That input carries zero-width spaces, so every row pays for the normalised
   view and a second scan; ASCII content with no `%` in it does not.
   `docs/performance.md` says which rows were re-measured and why.

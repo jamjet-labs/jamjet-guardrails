@@ -38,7 +38,7 @@ tried to tell parsing from fetching inside a package would be a guard nobody
 could check.
 
 Cost, and the shape of it. Linear in the content length: a fixed number of
-``finditer`` passes, then one bounded decode per URL component. 129 ms median
+``finditer`` passes, then one bounded decode per URL component. 123 ms median
 for one megabyte of the seeded input recorded in `docs/performance.md`, on an
 Apple M3 Max under CPython 3.14.5, rising 3.9x to 4.0x per 4x of input across
 the whole range from 1 KB. That input carries no URL, so the figure is the
@@ -548,7 +548,7 @@ def _readings(component: str) -> list[str]:
     reader can see, which is why the one-level rule on payloads still holds.
     """
     readings: dict[str, None] = {}
-    for plain in (_url_decoded(component), normalise(component).text.replace("+", " ")):
+    for plain in (_url_decoded(component), normalise(component, True).text.replace("+", " ")):
         readings[plain] = None
         for encoding in ("base64", "hex", "rot13"):
             text = decode(plain, encoding)
@@ -556,7 +556,7 @@ def _readings(component: str) -> list[str]:
                 readings[text] = None
     for reading in list(readings):
         if not reading.isascii():
-            readings["".join(map(fold_character, reading))] = None
+            readings["".join(fold_character(c, True) for c in reading)] = None
     return list(readings)
 
 

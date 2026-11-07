@@ -371,3 +371,118 @@ def test_a_space_separated_ssn_is_redacted(content: str) -> None:
 )
 def test_the_spaced_form_keeps_the_ssa_issuance_rules(content: str) -> None:
     assert PiiGuardrail().check(content, OUT).decision == "allow"
+
+
+# --- review round: marks, dashes, stops, newlines, scale, zero width ---------------
+
+_GH_MARKED = GHP[:12] + "̣" + GHP[12:20] + "́" + GHP[20:]
+_GH_STRUCK = "".join(c + "̶" for c in GHP)
+
+
+@pytest.mark.parametrize(
+    ("content", "covered", "kind"),
+    [
+        ("token " + _GH_MARKED, _GH_MARKED, "GITHUB_TOKEN"),
+        ("token " + _GH_STRUCK + " here", _GH_STRUCK, "GITHUB_TOKEN"),
+        (
+            "key sk‑ant‑api03‑EXAMPLEONLY0000notarealtoken0000",
+            "sk‑ant‑api03‑EXAMPLEONLY0000notarealtoken0000",
+            "ANTHROPIC_KEY",
+        ),
+        (
+            "key sk−proj−0000EXAMPLEONLY0000notarealtoken0000abcd",
+            "sk−proj−0000EXAMPLEONLY0000notarealtoken0000abcd",
+            "OPENAI_KEY",
+        ),
+        (
+            "bot xoxb–EXAMPLEONLY–notarealtoken–ac–0000000000",
+            "xoxb–EXAMPLEONLY–notarealtoken–ac–0000000000",
+            "SLACK_TOKEN",
+        ),
+    ],
+)
+def test_secrets_reads_through_marks_and_dashes(content: str, covered: str, kind: str) -> None:
+    verdict = SecretsGuardrail().check(content, OUT)
+    start = content.index(covered)
+    assert [(f.type, f.span) for f in verdict.findings] == [(kind, (start, start + len(covered)))]
+
+
+@pytest.mark.parametrize(
+    ("content", "covered", "kind"),
+    [
+        ("card 4111‑1111‑1111‑1111 on file", "4111‑1111‑1111‑1111", "CREDIT_CARD"),
+        ("ssn 123‑45‑6789 on file", "123‑45‑6789", "US_SSN"),
+        ("call 555–123–4567 today", "555–123–4567", "PHONE_NUMBER"),
+        ("mail alice@corp。com today", "alice@corp。com", "EMAIL"),
+        ("mail alice@corp｡com today", "alice@corp｡com", "EMAIL"),
+    ],
+)
+def test_pii_reads_through_dashes_and_ideographic_stops(
+    content: str, covered: str, kind: str
+) -> None:
+    verdict = PiiGuardrail().check(content, OUT)
+    start = content.index(covered)
+    assert [(f.type, f.span) for f in verdict.findings] == [(kind, (start, start + len(covered)))]
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "連絡は@tanaka。よろしくお願いします",
+        "pages 12–34, the 1990–2000 range, and 3−4",
+        "Tiếng Việt có dấu",
+        "東京〜大阪 1〜3日",
+    ],
+)
+def test_the_new_folds_leave_ordinary_text_alone(content: str) -> None:
+    for guardrail in (SecretsGuardrail(), PiiGuardrail()):
+        assert guardrail.check(content, OUT).decision == "allow", (guardrail.name, content)
+
+
+def test_a_token_split_by_a_line_break_is_a_disclosed_miss() -> None:
+    """Joining lines would join every line of a PEM body; `sec-0180` labels it."""
+    assert SecretsGuardrail().check("token " + GHP[:20] + "\n" + GHP[20:], OUT).decision == "allow"
+
+
+def test_a_view_of_dense_fullwidth_text_needs_no_map() -> None:
+    """A one-for-one replacement moves no offset, so a megabyte of it maps for free.
+
+    The first version of the map held an object per changed character, and a
+    megabyte of fullwidth letters cost 321 MB and 666 ms in `secrets`.
+    """
+    content = "Ａ" * 100_000
+    view = normalise(content, True)
+    assert view.text == "A" * 100_000
+    assert len(view.view_starts) == 0
+    alternating = "a\u200b" * 50_000
+    assert len(normalise(alternating, True).view_starts) == 50_000
+    assert len(normalise("\u200b" * 50_000, True).view_starts) == 1
+
+
+def test_the_view_is_built_once_per_content() -> None:
+    content = "token " + GHP[:20] + ZWSP + GHP[20:]
+    assert normalise(content, True) is normalise(content, True)
+
+
+def test_content_over_the_cap_is_refused_rather_than_allowed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from jamjet_guardrails import _normalise
+    from jamjet_guardrails.errors import GuardrailUnavailableError
+
+    monkeypatch.setattr(_normalise, "MAX_CHARS", 64)
+    _normalise.normalise.cache_clear()
+    content = "x" * 60 + "é" * 10
+    with pytest.raises(GuardrailUnavailableError):
+        SecretsGuardrail().check(content, OUT)
+    chain = build_chain(["secrets"])
+    assert chain.run(content, OUT).decision == "deny"
+    _normalise.normalise.cache_clear()
+
+
+def test_a_rule_that_can_match_empty_does_not_raise_on_non_ascii_content() -> None:
+    from jamjet_guardrails import PatternGuardrail
+
+    guardrail = PatternGuardrail(name="r", version="1", patterns={"Z": r"\ba*"})
+    verdict = guardrail.check("café \u200bx", OUT)
+    assert all(f.span is not None and f.span[0] == f.span[1] for f in verdict.findings)

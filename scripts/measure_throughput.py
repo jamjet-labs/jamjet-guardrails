@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import Any
 
 from jamjet_guardrails import Context
+from jamjet_guardrails._normalise import normalise
 from jamjet_guardrails.detectors import AVAILABLE, build
 from jamjet_guardrails.eval.fixtures import options_for
 from jamjet_guardrails.types import Direction
@@ -187,6 +188,12 @@ def measure(
 
     samples: list[float] = []
     for _ in range(repetitions):
+        # The normalised view `secrets`, `pii`, `rules` and `url-exfiltration`
+        # read is memoised per piece of content, so that the checks in one
+        # chain run build it once between them. Repeating one call on one
+        # string would otherwise time a cache hit from the second call on, and
+        # publish a cost no first call pays. Cleared outside the timed region.
+        normalise.cache_clear()
         start = time.perf_counter_ns()
         guardrail.check(content, context)
         samples.append((time.perf_counter_ns() - start) / 1_000_000)

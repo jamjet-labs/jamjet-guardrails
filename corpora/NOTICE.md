@@ -199,9 +199,21 @@ percent-encoded zero-width space inside an AWS key (`sec-0168`). Six are
 negatives the normalised view must leave alone: Japanese prose with fullwidth
 letters and digits, a search URL with ordinary escapes, `my%5Fconfig%5Fv2.yaml`,
 `AKIA` with a zero-width space before prose, format strings, and a fullwidth
-`ｓｋ－ｌｅａｒｎ`. Over the 174 cases the row is 0.889 precision and 0.881 recall
+`ｓｋ－ｌｅａｒｎ`. Over those 174 cases the row was 0.889 precision and 0.881 recall
 with 8 wrong decisions; over these cases on the code before the change it is
 0.873 and 0.814 with 15.
+
+**Eight more were added after review, and one of them is a miss.** `sec-0175`
+and `sec-0176` are a GitHub token with a dot below and an acute accent on two
+of its letters, and the same token struck through, U+0336 after every
+character; `sec-0177` to `sec-0179` are an Anthropic, an OpenAI and a Slack
+value whose hyphens are U+2011, U+2212 and U+2013. All five allowed until the
+view `secrets` reads dropped combining marks and wrote every dash as `-`.
+`sec-0181` and `sec-0182` are the negatives: page and year ranges with en dashes
+and a minus sign, and Vietnamese written decomposed. `sec-0180` is a GitHub
+token split by a line break, labelled `redact` and allowed: joining lines in the
+view would join every line of a PEM body, so it is disclosed rather than
+half-fixed. 182 cases, 0.893 precision and 0.879 recall with 9 wrong decisions.
 
 **What the 39 could not see, measured rather than argued.** `_scan` in
 `src/jamjet_guardrails/_spans.py` tries every start position instead of resuming
@@ -215,7 +227,7 @@ Critical is about was in none of them. The 160 score 0.884 and 0.827, five
 findings lost. A corpus that cannot tell a fixed detector from the bug it was
 fixed for is not measuring the fix.
 
-**The disclosed misses: seventeen cases, and every one of them is labelled with
+**The disclosed misses: eighteen cases, and every one of them is labelled with
 what SHOULD happen.** `docs/conformance.md` groups them into eight classes and
 gives one worked input per class; they are named here by id so that a case
 cannot quietly leave the file, and
@@ -232,6 +244,8 @@ is what stops one being relabelled onto the detector's own output.
   the credential is redacted in full and the audit record is what is wrong,
   which is why they are scored rather than described: a corpus that counted
   coverage instead of findings would report all nine as successes.
+- **A token split by a line break, one case.** `sec-0180`; the view does not
+  join lines, for the reason given above.
 - **Complete misses, five cases.** `github_pat_` fine-grained tokens
   (`sec-0020`, `sec-0109`), `xapp-` Slack app-level tokens (`sec-0021`) and
   `xoxe-` Slack refresh tokens (`sec-0110`) are shapes the pattern table has
@@ -763,7 +777,7 @@ dotted tail that reads as a TLD (`img@sha256.abcdef`, `build@node.js18`). That
 shape was measured at zero occurrences across 400 MB of source, logs, lockfiles
 and docs, so it is close to absent from ordinary text and is heavily
 over-represented here on purpose. The same corpus without those sixteen cases
-scores 0.850 precision against the 0.671 it publishes. Neither figure is wrong;
+scores 0.862 precision against the 0.691 it publishes. Neither figure is wrong;
 they answer different questions, and only the third-party corpus answers "what
 happens on realistic documents".
 
@@ -784,9 +798,19 @@ signs. The space-separated SSN, `pii-0032`, was a disclosed miss and is matched
 now, under the issuance rules; `pii-0094` to `pii-0099` are the area, group,
 serial and neighbouring-group shapes those rules turn away, `pii-0100` is the
 SSN with no-break spaces, and `pii-0101`, `512 64 1024`, is the false positive
-the change costs, labelled `allow` so the row pays for it. 101 cases now, 0.671
-precision and 0.911 recall; the same cases scored 0.631 and 0.732 on the code
-before the change.
+the change costs, labelled `allow` so the row pays for it. Those 101 cases scored
+0.671 precision and 0.911 recall; the same cases scored 0.631 and 0.732 on the
+code before the change.
+
+**Seven more were added after review, for dashes, stops and marks.** A card, an
+SSN and a telephone number written with U+2011 or U+2013 between their groups,
+and an address whose dot is an ideographic full stop, `pii-0102` to
+`pii-0105`, allowed until every dash in the view became `-` and an ideographic
+full stop between two ASCII letters or digits became `.`. `pii-0106` is the
+negative that bounds the second fold: Japanese prose with an `@` mention ending
+in `。`. `pii-0107` is Japanese with wave dashes and an en dash between numbers,
+and `pii-0108` an address written decomposed, which must stay one finding. 108
+cases, 0.691 precision and 0.918 recall with 24 wrong decisions.
 
 **Some of those false positives are the right redaction under the wrong type.**
 An IMEI carries a Luhn check digit and begins 49, inside Visa's range, so

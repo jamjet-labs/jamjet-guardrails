@@ -530,8 +530,19 @@ three steps, each defined by a published property:
 2. **Every Default_Ignorable_Code_Point is removed**, which is the zero-width characters, the bidi
    controls and marks, the word joiner and invisible operators, the variation selectors, the Hangul
    fillers, the soft hyphen and the tag block. It is the same table `injection-structural` counts.
-3. **NFKC, one code point at a time.** Canonical composition across two code points is not
-   performed, which no pattern here can see, and in exchange the offset map is exact.
+3. **NFKC, one code point at a time, then three folds.** Every dash, Dash_Punctuation or U+2212,
+   reads as `-`. An ideographic full stop between two ASCII letters or digits reads as `.`, and
+   nowhere else, so `@tanaka。よろしく` in Japanese prose stays prose. For `secrets` and `pii` the
+   form is NFKD and every combining mark, Mn or Me, is dropped, so a token with a dot below one
+   letter, or struck through with U+0336, is the token; `rules` keeps marks, because a banned word
+   and the same word with a diacritic can be two words. Canonical composition across two code
+   points is not performed, which no pattern here can see, and in exchange the offset map is exact.
+
+A view is built once per piece of content and shared by every check in a chain run. Content over
+16,000,000 code points is refused by every check that reads the view, which the chain records as a
+deny: a check that cannot read content does not report it clean. A token split by a line break is
+not joined, because joining lines would join every line of a PEM body; `sec-0180` is that miss.
+A finding that ends on a marked character extends over its marks.
 
 A span found in the view maps back from the first source character of its first view character
 through the last source character of its last one, so a removed character inside the match is

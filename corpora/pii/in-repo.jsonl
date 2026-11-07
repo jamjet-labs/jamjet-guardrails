@@ -99,3 +99,10 @@
 {"id": "pii-0099", "text": "sizes 10 512 64 1024 2048 in one row", "direction": "output", "expect": {"decision": "allow", "findings": []}, "source": "in-repo", "license": "Apache-2.0"}
 {"id": "pii-0100", "text": "ssn 123\u00a045\u00a06789 on file", "direction": "output", "expect": {"decision": "redact", "findings": [{"type": "US_SSN", "span": [4, 15]}]}, "source": "in-repo", "license": "Apache-2.0"}
 {"id": "pii-0101", "text": "buffer sizes 512 64 1024 for the three tiers", "direction": "output", "expect": {"decision": "allow", "findings": []}, "source": "in-repo", "license": "Apache-2.0"}
+{"id": "pii-0102", "text": "card 4111\u20111111\u20111111\u20111111 on file", "direction": "output", "expect": {"decision": "redact", "findings": [{"type": "CREDIT_CARD", "span": [5, 24]}]}, "source": "in-repo", "license": "Apache-2.0"}
+{"id": "pii-0103", "text": "ssn 123\u201145\u20116789 on file", "direction": "output", "expect": {"decision": "redact", "findings": [{"type": "US_SSN", "span": [4, 15]}]}, "source": "in-repo", "license": "Apache-2.0"}
+{"id": "pii-0104", "text": "call 555\u2013123\u20134567 today", "direction": "output", "expect": {"decision": "redact", "findings": [{"type": "PHONE_NUMBER", "span": [5, 17]}]}, "source": "in-repo", "license": "Apache-2.0"}
+{"id": "pii-0105", "text": "mail alice@corp\u3002com today", "direction": "output", "expect": {"decision": "redact", "findings": [{"type": "EMAIL", "span": [5, 19]}]}, "source": "in-repo", "license": "Apache-2.0"}
+{"id": "pii-0106", "text": "\u9023\u7d61\u306f@tanaka\u3002\u3088\u308d\u3057\u304f\u304a\u9858\u3044\u3057\u307e\u3059", "direction": "output", "expect": {"decision": "allow", "findings": []}, "source": "in-repo", "license": "Apache-2.0"}
+{"id": "pii-0107", "text": "\u6771\u4eac\u301c\u5927\u962a\u30011\u301c3\u65e5\u3001123\u201345", "direction": "output", "expect": {"decision": "allow", "findings": []}, "source": "in-repo", "license": "Apache-2.0"}
+{"id": "pii-0108", "text": "mail jose\u0301@exa\u0301mple.com today", "direction": "output", "expect": {"decision": "redact", "findings": [{"type": "EMAIL", "span": [5, 23]}]}, "source": "in-repo", "license": "Apache-2.0"}

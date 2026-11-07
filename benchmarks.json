@@ -449,41 +449,41 @@
       "detector_version": "0.2.0",
       "corpus_name": "pii/in-repo",
       "corpus_source": "in-repo",
-      "corpus_version": "af3d99fc8758",
-      "cases": 101,
-      "precision": 0.6711,
-      "recall": 0.9107,
-      "f1": 0.7727,
-      "true_positives": 51,
+      "corpus_version": "a42702feacef",
+      "cases": 108,
+      "precision": 0.6914,
+      "recall": 0.918,
+      "f1": 0.7887,
+      "true_positives": 56,
       "false_positives": 25,
       "false_negatives": 5,
       "decision_mismatches": 24,
       "per_type": {
         "CREDIT_CARD": {
-          "precision": 0.7368,
-          "recall": 0.875,
-          "true_positives": 14,
+          "precision": 0.75,
+          "recall": 0.8824,
+          "true_positives": 15,
           "false_positives": 5,
           "false_negatives": 2
         },
         "EMAIL": {
-          "precision": 0.5,
-          "recall": 0.8947,
-          "true_positives": 17,
+          "precision": 0.5278,
+          "recall": 0.9048,
+          "true_positives": 19,
           "false_positives": 17,
           "false_negatives": 2
         },
         "PHONE_NUMBER": {
-          "precision": 0.8182,
+          "precision": 0.8333,
           "recall": 1.0,
-          "true_positives": 9,
+          "true_positives": 10,
           "false_positives": 2,
           "false_negatives": 0
         },
         "US_SSN": {
-          "precision": 0.9167,
-          "recall": 0.9167,
-          "true_positives": 11,
+          "precision": 0.9231,
+          "recall": 0.9231,
+          "true_positives": 12,
           "false_positives": 1,
           "false_negatives": 1
         }
@@ -1096,20 +1096,20 @@
       "detector_version": "0.2.0",
       "corpus_name": "secrets/in-repo",
       "corpus_source": "in-repo",
-      "corpus_version": "ffc4d7ce8979",
-      "cases": 174,
-      "precision": 0.8889,
-      "recall": 0.8814,
-      "f1": 0.8851,
-      "true_positives": 104,
+      "corpus_version": "f6b5be59464c",
+      "cases": 182,
+      "precision": 0.8934,
+      "recall": 0.879,
+      "f1": 0.8862,
+      "true_positives": 109,
       "false_positives": 13,
-      "false_negatives": 14,
-      "decision_mismatches": 8,
+      "false_negatives": 15,
+      "decision_mismatches": 9,
       "per_type": {
         "ANTHROPIC_KEY": {
-          "precision": 0.9,
-          "recall": 0.8182,
-          "true_positives": 9,
+          "precision": 0.9091,
+          "recall": 0.8333,
+          "true_positives": 10,
           "false_positives": 1,
           "false_negatives": 2
         },
@@ -1121,11 +1121,11 @@
           "false_negatives": 0
         },
         "GITHUB_TOKEN": {
-          "precision": 0.8696,
-          "recall": 0.8,
-          "true_positives": 20,
+          "precision": 0.88,
+          "recall": 0.7857,
+          "true_positives": 22,
           "false_positives": 3,
-          "false_negatives": 5
+          "false_negatives": 6
         },
         "JWT": {
           "precision": 0.8462,
@@ -1135,9 +1135,9 @@
           "false_negatives": 2
         },
         "OPENAI_KEY": {
-          "precision": 0.8667,
-          "recall": 0.9286,
-          "true_positives": 13,
+          "precision": 0.875,
+          "recall": 0.9333,
+          "true_positives": 14,
           "false_positives": 2,
           "false_negatives": 1
         },
@@ -1149,9 +1149,9 @@
           "false_negatives": 0
         },
         "SLACK_TOKEN": {
-          "precision": 0.9286,
-          "recall": 0.7647,
-          "true_positives": 13,
+          "precision": 0.9333,
+          "recall": 0.7778,
+          "true_positives": 14,
           "false_positives": 1,
           "false_negatives": 4
         }
@@ -1204,6 +1204,12 @@
           "kind": "decision_mismatch",
           "expected": "allow",
           "predicted": "redact"
+        },
+        {
+          "case_id": "sec-0180",
+          "kind": "decision_mismatch",
+          "expected": "redact",
+          "predicted": "allow"
         },
         {
           "case_id": "sec-0020",
@@ -1287,6 +1293,12 @@
           "case_id": "sec-0110",
           "kind": "false_negative",
           "expected": "SLACK_TOKEN@(14, 69)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "sec-0180",
+          "kind": "false_negative",
+          "expected": "GITHUB_TOKEN@(6, 47)",
           "predicted": "nothing"
         },
         {

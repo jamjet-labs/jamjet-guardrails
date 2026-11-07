@@ -14,7 +14,7 @@ output. In a redactor an ambiguous span has to resolve toward more redaction,
 never less.
 
 Cost, and the shape of it. Linear in the content length, and this is the slowest
-check in the package. 459 ms median for one megabyte of the seeded input recorded
+check in the package. 473 ms median for one megabyte of the seeded input recorded
 in `docs/performance.md`, on an Apple M3 Max under CPython 3.14.5, rising 4.0x
 per 4x of input across the whole range from 1 KB. It was 207 ms before the check
 also matched over the normalised view, which that input always needs because it
@@ -377,7 +377,7 @@ class PiiGuardrail:
         value past this check and past the rest of the output chain. The spans
         still index into the content.
         """
-        return matched_both_ways(content, self._claims)
+        return matched_both_ways(content, self._claims, marks=True)
 
     def _claims(self, text: str) -> list[tuple[str, tuple[int, int]]]:
         """Every span every selected pattern claims in one string."""

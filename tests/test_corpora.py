@@ -387,7 +387,7 @@ _RECORDS_A_MISS = {
     # The confusable-dodged codename, caught only with `fold_confusables=True`,
     # which the published row now leaves at its default.
     "rules": ("rules-0041",),
-    # Seventeen, and the twelve added when the corpus grew from 39 cases to 160
+    # Eighteen, and the twelve added when the corpus grew from 39 cases to 160
     # are mostly SPAN ARITHMETIC rather than leaks: the credential is redacted in
     # full and the audit record is what is wrong. They are here because a corpus
     # that scored coverage instead of findings would report every one of them as
@@ -409,6 +409,7 @@ _RECORDS_A_MISS = {
         "sec-0107",  # a GitHub body swallowing the AWS key joined to its end
         "sec-0109",  # github_pat_ again, this time as a YAML value
         "sec-0110",  # xoxe- Slack refresh tokens are in no pattern here either
+        "sec-0180",  # a token split by a line break, which the view does not join
         "sec-0158",  # a PEM header in prose, second shape
         "sec-0159",  # a PEM header in prose, third shape
     ),
@@ -502,7 +503,7 @@ def test_a_disclosed_secrets_shape_is_in_the_corpus_and_in_the_notice(case_id: s
     """Present, and named where the disclosure lives. Either half alone is half
     a disclosure: a case dropped from the file leaves the notice describing
     evidence that is not there, and an id dropped from the notice leaves a case
-    whose label reads as an ordinary expectation, which for these seventeen it
+    whose label reads as an ordinary expectation, which for these eighteen it
     is not.
 
     The notice is the file that carries the ids because it is the file that

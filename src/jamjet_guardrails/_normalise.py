@@ -29,17 +29,21 @@ published property rather than by a list somebody keeps:
    bidi embedding, override and isolate controls, the directional marks, the
    word joiner and invisible operators, the variation selectors, the Hangul
    fillers, the soft hyphen and the tag block.
-3. **NFKC, one code point at a time.** Compatibility decomposition is what folds
-   fullwidth and mathematical letters and digits, ideographic and no-break
-   spaces, and the fullwidth `＠` back to what they are compatible with.
+3. **NFKC, one code point at a time, then three folds a reader makes.** Every
+   dash, Dash_Punctuation or U+2212 MINUS SIGN, reads as `-`; an ideographic
+   full stop between two ASCII letters or digits reads as `.`; and, for the
+   checks that ask for it, every combining mark is dropped after NFKD instead
+   of NFKC, so an accented letter reads as its base letter and a mark stacked
+   on every character of a token reads as nothing. `fold_character` says which
+   checks ask and why `rules` does not.
 
 Per CODE POINT, and the difference from string NFKC is stated rather than hidden:
-canonical COMPOSITION across two code points is not performed, so `e` followed
-by U+0301 stays two code points here while string NFKC makes one. Every built-in
-pattern this view feeds matches ASCII or `\\w` plus combining marks, which read
-the two spellings alike; a caller's rule that depends on composed text still
-matches the content as written, which is scanned too. In exchange the offset map
-is exact and needs no reordering.
+canonical COMPOSITION across two code points is not performed. With marks kept,
+`e` followed by U+0301 stays two code points here while string NFKC makes one;
+`rules` keeps marks, and a caller's pattern that depends on composed text still
+matches the content as written, which is scanned too. With marks dropped, which
+is what `secrets` and `pii` read, the mark is gone and the question does not
+arise. In exchange the offset map is exact and needs no reordering.
 
 **Confusable folding is not a step here, and the reason is the definition.** The
 UTS #39 skeleton maps ASCII to ASCII as well: `I` and `1` fold to `l`, `0` to
@@ -53,9 +57,23 @@ over the content.
 as well as this view (`matched_both_ways`), so a pattern that matches the bytes
 as written, an invisible character a rule names on purpose for instance, still
 matches. A raw finding is replaced only by a longer one of its own type over
-the same credential. When nothing in the content needs normalising the view IS
-the content and the second scan does not happen, which is the common case:
-ASCII without a `%` costs one `str.isascii` and one substring test.
+the same credential.
+
+**What takes the slow path.** Content that is ASCII with no `%` in it is its own
+view, and costs one `str.isascii` and one substring test. Anything else is
+walked: one regex pass for runs of non-ASCII code points and percent triplets,
+then each run's distinct code points folded once. That includes content that
+needs nothing changed, an emoji carrying U+FE0F or a ZWJ, any `%20`, any
+accented letter, so the slow path is the ordinary one for most text that is not
+plain ASCII. It is linear, the map holds only edits that change length, and
+the view is built once per piece of content and shared by every check in a
+chain run. Content over `MAX_CHARS` is refused rather than read, by every check
+that reads the view.
+
+**What still passes.** A token split by a line break is two lines to this view,
+because joining lines would also join every line of a PEM body and every
+wrapped paragraph; the corpora carry the case as a labelled miss. Confusable
+letters inside a credential, for the reason above.
 
 **`injection-structural` does not read this view and must not.** Its job is to
 report the very characters step 2 removes. What it shares is the table, so one
@@ -70,25 +88,34 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from array import array
 from bisect import bisect_right
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from functools import lru_cache
 
+from jamjet_guardrails.errors import GuardrailUnavailableError
+
 # What a check hands `matched_both_ways`: a function from a string to the
 # `(type, span)` pairs it claims in that string.
 Scan = Callable[[str], Iterable[tuple[str, tuple[int, int]]]]
 
-# A maximal run of percent triplets, and a maximal run of non-ASCII code points.
-# Neither can overlap the other, because a triplet is ASCII, so the edits the two
-# produce never contend for one source character.
+# The largest content a view is built for. Above it the checks that read the
+# view refuse rather than allow: a check that cannot inspect content must not
+# report it clean. Sixteen million code points is four times the largest
+# context window any model this package is used with accepts, and it keeps
+# every offset in the map inside a 32-bit integer.
+MAX_CHARS = 16_000_000
+
+# One pass finds both things that can change: a run of percent triplets, or a
+# run of non-ASCII code points. They cannot overlap, because a triplet is ASCII,
+# and finding them with one pattern hands them over in source order, which is
+# the order the offset map is built in.
 #
-# The run is spelled with its first triplet outside the repeat on purpose. As
-# `(?:%XX)+` the pattern has no literal prefix, so the engine tried it at every
-# position and cost 13.7 ms on a megabyte with no `%` in it; led by a literal
-# `%` it is found by a fast scan for that character, 0.28 ms on the same input.
-_PERCENT_RUN = re.compile(r"%[0-9A-Fa-f]{2}(?:%[0-9A-Fa-f]{2})*")
-_NON_ASCII_RUN = re.compile(r"[^\x00-\x7f]+")
+# The percent alternative is spelled with its first triplet outside the repeat
+# on purpose. As `(?:%XX)+` it had no literal prefix and cost 13.7 ms on a
+# megabyte with no `%` in it; led by a literal it is found by a fast scan.
+_CHANGEABLE = re.compile(r"%[0-9A-Fa-f]{2}(?:%[0-9A-Fa-f]{2})*|[^\x00-\x7f]+")
 
 # Printable ASCII, the single-byte triplets that are decoded. Space is in, so a
 # card written `4111%201111%201111%201111` reads as the card it is; every control
@@ -99,6 +126,17 @@ _ASCII_HIGH = 0x7E
 # decodes below it is a C1 control and stays encoded, for the reason the C0
 # controls do.
 _FIRST_DECODED = 0xA0
+
+# The two categories of combining mark, the ones `marks` drops.
+_MARKS = ("Mn", "Me")
+
+# U+2212 MINUS SIGN is Sm, not Pd, and reads as a hyphen in every font.
+_MINUS = "\u2212"
+# An ideographic full stop between two ASCII letters or digits reads as the dot
+# of a host name: `corp。com`. Only there: in Japanese prose it ends a sentence,
+# and `@tanaka。よろしく` must not become an address. U+FF61, the halfwidth form,
+# reaches this as U+3002 through NFKC.
+_IDEOGRAPHIC_STOP = re.compile("(?<=[A-Za-z0-9])\u3002(?=[A-Za-z0-9])")
 
 
 @lru_cache(maxsize=1)
@@ -118,99 +156,99 @@ def _ignorable() -> frozenset[str]:
     )
 
 
-@lru_cache(maxsize=1)
-def _ignorable_pattern() -> re.Pattern[str]:
-    """One character class over the same table, for the fast path's test."""
-    from jamjet_guardrails.detectors.injection_structural import _DEFAULT_IGNORABLE
+@lru_cache(maxsize=16384)
+def fold_character(character: str, marks: bool = False) -> str:
+    """What one code point reads as.
 
-    ranges = "".join(
-        f"{re.escape(chr(low))}-{re.escape(chr(high))}" for low, high in _DEFAULT_IGNORABLE
-    )
-    return re.compile(f"[{ranges}]")
+    Nothing if it renders as nothing. Otherwise its compatibility form with
+    every default-ignorable code point removed and every dash, Pd or U+2212,
+    written `-`, because `sk‐ant‐` with U+2010 and `123–45–6789` with U+2013
+    read as the hyphenated values they spell.
 
+    With ``marks``, the form is NFKD and every combining mark, Mn or Me, is
+    removed as well, so an accented letter reads as its base letter and a mark
+    stacked on a character, U+0336 on every character of a token for instance,
+    reads as nothing. `secrets` and `pii` ask for that: their patterns are ASCII,
+    and a credential with a dot below one of its letters is the credential.
+    `rules` does not, because a banned word and the same word with a diacritic
+    can be two words (`año`, `ano`), and a caller's rule is about words.
 
-@lru_cache(maxsize=4096)
-def fold_character(character: str) -> str:
-    """What one code point reads as: nothing if it renders as nothing, else its NFKC.
+    Without ``marks`` the form is NFKC, so a precomposed letter stays itself.
 
-    The NFKC result is filtered as well, and today that filter changes nothing:
-    swept over the whole code space, no code point outside the table has an NFKC
-    that contains one inside it (U+FFA0 maps to U+1160, and both are in the
-    table, so the first test already returns). It stays because the table and
-    the interpreter's normalisation data are versioned separately, and a mapping
-    added later would otherwise put an invisible character back into the view.
-    `tests/test_normalise.py` holds the sweep.
-
-    Memoised because the answer depends on the code point alone and prose in any
-    one script asks about the same few hundred of them.
+    Memoised because the answer depends on the code point and the flag alone.
     """
     ignorable = _ignorable()
     if character in ignorable:
         return ""
-    return "".join(c for c in unicodedata.normalize("NFKC", character) if c not in ignorable)
-
-
-@dataclass(frozen=True, slots=True)
-class _Edit:
-    """One stretch of the source that the view spells differently."""
-
-    source_start: int
-    source_end: int
-    view_start: int
-    view_end: int
+    folded: list[str] = []
+    for produced in unicodedata.normalize("NFKD" if marks else "NFKC", character):
+        if produced in ignorable:
+            continue
+        category = unicodedata.category(produced)
+        if marks and category in _MARKS:
+            continue
+        folded.append("-" if category == "Pd" or produced == _MINUS else produced)
+    return "".join(folded)
 
 
 @dataclass(frozen=True, slots=True)
 class Normalised:
     """The view, and the way from any span in it back to the source.
 
-    Stored as the EDITS rather than as an index per character. Between two edits
-    the view and the source agree character for character, offset by a constant,
-    so a map needs one entry per change rather than one per character, and a
-    megabyte of ordinary text costs a megabyte of view and nothing else.
+    The map holds only the edits that change LENGTH: a removed character, a
+    character that expanded, a percent triplet. A character replaced by exactly
+    one other, a fullwidth letter by its ASCII form for instance, moves no
+    offset, so it needs no entry, and a megabyte of fullwidth text costs a
+    megabyte of view and an empty map. Consecutive removals are one entry. The
+    four columns are 32-bit arrays rather than objects, which is what keeps a
+    megabyte with an invisible character between every two letters at a few
+    megabytes of map instead of hundreds.
     """
 
     text: str
     source_length: int
-    edits: tuple[_Edit, ...]
-    _view_starts: tuple[int, ...]
+    changed: bool
+    source_starts: array[int]
+    source_ends: array[int]
+    view_starts: array[int]
+    view_ends: array[int]
 
     @property
     def identity(self) -> bool:
         """Whether the view is the source, so a second scan would find nothing new."""
-        return not self.edits
+        return not self.changed
 
     def _source_of(self, index: int) -> tuple[int, int]:
         """The source run that produced the view character at ``index``.
 
-        The LAST edit starting at or before ``index``. Several edits can start at
-        one view offset, because a deletion occupies no view characters: a
-        zero-width space followed by a fullwidth letter is a deletion at view 5
-        and a replacement at view 5. `bisect_right` picks the later one, and the
-        later one is the one that produced the character there.
+        The LAST edit starting at or before ``index``. Several can start at one
+        view offset, because a removal occupies no view characters: a removed
+        zero-width space followed by an expanded ligature is a removal at view 5
+        and an expansion at view 5, and the later one produced the character.
         """
-        position = bisect_right(self._view_starts, index) - 1
+        position = bisect_right(self.view_starts, index) - 1
         if position < 0:
             return index, index + 1
-        edit = self.edits[position]
-        if index < edit.view_end:
-            return edit.source_start, edit.source_end
-        source = edit.source_end + (index - edit.view_end)
+        if index < self.view_ends[position]:
+            return self.source_starts[position], self.source_ends[position]
+        source = self.source_ends[position] + (index - self.view_ends[position])
         return source, source + 1
+
+    def offset(self, index: int) -> int:
+        """The source offset a zero-width position in the view stands for."""
+        if index >= len(self.text):
+            return self.source_length
+        return self._source_of(index)[0]
 
     def span(self, start: int, end: int) -> tuple[int, int]:
         """The source span covering the half-open view span ``[start, end)``.
 
         From the first source character of the first view character through the
-        last source character of the last one. A deleted character INSIDE the
-        match therefore lies inside the span, which is what a redaction needs: a
-        token reported as rewritten must not leave the launderer's zero-width
-        space standing in the middle of the placeholder's neighbours. A deleted
-        character just outside the match is outside the span.
-
-        A view character produced by several source characters, a percent
-        triplet or a multi-byte sequence of them, maps to all of them, so a span
-        never cuts `%5F` into `%5` and a stray `F`.
+        last source character of the last one. A removed character INSIDE the
+        match is therefore inside the span, which is what a redaction needs, and
+        one just outside the match is outside it. A view character produced by
+        several source characters, a percent triplet for instance, maps to all of
+        them, so a span never cuts `%5F` into `%5` and a stray `F`.
         """
         if start >= end:
             raise ValueError(
@@ -225,7 +263,7 @@ class Normalised:
         return self._source_of(start)[0], self._source_of(end - 1)[1]
 
 
-def _decoded_at(raw: bytes, index: int) -> tuple[int, str] | None:
+def _decoded_at(raw: bytes, index: int, marks: bool) -> tuple[int, str] | None:
     """The width in bytes and the reading of the sequence starting at ``index``.
 
     ``None`` where it stays encoded: a control character, a lone continuation
@@ -243,71 +281,134 @@ def _decoded_at(raw: bytes, index: int) -> tuple[int, str] | None:
         return None
     if len(text) != 1 or ord(text) < _FIRST_DECODED:
         return None
-    return width, fold_character(text)
+    return width, fold_character(text, marks)
 
 
-def _percent_edits(content: str, run: re.Match[str]) -> list[tuple[int, int, str]]:
+def _percent_edits(start: int, run: str, marks: bool) -> Iterable[tuple[int, int, str]]:
     """The triplets in one run that decode safely, each with what it reads as."""
-    raw = bytes.fromhex(run.group().replace("%", ""))
-    base = run.start()
-    edits: list[tuple[int, int, str]] = []
+    raw = bytes.fromhex(run.replace("%", ""))
     index = 0
     while index < len(raw):
-        decoded = _decoded_at(raw, index)
+        decoded = _decoded_at(raw, index, marks)
         if decoded is None:
             index += 1
             continue
         width, reading = decoded
-        edits.append((base + 3 * index, base + 3 * (index + width), reading))
+        yield start + 3 * index, start + 3 * (index + width), reading
         index += width
-    return edits
 
 
-def normalise(content: str) -> Normalised:
-    """The view of ``content`` the module docstring describes, with its map."""
+# Runs at most this long are folded one character at a time.
+_SHORT_RUN = 16
+
+
+@lru_cache(maxsize=256)
+def _class_of(characters: frozenset[str]) -> re.Pattern[str]:
+    """One character class over a set of code points, compiled once per set."""
+    return re.compile("[" + "".join(re.escape(c) for c in sorted(characters)) + "]")
+
+
+@lru_cache(maxsize=4)
+def normalise(content: str, marks: bool = False) -> Normalised:
+    """The view of ``content`` the module docstring describes, with its map.
+
+    Memoised on the content, so the checks in one chain run, which are all
+    handed the same string, build its view once between them. Up to four views
+    and the strings they were built from are kept alive by that cache.
+
+    Raises:
+        GuardrailUnavailableError: for content over ``MAX_CHARS``.
+    """
+    if len(content) > MAX_CHARS:
+        raise GuardrailUnavailableError(
+            f"content of {len(content)} characters is over the {MAX_CHARS}-character "
+            "limit this package builds a normalised view for; a check that cannot "
+            "read it refuses rather than reporting it clean. Split the content"
+        )
+    empty = array("i")
     if content.isascii() and "%" not in content:
-        return Normalised(content, len(content), (), ())
-
-    changes: list[tuple[int, int, str]] = []
-    for run in _PERCENT_RUN.finditer(content):
-        changes += _percent_edits(content, run)
-    ignorable = _ignorable_pattern()
-    for run in _NON_ASCII_RUN.finditer(content):
-        text = run.group()
-        # Whole-run NFKC stability implies per-code-point stability: a code point
-        # whose own NFKC differs is changed by string NFKC too, because
-        # recomposition never produces a compatibility character, a singleton or
-        # a composition exclusion. So a run that passes both tests has nothing in
-        # it to fold, and prose in any script that is already NFKC is skipped at
-        # the speed of the two C calls.
-        if unicodedata.is_normalized("NFKC", text) and ignorable.search(text) is None:
-            continue
-        for offset, character in enumerate(text, run.start()):
-            folded = fold_character(character)
-            if folded != character:
-                changes.append((offset, offset + 1, folded))
-    if not changes:
-        return Normalised(content, len(content), (), ())
-    changes.sort()
+        return Normalised(content, len(content), False, empty, empty, empty, empty)
 
     pieces: list[str] = []
-    edits: list[_Edit] = []
     cursor = 0
-    view = 0
-    for source_start, source_end, replacement in changes:
-        pieces.append(content[cursor:source_start])
-        view += source_start - cursor
-        pieces.append(replacement)
-        edits.append(_Edit(source_start, source_end, view, view + len(replacement)))
-        view += len(replacement)
-        cursor = source_end
-    pieces.append(content[cursor:])
-    return Normalised(
-        text="".join(pieces),
-        source_length=len(content),
-        edits=tuple(edits),
-        _view_starts=tuple(edit.view_start for edit in edits),
-    )
+    delta = 0
+    source_starts, source_ends = array("i"), array("i")
+    view_starts, view_ends = array("i"), array("i")
+
+    def record(start: int, end: int, reading: str) -> None:
+        nonlocal delta
+        view_start = start + delta
+        if (
+            not reading
+            and source_ends
+            and source_ends[-1] == start
+            and view_starts[-1] == view_ends[-1] == view_start
+        ):
+            source_ends[-1] = end
+        else:
+            source_starts.append(start)
+            source_ends.append(end)
+            view_starts.append(view_start)
+            view_ends.append(view_start + len(reading))
+        delta += len(reading) - (end - start)
+
+    for match in _CHANGEABLE.finditer(content):
+        run = match.group()
+        if run[0] == "%":
+            for start, end, reading in _percent_edits(match.start(), run, marks):
+                pieces.append(content[cursor:start])
+                pieces.append(reading)
+                cursor = end
+                record(start, end, reading)
+            continue
+        if len(run) == 1:
+            reading = fold_character(run, marks)
+            if reading == run:
+                continue
+            start = match.start()
+            pieces.append(content[cursor:start])
+            pieces.append(reading)
+            cursor = start + 1
+            if len(reading) != 1:
+                record(start, cursor, reading)
+            continue
+        if len(run) <= _SHORT_RUN:
+            # A short run, which is what a stray invisible character between two
+            # letters is, folded character by character: building a translation
+            # table and a pattern per run cost more than the run, and an
+            # alternating `a` and U+200B is half a million one-character runs.
+            readings = [fold_character(character, marks) for character in run]
+            if all(reading == character for reading, character in zip(readings, run)):
+                continue
+            pieces.append(content[cursor : match.start()])
+            pieces.append("".join(readings))
+            cursor = match.end()
+            for offset, reading in enumerate(readings, match.start()):
+                if len(reading) != 1:
+                    record(offset, offset + 1, reading)
+            continue
+        folds = {character: fold_character(character, marks) for character in set(run)}
+        table = {ord(c): f for c, f in folds.items() if f != c}
+        if not table:
+            continue
+        pieces.append(content[cursor : match.start()])
+        pieces.append(run.translate(table))
+        cursor = match.end()
+        resized = frozenset(c for c, f in folds.items() if len(f) != 1)
+        if resized:
+            for found in _class_of(resized).finditer(run):
+                start = match.start() + found.start()
+                record(start, start + 1, folds[found.group()])
+    if not pieces:
+        text = content
+    else:
+        pieces.append(content[cursor:])
+        text = "".join(pieces)
+    if "\u3002" in text:
+        text = _IDEOGRAPHIC_STOP.sub(".", text)
+    if text == content:
+        return Normalised(content, len(content), False, empty, empty, empty, empty)
+    return Normalised(text, len(content), True, source_starts, source_ends, view_starts, view_ends)
 
 
 def _containment(spans: list[tuple[int, int]]) -> Callable[[tuple[int, int]], bool]:
@@ -334,28 +435,47 @@ def _containment(spans: list[tuple[int, int]]) -> Callable[[tuple[int, int]], bo
     return contains
 
 
-def matched_both_ways(content: str, scan: Scan) -> list[tuple[str, tuple[int, int]]]:
+def matched_both_ways(
+    content: str, scan: Scan, marks: bool = False
+) -> list[tuple[str, tuple[int, int]]]:
     """Every span ``scan`` claims over the content AND over its normalised view.
 
     ``scan`` maps a string to ``(type, span)`` pairs. It runs over the raw
     content, and, when normalising changed anything, over the view with each
-    span mapped back to the content.
+    span mapped back to the content. A zero-width match, which only a caller's
+    own pattern can produce, maps to the zero-width position it stands for
+    rather than raising: it was reported as it stood before this module existed,
+    and the chain is what refuses it.
 
     The raw findings are kept exactly as the scan reported them, so nothing a
     check said about content before this module existed changes. A view finding
     is added only when no raw finding of the same type already contains it, and
     a raw finding is then dropped only when an ADDED view finding of its type
     strictly contains it: a token the raw scan matched up to a zero-width space
-    and the view matched whole is one finding over the whole token, not two, so
-    the audit record does not claim two detections for one credential.
+    and the view matched whole is one finding over the whole token, not two.
 
     Sorted by span, which is the precondition `_spans._merge` states.
     """
     raw = list(scan(content))
-    view = normalise(content)
+    view = normalise(content, marks)
     if view.identity:
         return sorted(raw, key=lambda pair: pair[1])
-    mapped = dict.fromkeys((type_name, view.span(*span)) for type_name, span in scan(view.text))
+
+    def mapped(span: tuple[int, int]) -> tuple[int, int]:
+        start, end = span
+        if start == end:
+            position = view.offset(start)
+            return position, position
+        start, end = view.span(start, end)
+        # A combining mark belongs to the character in front of it, so a match
+        # that ends on a marked character takes its marks with it: the last
+        # letter of a token struck through with U+0336 is redacted whole, and no
+        # stray mark is left to sit on the placeholder.
+        while marks and end < len(content) and unicodedata.category(content[end]) in _MARKS:
+            end += 1
+        return start, end
+
+    found = dict.fromkeys((type_name, mapped(span)) for type_name, span in scan(view.text))
 
     raw_by_type: dict[str, list[tuple[int, int]]] = {}
     for type_name, span in raw:
@@ -363,7 +483,7 @@ def matched_both_ways(content: str, scan: Scan) -> list[tuple[str, tuple[int, in
     raw_contains = {name: _containment(spans) for name, spans in raw_by_type.items()}
     added = [
         (type_name, span)
-        for type_name, span in mapped
+        for type_name, span in found
         if type_name not in raw_contains or not raw_contains[type_name](span)
     ]
 
