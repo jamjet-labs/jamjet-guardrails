@@ -14,39 +14,39 @@
     "precision": 0.966,
     "recall": 0.892
   },
-  "pii/in-repo/06fb3b601aba": {
+  "pii/in-repo/af3d99fc8758": {
     "decision_mismatches": 24,
-    "precision": 0.63,
-    "recall": 0.872
+    "precision": 0.671,
+    "recall": 0.91
   },
   "pii/nvidia/Nemotron-PII@b70ffaf/c25ef538d677": {
     "decision_mismatches": 6,
     "precision": 0.96,
     "recall": 0.997
   },
-  "rules/in-repo/8fe119ddb734": {
-    "decision_mismatches": 0,
+  "rules/in-repo/e9c84e60d79e": {
+    "decision_mismatches": 1,
     "precision": 1.0,
-    "recall": 1.0
+    "recall": 0.968
   },
   "script-constraint/in-repo/1e1374cfecc3": {
     "decision_mismatches": 0,
     "precision": 0.96,
     "recall": 0.979
   },
-  "secrets/in-repo/337e35f03cad": {
+  "secrets/in-repo/ffc4d7ce8979": {
     "decision_mismatches": 8,
-    "precision": 0.88,
-    "recall": 0.872
+    "precision": 0.888,
+    "recall": 0.881
   },
   "template-integrity/in-repo/afb0a7245664": {
     "decision_mismatches": 19,
     "precision": 0.819,
     "recall": 0.964
   },
-  "url-exfiltration/in-repo/3db90a1b72e5": {
-    "decision_mismatches": 6,
-    "precision": 0.923,
-    "recall": 0.923
+  "url-exfiltration/in-repo/4be494e8e961": {
+    "decision_mismatches": 8,
+    "precision": 0.928,
+    "recall": 0.928
   }
 }

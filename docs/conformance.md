@@ -517,6 +517,44 @@ Scoring calls `check` directly with the case's `direction` and an `origin` of
 rather than dropped: a chain skips a guardrail outside its directions, so
 scoring that pairing would publish a number for a run that never happens.
 
+## The normalised view
+
+`secrets`, `pii`, `rules` and `url-exfiltration` match over the content AND over a normalised view of
+it, and report every span into the content. The view is what a reader of the content sees, built in
+three steps, each defined by a published property:
+
+1. **Percent-decoding, one level.** A `%XX` triplet becomes the character it encodes when that is
+   printable ASCII, space through tilde, and a run of triplets becomes one character when it is a
+   well-formed UTF-8 encoding of a code point at or above U+00A0. C0 and C1 controls stay encoded.
+   The decoded text is not decoded again, so `%2541` reads `%41`.
+2. **Every Default_Ignorable_Code_Point is removed**, which is the zero-width characters, the bidi
+   controls and marks, the word joiner and invisible operators, the variation selectors, the Hangul
+   fillers, the soft hyphen and the tag block. It is the same table `injection-structural` counts.
+3. **NFKC, one code point at a time.** Canonical composition across two code points is not
+   performed, which no pattern here can see, and in exchange the offset map is exact.
+
+A span found in the view maps back from the first source character of its first view character
+through the last source character of its last one, so a removed character inside the match is
+inside the span and a percent triplet is never cut. A view finding is reported only where no
+content finding of the same type already contains it, and a content finding is replaced only by a
+view finding of its type that strictly contains it, so one credential split by a zero-width space
+is one finding. Where the view equals the content, which is all ASCII without a `%`, the findings
+are exactly the content's.
+
+**Why a reader's view and not the bytes.** One U+200B inside a GitHub token or between two groups of
+a card number, a fullwidth `ＡＫＩＡ`, a `%5F` for the underscore of `ghp_` and `alice%40corp.com`
+each got `allow` from every check in the output chain, and each reads as the credential to a person,
+a model, and whatever URL-decodes it.
+
+**`injection-structural` does not read it, and cannot.** Its job is to report the characters step 2
+removes. What it shares with the view is the table: one definition of "renders as nothing", so the
+view removes nothing that check cannot see and the check counts nothing the view keeps.
+
+**Confusable folding is not a step.** The UTS #39 skeleton maps ASCII to ASCII (`I` and `1` to `l`,
+`0` to `O`, `m` to `rn`), so a pattern written for ASCII credentials stops matching its own text over
+it. It is applied only where a caller opts in, `fold_confusables` on `rules`, to banned substrings,
+where the needle is folded the same way.
+
 ## The injection-structural constraint
 
 `pii` and `secrets` are patterns over what a document says, and the sections above are enough to port them:
@@ -889,25 +927,33 @@ running beside it in a chain.
     limits:
       max_chars: 2000
     on_match: redact
-    fold_confusables: true
 
-A conforming implementation scores `corpora/rules/in-repo.jsonl` with these
-options. `on_match` is `redact` rather than the registered default `deny`
+`fold_confusables` is NOT set, so it is at its default, off. A conforming
+implementation scores `corpora/rules/in-repo.jsonl` with these options. `on_match` is `redact` rather than the registered default `deny`
 because a deny never reaches the rewrite, so the spans would be published
 without ever being applied and the corpus would grade nothing that matters
 here.
 
-`fold_confusables` was added to the fixture and not to this block, and the
-omission is the exact failure this section exists to prevent. The commit that
-turned the option on also added `rules-0041`, `deck for prоject bluebіrd` with
-a Cyrillic o and a Ukrainian i, and only that option catches it. A port built
-to exactly what was printed scored 0.966 recall with one wrong decision against
-the 1.000 / 1.000 / 0 published in `README.md` and `BENCHMARKS.md`, and it
-disagreed with the reference implementation on a case it was never given the
-option to pass. The guard that stood here iterated four key names by hand, so a
-fifth key was invisible to it forever;
-`tests/test_conformance_doc.py::test_the_conformance_document_prints_the_fixture_the_row_was_measured_under`
-now derives the key set from the fixture itself.
+**The row used to be measured with `fold_confusables: true`, and that was the
+wrong half of a mismatch.** The engine defaults the option to off and the row
+published 1.000 / 1.000 / 0 with it on, so a caller configuring `rules` the way
+the README shows got a check that scored 0.966 recall with one wrong decision on
+the same corpus. The default stays off, because the UTS #39 skeleton costs
+precision a caller has to choose: it folds `m` to `rn`, so a banned `corn` denies
+every `.com`. The row moved to the default instead. `rules-0041`, `deck for
+prоject bluebіrd` with a Cyrillic o and a Ukrainian i, is caught only by that
+option and is a labelled miss in the row now; a caller who sets the option
+catches it. `tests/test_rules.py` holds the fixture to the engine's default, and
+`tests/test_conformance_doc.py` still derives the printed key set from the
+fixture, so an option set later is printed or that test fails.
+
+**Patterns and banned substrings are matched over the normalised view as well
+as over the content**, see [The normalised view](#the-normalised-view). That is
+what catches `rules-0043` to `rules-0045`, a codename and a ticket id with a
+zero-width space inside and the codename in fullwidth letters, at the default.
+Limits are measured on the content as given. With `fold_confusables` on, the
+skeleton is built over the normalised view too, and it removes every
+default-ignorable code point, which is step 2 of UTS #39 `internalSkeleton`.
 
 **The published row exercises only one of the three limit kinds.** The
 fixture sets `max_chars` and neither `max_bytes` nor `max_lines`, so the
@@ -1030,6 +1076,50 @@ than to what comes out of it, which is the one-level rule the payload decoders k
 alone and handed the raw string to the other four signals, and `url-0019` pinned it for
 `SCRIPT_SCHEME` and for nothing else, which is a corpus too small to see the bug it was written for.
 
+**A component is also read the way a reader sees it.** Each path segment, query key and query value
+is read through [the normalised view](#the-normalised-view) as well, and every reading that is not
+ASCII is folded the same way, so a sentence in fullwidth letters, percent-encoded with ideographic
+spaces, or with a zero-width space between every two letters is the sentence it reads as.
+`url-0095`, `url-0096` and `url-0097` are the cases; `url-0098` to `url-0100` are Japanese text in an
+image `alt`, a search query and a file name that stay allowed. The fold changes no character a
+reader can see, so it is not a second decoding level.
+
+### A payload is prose, a credential or personal data
+
+An image URL fires `MARKDOWN_IMAGE_EXFIL` when any component, read as written, percent-decoded, as a
+reader sees it, or through one base64, base32, hex or rot13 layer, does any of three things:
+
+- **reads as prose** of 30 characters or more;
+- **contains a credential** `secrets` recognises, by its own patterns;
+- **contains personal data** `pii` recognises by its pattern table: an email address, an SSN, a
+  grouped card number or a telephone number. Its bare-digit card scan is not applied here, because
+  one Luhn-valid run in twenty of the long numeric ids image CDNs put in every path would fire, and
+  `pii` itself still redacts a bare card wherever it stands.
+
+The query values that are one word each, joined with spaces, are one more component for the prose
+test, so a sentence split one word per parameter is the sentence. A path segment is also read with
+its file extension removed, so `<payload>.png` decodes. A link fires `LINK_QUERY_PAYLOAD`, on output
+only, under the same rules with three differences: the prose floor is 136 characters, the personal
+data is SSNs and grouped card numbers only, because a link prefilling an address or a telephone
+number is an ordinary contact link, and its fragment is read as well, split on `&`, `/` and `?`,
+because the page a link opens can read its own fragment.
+
+**There is no entropy test, and it was measured rather than argued.** Firing on any component of 24
+characters or more at 4.5 bits per character, the least costly setting tried, finds one more payload
+in the corpus and costs five more false positives, moving precision from 0.929 to 0.869: signatures,
+digests, tokens and UUIDs are most of what an ordinary image URL carries.
+
+**A destination ends where its specification says.** A markdown inline destination and a reference
+definition end at ASCII space or an ASCII control, which is CommonMark's rule, and an unquoted HTML
+attribute value at ASCII whitespace or `>`, which is HTML's. Unicode whitespace does not end either:
+`url-0110` puts an ideographic space between the words of a payload, and every renderer keeps the
+whole URL.
+
+`url-0101` to `url-0114` are the positives and `url-0115` to `url-0128` the negatives that hold the
+signals down: image CDN parameters, an avatar, a badge, numeric CDN ids, a heading and a route in a
+fragment, contact links carrying an address and a telephone number, a QR image carrying binary,
+blog cover slugs, a tracking pixel, a static map, and a presigned object URL.
+
 ### There are no exemptions, and this is what stands in their place
 
 There is no host allowlist, no safe-domain list and no scheme allowlist. The only thing that excuses
@@ -1043,8 +1133,9 @@ those bound the check in the same way and would otherwise go unstated.
   text. The cost of closing that is a check that reports `Note:` and `Warning:` in prose, and a
   markdown or HTML construct is discovered whatever its scheme, so what this misses is text that no
   renderer links either.
-- **The authority is not a component.** Only path segments and query keys and values are decoded and
-  tested. Hostname labels are not, and two corpus cases pay for it; see below.
+- **The authority is not a component.** Only path segments, query keys and values and, for a link,
+  the fragment are decoded and tested. An image URL's fragment is not read, because a browser never
+  sends it. Hostname labels are not, and two corpus cases pay for it; see below.
   **The authority ends at the first `/` OR the first `?`.** `https://host?d=...` carries a query and
   no path, RFC 3986 permits it and every browser resolves it to `https://host/?d=...`, so a port that
   splits on `/` alone puts the whole query inside the authority and then discards it. Three of the
@@ -1054,8 +1145,8 @@ those bound the check in the same way and would otherwise go unstated.
 
 ### Where this implementation falls short of its own corpus
 
-The published row is 0.923 precision and 0.923 recall over 94 cases with 6 wrong decisions, and every
-one of the six is named here. Three are false positives and three are false negatives, and they are
+The published row is 0.929 precision and 0.929 recall over 128 cases with 8 wrong decisions, and every
+one of the eight is named here. Four are false positives and four are false negatives, and they are
 the same trade seen from both ends.
 
 - **A benign link whose query really is a long piece of prose fires.** `url-0083` is a share intent
@@ -1074,10 +1165,18 @@ the same trade seen from both ends.
 - **A doubly encoded payload is not detected.** `url-0080` is base64 of percent-encoded prose,
   labelled `deny` and allowed. Decoded text is never fed back to the decoder: one level is the rule,
   and a decode loop would make every span a claim about a string the caller never had.
+- **One word per path segment is not detected.** `url-0108` writes a sentence as
+  `/the/user/said/.../four.png`, labelled `deny` and allowed. Joining segments the way one-word query
+  values are joined read every blog cover image as prose, because a slug's words and the spaces the
+  join adds clear the prose test together; `url-0124` and `url-0125` are those images, labelled
+  `allow`.
+- **A presigned object URL fires.** `url-0128` is an S3 presigned image URL, labelled `allow` and
+  denied, because `X-Amz-Credential` carries an access key id and an image URL carrying a credential
+  is the signal. The key id is the documented example and `secrets` redacts it in the same place.
 
-These six are the corpus's bar and not a licence. A port that denies `url-0078`, `url-0079` or
-`url-0080` matches the label where this implementation does not; what a port is held to is the `allow`
-side.
+These eight are the corpus's bar and not a licence. A port that denies `url-0078`, `url-0079`,
+`url-0080` or `url-0108` matches the label where this implementation does not; what a port is held
+to is the `allow` side.
 ## The script-constraint constraint
 
 `script-constraint` is the second check here whose behaviour is chosen by the
@@ -1852,9 +1951,9 @@ choice for every one of them:
   given, which is the string `saw` hashes, whatever view the match was found
   in.
 - **How a run of characters is decided to decode to text, and the floors that
-  decide it.** `url-exfiltration` reads a URL component through four alphabets
+  decide it.** `url-exfiltration` reads a URL component through five alphabets
   and a function-word list, and `encoded-content` reads a run anywhere in the
-  content through the same four, at floors recorded in the source with the sweep
+  content through four of them, all but base32, at floors recorded in the source with the sweep
   that bounded each. Those are this implementation's means: the function-word list is
   derived from a file in this repository and is not a specification of English,
   and a port reaching the same verdicts with a different list, different ratios

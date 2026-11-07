@@ -87,10 +87,10 @@ def _f1_with_floor(alphabet: str, value: int) -> float:
 @pytest.mark.parametrize(
     ("alphabet", "floor", "plateau_top", "cost_above"),
     [
-        ("base64", 16, 32, 0.9091),
-        ("hex", 16, 42, 0.9091),
-        ("rot13", 24, 109, 0.9091),
-        ("percent", 6, 104, 0.9091),
+        ("base64", 16, 28, 0.9091),
+        ("base32", 16, 64, 0.9189),
+        ("hex", 16, 42, 0.9189),
+        ("rot13", 24, 109, 0.9189),
     ],
 )
 def test_every_floor_sits_inside_the_flat_region_the_sweep_measures(
@@ -109,48 +109,29 @@ def test_every_floor_sits_inside_the_flat_region_the_sweep_measures(
     base64 case, at the shipped-floor assertion.
     """
     assert FLOORS[alphabet] == floor, "the shipped floor and the recorded floor have parted"
-    baseline = 0.9231
+    baseline = 0.9286
     assert _f1_with_floor(alphabet, floor) == baseline
     assert _f1_with_floor(alphabet, plateau_top) == baseline
     assert _f1_with_floor(alphabet, plateau_top + 1) == cost_above
 
 
-def test_the_percent_window_that_beat_the_shipped_floor_no_longer_does() -> None:
-    """The one sweep result that was measured and rejected, re-taken.
+@pytest.mark.parametrize("value", [1, 6, 105, 107, 120, 148, 10**6])
+def test_the_percent_floor_no_longer_moves_url_exfiltration(value: int) -> None:
+    """`url-exfiltration` reads every component through the shared normaliser too.
 
-    On the 88-case corpus the percent floor scored 0.9275 anywhere from 107 to
-    147 against the shipped 6's 0.9143, and the module refused it: the gain was
-    one false positive stopping being READ, the lower bound was one corpus
-    case's 106-character `title` parameter and the upper bound another's
-    147-character run. A window bounded at both ends by two strings in one
-    corpus is a value fitted to that corpus.
+    That reading undoes every percent triplet that decodes safely, whatever the
+    run's length, so this module's percent floor no longer decides whether a
+    component is read. It used to: 105 cost `url-0093`, and a window from 107 to
+    147 once scored above the shipped 6 and was refused in writing. The curve is
+    flat now and the module docstring says so; this holds it flat, so a change
+    that takes the normalised reading away shows up here as the old curve
+    coming back.
 
-    Six cases were then added to close two fail-opens, two of them carrying
-    percent runs of 104 and 119 characters, and the window stopped winning:
-    it peaks at 0.9211 against the shipped floor's 0.9231. **The rejected
-    number was the overfit and the corpus caught up with it**, which is the
-    whole reason the refusal was written down rather than argued.
-
-    Asserted rather than left in prose because the temptation was real and the
-    number was better: whoever next reads that paragraph and disagrees has to
-    edit a test, which is a reviewable act.
-
-    Mutation watched: `FLOORS["percent"]` raised from 6 to 107. FAILS at the
-    shipped-floor assertion.
+    Mutation watched: the normalised reading removed from `_readings`. FAILS at
+    105 and above.
     """
     assert FLOORS["percent"] == 6
-    shipped = _f1_with_floor("percent", 6)
-    assert shipped == 0.9231
-    assert _f1_with_floor("percent", 105) == 0.9091
-    assert _f1_with_floor("percent", 107) == 0.9211
-    assert _f1_with_floor("percent", 119) == 0.9211
-    assert _f1_with_floor("percent", 120) == 0.9067
-    assert _f1_with_floor("percent", 148) == 0.8611
-    for value in (105, 107, 119, 120, 148):
-        assert _f1_with_floor("percent", value) < shipped, (
-            f"percent floor {value} scores at or above the shipped 6; the window "
-            "the module rejects has reopened and the paragraph has to be re-argued"
-        )
+    assert _f1_with_floor("percent", value) == 0.9286
 
 
 # ==========================================================================
@@ -169,7 +150,7 @@ def test_decode_refuses_an_encoding_it_does_not_know() -> None:
     `return None`. FAILS.
     """
     with pytest.raises(ValueError, match="unknown encoding"):
-        decode("aGVsbG8gd29ybGQ=", "base32")
+        decode("aGVsbG8gd29ybGQ=", "base85")
 
 
 @pytest.mark.parametrize("encoding", sorted(ENCODINGS))
@@ -188,6 +169,7 @@ def test_a_run_below_its_alphabet_floor_does_not_decode(encoding: str) -> None:
     floor = FLOORS[encoding]
     sample = {
         "base64": "aGVsbG8gd29ybGQhIQ==",
+        "base32": "NBSWY3DPEB3W64TMMQQSC===",
         "hex": PROSE.encode().hex(),
         "percent": "the%20user%20said%20so%20and%20so",
         "rot13": PROSE.translate(_decode._ROT13_TABLE),
@@ -435,10 +417,10 @@ def test_the_detector_that_consumes_this_module_still_scores_its_published_row()
     """
     corpus = load_corpus(CORPUS, name="url-exfiltration/in-repo")
     result = evaluate(build("url-exfiltration"), corpus)
-    assert round(result.overall.precision, 3) == 0.923
-    assert round(result.overall.recall, 3) == 0.923
-    assert result.decision_mismatches == 6
-    assert result.cases == 94
+    assert round(result.overall.precision, 3) == 0.929
+    assert round(result.overall.recall, 3) == 0.929
+    assert result.decision_mismatches == 8
+    assert result.cases == 128
 
 
 def test_the_module_names_no_encoding_it_cannot_decode() -> None:

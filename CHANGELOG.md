@@ -130,6 +130,33 @@ a number that changes quietly is a number nobody can rely on.
 
 ### Changed
 
+- **Published figures, old to new.** Each corpus gained the cases for the
+  shapes under Fixed, positives and the negatives that hold the view down, so
+  every version key below moved too.
+  - `secrets`: 0.881 / 0.873 over 160 cases, 8 wrong, to **0.889 / 0.881**
+    over 174, 8 wrong. The code before this change scores the 174 at 0.873 /
+    0.814 with 15 wrong.
+  - `pii` in-repo: 0.631 / 0.872 over 81, 24 wrong, to **0.671 / 0.911** over
+    101, 24 wrong (0.631 / 0.732 with 33 wrong before the change). The
+    Nemotron row does not move: 0.960 / 0.997.
+  - `url-exfiltration`: 0.923 / 0.923 over 94, 6 wrong, to **0.929 / 0.929**
+    over 128, 8 wrong, in two steps. The normalised reading took it to 0.929 /
+    0.929 over 100 cases, 6 wrong (0.923 / 0.857 with 9 wrong before). The
+    payload signals below took it to the published row over 128 cases (0.929 /
+    0.696 with 20 wrong before them). Every prose floor plateau is where it
+    was, the base64 decode floor's ceiling came down from 32 to 28 with 16
+    still inside it, and the F1 values the docstrings, `corpora/NOTICE.md` and
+    the tests quote were re-taken.
+  - `rules`: 1.000 / 1.000 over 42, 0 wrong, to **1.000 / 0.969** over 46, 1
+    wrong. Under the old fixture and the old code the 46 score 1.000 / 0.906
+    with 3 wrong.
+- **Published latency, old to new, per megabyte of the seeded input:**
+  `secrets` 4.7 to 20.2 ms, `pii` 207 to 459 ms, `rules` 731 to 275 ms (its
+  fixture no longer builds a skeleton), `url-exfiltration` 129.7 to 129.4 ms.
+  That input carries zero-width spaces, so every row pays for the normalised
+  view and a second scan; ASCII content with no `%` in it does not.
+  `docs/performance.md` says which rows were re-measured and why.
+
 - **The README starts with what a new user needs.** What the library is,
   the install line, an executed five-line example, three paths in (your own
   calls, an agent framework, a repository scan), how it fails and what it
@@ -137,6 +164,67 @@ a number that changes quietly is a number nobody can rely on.
   and NeMo Guardrails. The reference material below is unchanged.
 
 ### Fixed
+
+- **One character a reader does not see no longer takes a credential or a
+  card past the whole output chain.** A zero-width space inside a `ghp_` token
+  or between two groups of a card number got `allow` from every check:
+  `secrets` and `pii` matched the bytes, and `injection-structural` lets up to
+  four scattered invisible characters through by design. A fullwidth `ＡＫＩＡ`,
+  `%5F` for the underscore of `ghp_`, `alice%40corp.com`, a fullwidth `＠` and
+  a card with no-break or ideographic spaces did the same. `secrets`, `pii`,
+  `url-exfiltration` and `rules` now also match over a normalised view of the
+  content: safe percent escapes decoded one level, every
+  Default_Ignorable_Code_Point removed (the table `injection-structural`
+  already counts), and NFKC one code point at a time. Spans still index into
+  the content, and cover the removed characters inside a match. Content that
+  needs no normalising, which is ASCII without a `%`, is scored exactly as
+  before. `docs/conformance.md` has a new section, "The normalised view".
+  Detector versions: `secrets`, `pii`, `url-exfiltration` and `rules` 0.1.0
+  to 0.2.0.
+- **`url-exfiltration` reads a component the way a reader sees it.** A
+  sentence in an image URL written in fullwidth letters, percent-encoded with
+  ideographic spaces, or with a zero-width space between every two letters was
+  not prose to the check and allowed. A side effect, measured: the
+  `_decode` percent floor no longer moves this check's F1 at all, from 1 to a
+  million, because the normalised reading decodes every safe triplet.
+- **`url-exfiltration` fires on what a URL carries, not only on what it
+  says.** It only flagged components that read as prose, so an AWS key, an SSN
+  or an address in an image URL, a sentence split one word per query
+  parameter, and a base32 body all allowed. An image URL now also fires when a
+  component, at one payload level, contains a credential `secrets` recognises
+  or personal data `pii` recognises (its pattern table, not its bare-digit card
+  scan), and one-word query values are read joined. A link fires on output for
+  a credential, an SSN or a grouped card, and its fragment is read, because the
+  page a link opens can read it. `_decode` gains a base32 decoder, which only
+  this check uses. A markdown destination, a reference definition and an
+  unquoted HTML attribute now end where CommonMark and HTML say, at ASCII
+  space, so an ideographic space no longer cuts a payload off the URL. Two
+  shapes stay open and are labelled misses or false positives in the corpus:
+  one word per path segment, because joining segments read blog cover slugs as
+  prose, and a presigned object URL, which carries an access key id and fires.
+  An entropy test was measured and refused: at its least costly setting it
+  found one more payload and cost five more false positives.
+- **The UTS #39 skeleton removes default-ignorable code points**, which is
+  step 2 of `internalSkeleton` in the 16.0.0 standard this package pins and
+  was missing, so `project` U+200B `bluebird` dodged a banned substring under
+  `fold_confusables=True`. The `confusables` and `template-integrity` rows do
+  not move: the first never asks the skeleton about an ignorable and the
+  second removed them itself.
+- **`pii` matches a space-separated SSN**, `123 45 6789`, under the Social
+  Security Administration's issuance rules (no area 000, 666 or 900 to 999, no
+  group 00, no serial 0000) and not beside another space-separated digit
+  group. It was a disclosed miss, `pii-0032`. Zero matches over 32 MB of
+  CPython's standard library and no new false positive in either published
+  corpus; `512 64 1024` standing alone is still read as one, and `pii-0101`
+  carries it as a labelled `allow`. The unseparated nine digits stay a
+  deliberate miss.
+- **The published `rules` row was measured with `fold_confusables=True` and
+  the engine defaults it to off**, so the 1.000 / 1.000 row described a
+  configuration a caller does not get by default. The default stays off,
+  because the skeleton folds `m` to `rn` and a banned `corn` would deny every
+  `.com`, and the fixture now leaves it at the default. `rules-0041`, the
+  Cyrillic-dodged codename only that option catches, is a labelled miss in the
+  row.
 
 - **A benchmark guard compared two different corpora and agreed by
   coincidence.** `benchmarks/RESULTS.md` was measured on 146 inputs and

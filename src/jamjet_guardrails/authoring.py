@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from jamjet_guardrails._fold import _Folded, casefold_view, compose, fold
+from jamjet_guardrails._normalise import matched_both_ways
 from jamjet_guardrails._spans import _rewrite, _scan
 from jamjet_guardrails.errors import GuardrailUnavailableError
 from jamjet_guardrails.protocol import saw
@@ -423,15 +424,29 @@ class PatternGuardrail:
         A tie on the start offset puts the shorter span first, and ``sorted``
         is stable, so equal spans keep the order the sources produced them in.
         """
-        found = [
-            (type_name, match.span())
-            for type_name, pattern in self._patterns
-            for match in _scan(pattern, content)
-        ]
-        found += self._banned_spans(content)
+        found = matched_both_ways(content, self._claims)
         if self._limits is not None:
             found += _limit_spans(content, self._limits)
         return sorted(found, key=lambda pair: pair[1])
+
+    def _claims(self, text: str) -> list[tuple[str, tuple[int, int]]]:
+        """Every span the patterns and the banned substrings claim in one string.
+
+        Run over the content and over what a reader sees in it, which is
+        `jamjet_guardrails._normalise`. `project` U+200B `bluebird`, the same
+        words in fullwidth letters and `JIRA` U+200B `-1234` each passed a rule
+        written for them, and the rule is a caller's own: nothing else in a chain
+        knows their codename. The raw content is still scanned, so a rule that
+        names an invisible character on purpose still matches it. Limits are
+        not here: a limit is about the content's size as given.
+        """
+        found = [
+            (type_name, match.span())
+            for type_name, pattern in self._patterns
+            for match in _scan(pattern, text)
+        ]
+        found += self._banned_spans(text)
+        return found
 
     def _banned_spans(self, content: str) -> list[tuple[str, tuple[int, int]]]:
         """Banned substrings, matched over a folded view and reported in source.
