@@ -72,16 +72,21 @@ covered by `--all-text` or by naming the file.
 
 `tests/test_scan_docs.py` holds this list to the tuple the scanner matches
 against, in order, so the two cannot drift. `--all-text` widens the walk to
-every text file. The walk skips `.git`, `node_modules`, virtual environments,
-caches and build output. It follows directory symlinks, refuses to enter a
+every text file. The walk does not enter `.git`, `node_modules`, virtual
+environments or tool caches: none is where an agent working in the repository
+reads its instructions, and a dependency tree holds other projects' rules. It
+does enter `build/` and `dist/`, and reads only agent files there, with or
+without `--all-text`: both are committed in ordinary repositories and an agent
+opened in them reads the rules it finds, while the bundles beside those rules
+are not text anyone wrote. It follows directory symlinks, refuses to enter a
 directory that is its own ancestor, and walks a directory reached by two names
 under both, because the name decides whether its files are agent files.
 
 ## Files it will not skip
 
-An agent instruction file, and any file named on the command line, is always
-read. A scan is adversarial, so every reason to look away from a file is a way
-to hide something in it:
+An agent instruction file the walk reaches, and any file named on the command
+line, is always read. A scan is adversarial, so every reason to look away from a
+file is a way to hide something in it:
 
 | Finding | Meaning |
 |---|---|

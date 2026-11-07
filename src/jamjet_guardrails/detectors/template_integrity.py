@@ -413,12 +413,14 @@ def _fenced_regions(content: str) -> list[tuple[int, int]]:
         if closing[0] == marker[0] and len(closing) >= len(marker):
             regions.append((opening.start(), match.end()))
             opening = None
-    if opening is not None:
-        # An unclosed fence runs to the end of the content. That is CommonMark's
-        # rule and it is also the safe reading here: the alternative is deciding
-        # the fence never opened, which would make an attacker's trailing
-        # backticks turn the exemption off for the text underneath it.
-        regions.append((opening.start(), len(content)))
+    # An opener that never closes exempts NOTHING. CommonMark renders it as code
+    # to the end of the document, and this used to follow it, with the argument
+    # that the other reading lets trailing backticks "turn the exemption off".
+    # Turning an exemption off is the direction a detector may fail in; running
+    # to the end let three backticks at the top of a message exempt every marker
+    # under them, an exemption whose condition the attacker meets for free. A
+    # closed fence is still exempt, which is what quoted documentation looks
+    # like.
     return regions
 
 

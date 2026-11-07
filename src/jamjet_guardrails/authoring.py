@@ -189,9 +189,8 @@ def _walk_for_nesting(sequence: Any, inside_unbounded: bool) -> bool:
         elif name in ("ASSERT", "ASSERT_NOT"):
             if _walk_for_nesting(argument[1], inside_unbounded):
                 return True
-        elif name == "ATOMIC_GROUP":
-            if _walk_for_nesting(argument, inside_unbounded):
-                return True
+        elif name == "ATOMIC_GROUP" and _walk_for_nesting(argument, inside_unbounded):
+            return True
     return False
 
 

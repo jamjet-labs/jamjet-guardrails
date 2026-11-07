@@ -10,7 +10,7 @@ a number that changes quietly is a number nobody can rely on.
 
 ## [Unreleased]
 
-## [0.5.0] - 2026-10-10
+## [0.5.0] - Unreleased
 
 ### Added
 
@@ -165,6 +165,25 @@ a number that changes quietly is a number nobody can rely on.
   absolute puts evaluation methodology up for argument in place of the result.
   Now: without labels chosen independently of what the detector does, comparing
   two rows would mean very little.
+
+- **An unclosed code fence no longer exempts the rest of the content.**
+  With `exempt_code_fences=True`, `template-integrity` read a fence that never
+  closed as running to the end of the content, CommonMark's rendering rule, so
+  three backticks at the top of a message exempted every chat-template marker
+  under them. That is an exemption the attacker turns on for free. A fence now
+  exempts only what a closing fence ends. The option is still off by default
+  and the published row, measured with it off, does not move.
+
+- **The repository scan reads agent files under `build/` and `dist/`.** Both
+  were pruned from the walk, so an agent instructions file or a `.cursor/rules`
+  file placed there was never read, while `docs/scanning.md` said an agent
+  instruction file is never skipped. Both names are committed in ordinary
+  repositories. Only agent files are read there, and `--all-text` does not
+  widen into them. `.git`, `node_modules`, virtual environments and tool caches
+  are still not entered, and the page now says so in those words.
+
+- **This entry was dated 2026-10-10.** 0.5.0 has not been tagged or published;
+  PyPI carries 0.4.1. The heading says Unreleased until it is.
 
 ## [0.4.1]
 
