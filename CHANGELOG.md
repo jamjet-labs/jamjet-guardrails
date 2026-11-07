@@ -146,6 +146,12 @@ a number that changes quietly is a number nobody can rely on.
   - `rules`: 1.000 / 1.000 over 42, 0 wrong, to **1.000 / 0.969** over 46, 1
     wrong. Under the old fixture and the old code the 46 score 1.000 / 0.906
     with 3 wrong.
+- **Published latency, old to new, per megabyte of the seeded input:**
+  `secrets` 4.7 to 20.2 ms, `pii` 207 to 459 ms, `rules` 731 to 275 ms (its
+  fixture no longer builds a skeleton), `url-exfiltration` 129.7 to 129.4 ms.
+  That input carries zero-width spaces, so every row pays for the normalised
+  view and a second scan; ASCII content with no `%` in it does not.
+  `docs/performance.md` says which rows were re-measured and why.
 
 - **The README starts with what a new user needs.** What the library is,
   the install line, an executed five-line example, three paths in (your own

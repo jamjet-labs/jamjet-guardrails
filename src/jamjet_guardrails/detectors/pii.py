@@ -14,10 +14,13 @@ output. In a redactor an ambiguous span has to resolve toward more redaction,
 never less.
 
 Cost, and the shape of it. Linear in the content length, and this is the slowest
-check in the package. 207 ms median for one megabyte of the seeded input recorded
+check in the package. 459 ms median for one megabyte of the seeded input recorded
 in `docs/performance.md`, on an Apple M3 Max under CPython 3.14.5, rising 4.0x
-per 4x of input across the whole range from 1 KB. Validating every candidate
-digit run is what that buys, and the figure includes the redaction rewrite.
+per 4x of input across the whole range from 1 KB. It was 207 ms before the check
+also matched over the normalised view, which that input always needs because it
+carries zero-width spaces, so the patterns run twice; ASCII content with no `%`
+in it skips the view. Validating every candidate digit run is most of the rest,
+and the figure includes the redaction rewrite.
 `scripts/measure_throughput.py` reruns it, and `docs/performance.md` states the
 machine, the input and the method.
 """

@@ -38,7 +38,7 @@ tried to tell parsing from fetching inside a package would be a guard nobody
 could check.
 
 Cost, and the shape of it. Linear in the content length: a fixed number of
-``finditer`` passes, then one bounded decode per URL component. 112 ms median
+``finditer`` passes, then one bounded decode per URL component. 129 ms median
 for one megabyte of the seeded input recorded in `docs/performance.md`, on an
 Apple M3 Max under CPython 3.14.5, rising 3.9x to 4.0x per 4x of input across
 the whole range from 1 KB. That input carries no URL, so the figure is the

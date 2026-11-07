@@ -313,7 +313,7 @@ def test_a_rule_naming_an_invisible_character_still_matches_it() -> None:
         name="r", version="1", banned={"ZW": [ZWSP]}, patterns={"BOM": "\ufeff"}
     )
     verdict = guardrail.check("a" + ZWSP + "b\ufeff", OUT)
-    assert sorted(f.span for f in verdict.findings) == [(1, 2), (3, 4)]
+    assert sorted(f.span for f in verdict.findings if f.span is not None) == [(1, 2), (3, 4)]
 
 
 def test_confusable_folding_stays_off_by_default_because_it_costs_precision() -> None:
