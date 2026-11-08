@@ -471,13 +471,13 @@ def test_content_over_the_cap_is_refused_rather_than_allowed(
     from jamjet_guardrails.errors import GuardrailUnavailableError
 
     monkeypatch.setattr(_normalise, "MAX_CHARS", 64)
-    _normalise.normalise.cache_clear()
+    _normalise.forget_views()
     content = "x" * 60 + "é" * 10
     with pytest.raises(GuardrailUnavailableError):
         SecretsGuardrail().check(content, OUT)
     chain = build_chain(["secrets"])
     assert chain.run(content, OUT).decision == "deny"
-    _normalise.normalise.cache_clear()
+    _normalise.forget_views()
 
 
 def test_a_rule_that_can_match_empty_does_not_raise_on_non_ascii_content() -> None:
@@ -486,3 +486,109 @@ def test_a_rule_that_can_match_empty_does_not_raise_on_non_ascii_content() -> No
     guardrail = PatternGuardrail(name="r", version="1", patterns={"Z": r"\ba*"})
     verdict = guardrail.check("café \u200bx", OUT)
     assert all(f.span is not None and f.span[0] == f.span[1] for f in verdict.findings)
+
+
+# --- second review round: cost bounds, cache scope, more hyphens ---------------------
+
+
+def _resizing_pool() -> list[str]:
+    from jamjet_guardrails._normalise import fold_character as fold
+
+    return [
+        chr(point)
+        for point in [*range(0x2460, 0x24A0), *range(0x3300, 0x3400), *range(0xFB00, 0xFB07)]
+        if len(fold(chr(point), True)) != 1
+    ]
+
+
+def test_long_runs_of_distinct_resizing_characters_stay_linear() -> None:
+    """Each 17-character run draws a different set of length-changing code points.
+
+    The version this guards compiled a character class per such run, and the
+    attacker chooses the sets, so its cache never hit: 10.7 seconds a megabyte
+    in `secrets`. Walked with the folds the run already has, it is linear.
+    """
+    import random
+    import time
+
+    rng = random.Random(7)
+    pool = _resizing_pool()
+    assert len(pool) > 100, "the pool must be large enough that sets do not repeat"
+    content = " ".join("".join(rng.choice(pool) for _ in range(17)) for _ in range(14_000))
+    start = time.perf_counter()
+    SecretsGuardrail().check(content, OUT)
+    elapsed = time.perf_counter() - start
+    assert elapsed < 1.0, f"{len(content)} characters took {elapsed:.2f} s"
+
+
+def test_korean_and_precomposed_vietnamese_need_no_edits() -> None:
+    korean = "한국어 문장을 읽습니다 " * 200
+    view = normalise(korean, True)
+    assert view.text == korean and len(view.view_starts) == 0
+    vietnamese = "Tiếng Việt là ngôn ngữ " * 200
+    view = normalise(vietnamese, True)
+    assert len(view.view_starts) == 0
+    assert view.text.startswith("Tieng Viet la ngon ngu ")
+
+
+def test_url_components_do_not_evict_the_content_view() -> None:
+    from jamjet_guardrails._normalise import _memoised, forget_views
+    from jamjet_guardrails.detectors.url_exfiltration import UrlExfiltrationGuardrail
+
+    forget_views()
+    content = "![p](https://cdn.example.com/a/b%20c/d.png?x=caf%C3%A9&z=%E2%80%8B) \u200b " * 3
+    UrlExfiltrationGuardrail().check(content, OUT)
+    assert _memoised.cache_info().currsize == 0
+
+
+def test_a_str_subclass_is_never_served_another_strings_view() -> None:
+    from jamjet_guardrails._normalise import forget_views
+
+    forget_views()
+    first = "x\u200by"
+    normalise(first, True)
+
+    class Hostile(str):
+        def __hash__(self) -> int:
+            return hash(first)
+
+        def __eq__(self, other: object) -> bool:
+            return True
+
+    other = Hostile("ghp\u200b_" + "B" * 36)
+    assert normalise(other, True).text == "ghp_" + "B" * 36
+    forget_views()
+
+
+def test_a_chain_run_does_not_keep_its_content_in_the_cache() -> None:
+    from jamjet_guardrails._normalise import _memoised
+
+    chain = build_chain(["secrets", "url-exfiltration", "pii"])
+    chain.run("token " + GHP[:20] + ZWSP + GHP[20:], OUT)
+    assert _memoised.cache_info().currsize == 0
+
+
+@pytest.mark.parametrize("hyphen", ["⁃", "˗", "➖", "─"])
+def test_characters_drawn_as_a_hyphen_read_as_one(hyphen: str) -> None:
+    ssn = f"123{hyphen}45{hyphen}6789"
+    assert [f.type for f in PiiGuardrail().check(f"ssn {ssn} on file", OUT).findings] == ["US_SSN"]
+    key = f"sk{hyphen}ant{hyphen}api03{hyphen}EXAMPLEONLY0000notarealtoken0000"
+    assert [f.type for f in SecretsGuardrail().check(f"key {key}", OUT).findings] == [
+        "ANTHROPIC_KEY"
+    ]
+
+
+@pytest.mark.parametrize("letter", ["ー", "一"])
+def test_cjk_letters_that_look_like_a_hyphen_are_a_disclosed_miss(letter: str) -> None:
+    """Letters in Japanese and Chinese text; `pii-0109` and `pii-0110` label them."""
+    content = f"ssn 123{letter}45{letter}6789 on file"
+    assert PiiGuardrail().check(content, OUT).decision == "allow"
+
+
+def test_the_size_cap_applies_only_where_a_view_is_built(monkeypatch: pytest.MonkeyPatch) -> None:
+    from jamjet_guardrails import _normalise
+
+    monkeypatch.setattr(_normalise, "MAX_CHARS", 64)
+    _normalise.forget_views()
+    assert SecretsGuardrail().check("plain ascii " * 20, OUT).decision == "allow"
+    _normalise.forget_views()

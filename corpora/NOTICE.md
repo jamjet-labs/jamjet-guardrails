@@ -213,7 +213,10 @@ view `secrets` reads dropped combining marks and wrote every dash as `-`.
 and a minus sign, and Vietnamese written decomposed. `sec-0180` is a GitHub
 token split by a line break, labelled `redact` and allowed: joining lines in the
 view would join every line of a PEM body, so it is disclosed rather than
-half-fixed. 182 cases, 0.893 precision and 0.879 recall with 9 wrong decisions.
+half-fixed. A second review added `sec-0183`, an Anthropic value whose hyphens
+are U+2796 HEAVY MINUS SIGN, read as hyphens now, and `sec-0184`, Korean prose
+with box-drawing rules that must stay allowed. 184 cases, 0.894 precision and
+0.880 recall with 9 wrong decisions.
 
 **What the 39 could not see, measured rather than argued.** `_scan` in
 `src/jamjet_guardrails/_spans.py` tries every start position instead of resuming
@@ -777,7 +780,7 @@ dotted tail that reads as a TLD (`img@sha256.abcdef`, `build@node.js18`). That
 shape was measured at zero occurrences across 400 MB of source, logs, lockfiles
 and docs, so it is close to absent from ordinary text and is heavily
 over-represented here on purpose. The same corpus without those sixteen cases
-scores 0.862 precision against the 0.691 it publishes. Neither figure is wrong;
+scores 0.866 precision against the 0.699 it publishes. Neither figure is wrong;
 they answer different questions, and only the third-party corpus answers "what
 happens on realistic documents".
 
@@ -809,8 +812,18 @@ and an address whose dot is an ideographic full stop, `pii-0102` to
 full stop between two ASCII letters or digits became `.`. `pii-0106` is the
 negative that bounds the second fold: Japanese prose with an `@` mention ending
 in `。`. `pii-0107` is Japanese with wave dashes and an en dash between numbers,
-and `pii-0108` an address written decomposed, which must stay one finding. 108
-cases, 0.691 precision and 0.918 recall with 24 wrong decisions.
+and `pii-0108` an address written decomposed, which must stay one finding.
+
+**Five more after a second review, for characters drawn as a hyphen outside
+Dash_Punctuation.** `pii-0111` and `pii-0112` are an SSN with U+2043 HYPHEN
+BULLET and a card with U+2500 BOX DRAWINGS LIGHT HORIZONTAL between its groups,
+both read as hyphens now, and `pii-0113` is a Korean table drawn with box
+characters that must stay allowed. `pii-0109` and `pii-0110` are the same SSN
+written with U+30FC, the katakana prolonged sound mark, and U+4E00, the CJK
+ideograph for one. Both are labelled `redact` and both allow: they are letters
+in Japanese and Chinese text, and folding them to a hyphen would put hyphens
+into prose, so they are disclosed rather than folded. 113 cases, 0.699 precision
+and 0.892 recall with 26 wrong decisions.
 
 **Some of those false positives are the right redaction under the wrong type.**
 An IMEI carries a Luhn check digit and begins 49, inside Visa's range, so

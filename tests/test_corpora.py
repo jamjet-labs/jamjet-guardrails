@@ -383,6 +383,8 @@ _RECORDS_A_MISS = {
         "pii-0035",  # a TLD carrying a Devanagari spacing mark
         "pii-0036",  # punycode, whose final label the letters-only TLD class drops
         "pii-0101",  # `512 64 1024`, three numbers that are a valid spaced SSN by every rule
+        "pii-0109",  # an SSN separated by U+30FC, a letter in Japanese text, not folded
+        "pii-0110",  # an SSN separated by U+4E00, a letter in Chinese text, not folded
     ),
     # The confusable-dodged codename, caught only with `fold_confusables=True`,
     # which the published row now leaves at its default.

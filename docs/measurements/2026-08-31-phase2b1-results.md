@@ -141,8 +141,8 @@ structural layer alone.
 **Publish: no, and this was already settled before the measurement.**
 `training/ship_bar.json` records that clearing the bar would have authorised
 shipping and would still not have authorised putting a headline precision and
-recall row for a semantic injection check beside `pii` (0.691 / 0.918),
-`secrets` (0.893 / 0.879) and `injection-structural` (0.967 / 0.892). Those
+recall row for a semantic injection check beside `pii` (0.699 / 0.892),
+`secrets` (0.894 / 0.880) and `injection-structural` (0.967 / 0.892). Those
 three are measured on corpora with disclosed provenance and named failures and
 are gated in CI; this rests on one external corpus for an adjacent task inside
 the reference model's own training distribution. Since the bar was missed, both

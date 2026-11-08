@@ -454,11 +454,11 @@ failures is a number you cannot check.
 | confusables | confusables/in-repo | in-repo | `e53f03d3527e` | 115 | 0.942 | 0.891 | 0.916 | 49 | 3 | 6 | 9 |
 | encoded-content | encoded-content/in-repo | in-repo | `ffddd0cd3c29` | 81 | 1.000 | 0.875 | 0.933 | 35 | 0 | 5 | 5 |
 | injection-structural | injection-structural/in-repo | in-repo | `635fcdcd46c2` | 178 | 0.967 | 0.892 | 0.928 | 116 | 4 | 14 | 8 |
-| pii | pii/in-repo | in-repo | `a42702feacef` | 108 | 0.691 | 0.918 | 0.789 | 56 | 25 | 5 | 24 |
+| pii | pii/in-repo | in-repo | `c375031adb42` | 113 | 0.699 | 0.892 | 0.784 | 58 | 25 | 7 | 26 |
 | pii | pii/third-party | nvidia/Nemotron-PII@b70ffaf | `c25ef538d677` | 300 | 0.960 | 0.997 | 0.978 | 340 | 14 | 1 | 6 |
 | rules | rules/in-repo | in-repo | `e9c84e60d79e` | 46 | 1.000 | 0.969 | 0.984 | 31 | 0 | 1 | 1 |
 | script-constraint | script-constraint/in-repo | in-repo | `1e1374cfecc3` | 85 | 0.960 | 0.980 | 0.970 | 48 | 2 | 1 | 0 |
-| secrets | secrets/in-repo | in-repo | `f6b5be59464c` | 182 | 0.893 | 0.879 | 0.886 | 109 | 13 | 15 | 9 |
+| secrets | secrets/in-repo | in-repo | `70e73afff7e0` | 184 | 0.894 | 0.880 | 0.887 | 110 | 13 | 15 | 9 |
 | template-integrity | template-integrity/in-repo | in-repo | `afb0a7245664` | 152 | 0.820 | 0.965 | 0.886 | 109 | 24 | 4 | 19 |
 | url-exfiltration | url-exfiltration/in-repo | in-repo | `d1007078b258` | 100 | 0.929 | 0.929 | 0.929 | 39 | 3 | 3 | 6 |
 

@@ -73,7 +73,7 @@ from dataclasses import dataclass
 from html import unescape
 
 from jamjet_guardrails._decode import decode, is_prose
-from jamjet_guardrails._normalise import fold_character, normalise
+from jamjet_guardrails._normalise import build_view, fold_character
 from jamjet_guardrails._spans import _rewrite
 from jamjet_guardrails.errors import GuardrailUnavailableError
 from jamjet_guardrails.protocol import saw
@@ -548,7 +548,7 @@ def _readings(component: str) -> list[str]:
     reader can see, which is why the one-level rule on payloads still holds.
     """
     readings: dict[str, None] = {}
-    for plain in (_url_decoded(component), normalise(component, True).text.replace("+", " ")):
+    for plain in (_url_decoded(component), build_view(component, True).text.replace("+", " ")):
         readings[plain] = None
         for encoding in ("base64", "hex", "rot13"):
             text = decode(plain, encoding)

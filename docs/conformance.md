@@ -533,14 +533,20 @@ three steps, each defined by a published property:
 3. **NFKC, one code point at a time, then three folds.** Every dash, Dash_Punctuation or U+2212,
    reads as `-`. An ideographic full stop between two ASCII letters or digits reads as `.`, and
    nowhere else, so `@tanaka。よろしく` in Japanese prose stays prose. For `secrets` and `pii` the
-   form is NFKD and every combining mark, Mn or Me, is dropped, so a token with a dot below one
+   form is NFKD wherever that decomposition carries a combining mark, and every combining mark, Mn
+   or Me, is dropped, so a token with a dot below one
    letter, or struck through with U+0336, is the token; `rules` keeps marks, because a banned word
    and the same word with a diacritic can be two words. Canonical composition across two code
    points is not performed, which no pattern here can see, and in exchange the offset map is exact.
 
-A view is built once per piece of content and shared by every check in a chain run. Content over
-16,000,000 code points is refused by every check that reads the view, which the chain records as a
-deny: a check that cannot read content does not report it clean. A token split by a line break is
+`secrets`, `pii` and `rules` share one view of a piece of content within a chain run, and the chain
+drops it when the run returns; `url-exfiltration` builds views of URL components without sharing
+them. Only an exact `str` is shared: a subclass can define its own equality. Content over 16,000,000
+code points that needs a view is refused by every check that reads one, which the chain records as
+a deny: a check that cannot read content does not report it clean. ASCII content with no `%` needs
+no view and is not refused. Dash_Punctuation, U+2212, U+2043, U+02D7, U+2796 and U+2500 all read as
+`-`; U+30FC and U+4E00 do not, because they are letters in Japanese and Chinese text, and
+`pii-0109` and `pii-0110` are those misses. A token split by a line break is
 not joined, because joining lines would join every line of a PEM body; `sec-0180` is that miss.
 A finding that ends on a marked character extends over its marks.
 

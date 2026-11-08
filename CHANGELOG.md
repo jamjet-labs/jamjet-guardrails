@@ -133,15 +133,18 @@ a number that changes quietly is a number nobody can rely on.
 - **Published figures, old to new.** Each corpus gained the cases for the
   shapes under Fixed, positives and the negatives that hold the view down, so
   every version key below moved too.
-  - `secrets`: 0.881 / 0.873 over 160 cases, 8 wrong, to **0.893 / 0.879**
-    over 182, 9 wrong. The code before this change scores the first 174 of
+  - `secrets`: 0.881 / 0.873 over 160 cases, 8 wrong, to **0.894 / 0.880**
+    over 184, 9 wrong. The code before this change scores the first 174 of
     them at 0.873 / 0.814 with 15 wrong; the last eight, combining marks,
     dash variants and a token split by a line break, took the first version
-    of this change from 0.889 / 0.839 with 14 wrong to the published row.
-  - `pii` in-repo: 0.631 / 0.872 over 81, 24 wrong, to **0.691 / 0.918** over
-    108, 24 wrong (0.631 / 0.732 with 33 wrong on the first 101 before the
+    of this change from 0.889 / 0.839 with 14 wrong, and two more, a heavy
+    minus sign and Korean prose, are in the published row.
+  - `pii` in-repo: 0.631 / 0.872 over 81, 24 wrong, to **0.699 / 0.892** over
+    113, 26 wrong (0.631 / 0.732 with 33 wrong on the first 101 before the
     change; the last seven, dash variants and ideographic full stops, took
-    the first version of it from 0.675 / 0.853 with 28 wrong). The
+    the first version of it from 0.675 / 0.853 with 28 wrong; the last five
+    are hyphen lookalikes outside Pd, two of them CJK letters labelled as
+    misses, `pii-0109` and `pii-0110`). The
     Nemotron row does not move: 0.960 / 0.997.
   - `url-exfiltration`: 0.923 / 0.923 over 94, 6 wrong, to **0.929 / 0.929**
     over 100, 6 wrong (0.923 / 0.857 with 9 wrong before the change). Every
@@ -155,7 +158,9 @@ a number that changes quietly is a number nobody can rely on.
   fixture no longer builds a skeleton), `url-exfiltration` 129.7 to 123.3 ms,
   each call timed cold. Dense non-ASCII input, a megabyte of fullwidth letters
   or of `a` and U+200B alternating, gets its own table in
-  `docs/performance.md`: `secrets` 4.4 to 55 ms and 4.0 to 260 ms.
+  `docs/performance.md`, with Korean, Vietnamese, combining-mark and
+  attacker-chosen rows: `secrets` 4.4 to 54 ms, 4.0 to 199 ms, and 5.1 to
+  50 ms on Korean prose.
   That input carries zero-width spaces, so every row pays for the normalised
   view and a second scan; ASCII content with no `%` in it does not.
   `docs/performance.md` says which rows were re-measured and why.
@@ -182,6 +187,11 @@ a number that changes quietly is a number nobody can rely on.
   the content, and cover the removed characters inside a match. Content that
   needs no normalising, which is ASCII without a `%`, is scored exactly as
   before. `docs/conformance.md` has a new section, "The normalised view".
+  The view is built with one `str.translate`, decomposes a character only where
+  that decomposition carries a combining mark, is shared by `secrets`, `pii`
+  and `rules` within a chain run and dropped when the run ends, is never shared
+  with a `str` subclass, and reads U+2043, U+02D7, U+2796 and U+2500 as hyphens.
+  Content over 16 million code points that needs a view is refused.
   Detector versions: `secrets`, `pii`, `url-exfiltration` and `rules` 0.1.0
   to 0.2.0.
 - **`url-exfiltration` reads a component the way a reader sees it.** A

@@ -89,9 +89,10 @@ carries a run of U+200B every kilobyte or so, so every size takes the slow path:
 the view is built, the patterns run twice, and the two sets of spans are
 reconciled. `secrets` went from 4.7 to 25.3 ms a megabyte, `pii` from 207 to 473
 and `rules` from 731 to 273, the last because its fixture no longer builds a
-confusable skeleton. Each call is timed cold: the view is memoised so a chain
-builds it once, and the script clears it before every timed call. Content that is ASCII with no `%` in it takes the fast
-path and pays one `str.isascii` and one substring test on top of the old cost;
+confusable skeleton. Each call is timed cold: the view is memoised so the
+checks reading one piece of content in a chain run can share it, and the script
+clears it before every timed call. Content that is ASCII with no `%` in it takes
+the fast path and pays one `str.isascii` and one substring test on top of the old cost;
 these rows do not show that case, because the input was chosen to carry
 something for every check to find. `url-exfiltration` is unchanged within
 noise, 129.7 to 123.3, because the input carries no URL. The same session
@@ -396,28 +397,46 @@ of it, so 4.0 is exactly linear.
 
 The seeded input carries one invisible run a kilobyte, so it pays for the
 normalised view and shows little of what the view costs when nearly every
-character needs it. A review measured that case and found the first version of
-the view's offset map amplifying it badly, so these rows exist to keep the
-answer published. Two one-megabyte inputs, each check called cold (the memoised
-view cleared before each call), medians of five, peak traced memory of one cold
-call, same machine and interpreter as above:
+character goes through it. Two reviews measured those cases and found the view
+amplifying them, first in memory and then in time, so these rows exist to keep
+the answer published. One-megabyte inputs, each check called cold (the memoised
+view dropped before each call), medians of three, peak traced memory of one cold
+call, same machine and interpreter as above. The middle column is the version of
+the view the second review measured.
 
-| Check | Input | `main`, before the view | first version of the view | now |
+| Check | Input | `main`, no view | earlier view | now |
 |---|---|---:|---:|---:|
-| secrets | fullwidth letters | 4.4 ms, 3 MB | 702 ms, 321 MB | 55 ms, 4 MB |
-| secrets | `a` then U+200B, repeated | 4.0 ms, 3 MB | 468 ms, 162 MB | 260 ms, 17 MB |
-| pii | fullwidth letters | 521 ms, 3 MB | 1702 ms, 321 MB | 1056 ms, 4 MB |
-| pii | `a` then U+200B, repeated | 180 ms, 3 MB | 907 ms, 162 MB | 709 ms, 17 MB |
+| secrets | fullwidth letters | 4.4 ms, 3 MB | 58 ms, 6 MB | 54 ms, 6 MB |
+| secrets | `a` then U+200B, repeated | 4.0 ms, 3 MB | 286 ms, 17 MB | 199 ms, 12 MB |
+| secrets | Korean prose | 5.1 ms, 3 MB | 478 ms, 40 MB | 50 ms, 3 MB |
+| secrets | Vietnamese prose | 3.5 ms, 3 MB | 92 ms, 14 MB | 29 ms, 4 MB |
+| secrets | `a` with three combining marks, repeated | 3.9 ms, 3 MB | 385 ms, 9 MB | 320 ms, 7 MB |
+| secrets | 17-character runs, each a new set of length-changing code points | 5.9 ms, 4 MB | 9731 ms, 21 MB | 563 ms, 17 MB |
+| pii | fullwidth letters | 521 ms, 3 MB | 1068 ms, 4 MB | 1058 ms, 4 MB |
+| pii | `a` then U+200B, repeated | 181 ms, 3 MB | 706 ms, 17 MB | 660 ms, 12 MB |
+| pii | Korean prose | 191 ms, 3 MB | 1250 ms, 40 MB | 269 ms, 3 MB |
+| pii | Vietnamese prose | 192 ms, 3 MB | 504 ms, 14 MB | 444 ms, 4 MB |
+| pii | `a` with three combining marks, repeated | 430 ms, 3 MB | 950 ms, 9 MB | 877 ms, 7 MB |
+| pii | 17-character runs, each a new set of length-changing code points | 180 ms, 4 MB | 10079 ms, 21 MB | 990 ms, 17 MB |
 
-What changed between the last two columns: the map holds only edits that change
-length, so a one-for-one replacement such as a fullwidth letter costs nothing in
-it; its four columns are 32-bit arrays rather than objects; a run of one
-character skips the per-run tables; and the view is memoised, so a chain builds
-it once. What is left is real. Half a million invisible characters are half a
-million edits, and `secrets` pays 65 times what it paid before the view on that
-input, because before the view it did not look. That is the price of reading
-what a reader sees, and it is linear. Content over 16 million code points is
-refused rather than read.
+What the earlier version got wrong, and what changed. It walked runs of
+non-ASCII code points in Python and compiled a character class for every long
+run, so an attacker drawing a new set of length-changing code points for each
+run defeated the class cache and paid a compile per run: nearly ten seconds a
+megabyte. And it decomposed every character for the checks that drop marks, so
+each Hangul syllable split into jamo and Korean prose became one edit per
+syllable with nothing removed. Now one `str.translate` folds everything, a
+character's decomposition is used only where it carries a mark, and the code
+points that change length are found by one class per call over the ones the
+content holds.
+
+What is left is real. A removed or expanded code point is an edit, and half a
+million of them cost what half a million entries cost: `secrets` pays 50 times
+what it paid before the view on alternating zero-width spaces, because before
+the view it did not look. That is the price of reading what a reader sees, and
+it is linear. `tests/test_normalise.py` holds the 17-character-run shape under a
+time bound. Content over 16 million code points that needs a view is refused
+rather than read.
 
     PYTHONPATH=src python -c '
     import time
@@ -428,7 +447,7 @@ refused rather than read.
     context = Context(direction="input", origin="user")
     samples = []
     for _ in range(5):
-        _normalise.normalise.cache_clear()
+        _normalise.forget_views()
         start = time.perf_counter()
         guardrail.check(text, context)
         samples.append((time.perf_counter() - start) * 1000)

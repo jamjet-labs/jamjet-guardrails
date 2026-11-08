@@ -449,20 +449,20 @@
       "detector_version": "0.2.0",
       "corpus_name": "pii/in-repo",
       "corpus_source": "in-repo",
-      "corpus_version": "a42702feacef",
-      "cases": 108,
-      "precision": 0.6914,
-      "recall": 0.918,
-      "f1": 0.7887,
-      "true_positives": 56,
+      "corpus_version": "c375031adb42",
+      "cases": 113,
+      "precision": 0.6988,
+      "recall": 0.8923,
+      "f1": 0.7838,
+      "true_positives": 58,
       "false_positives": 25,
-      "false_negatives": 5,
-      "decision_mismatches": 24,
+      "false_negatives": 7,
+      "decision_mismatches": 26,
       "per_type": {
         "CREDIT_CARD": {
-          "precision": 0.75,
-          "recall": 0.8824,
-          "true_positives": 15,
+          "precision": 0.7619,
+          "recall": 0.8889,
+          "true_positives": 16,
           "false_positives": 5,
           "false_negatives": 2
         },
@@ -481,11 +481,11 @@
           "false_negatives": 0
         },
         "US_SSN": {
-          "precision": 0.9231,
-          "recall": 0.9231,
-          "true_positives": 12,
+          "precision": 0.9286,
+          "recall": 0.8125,
+          "true_positives": 13,
           "false_positives": 1,
-          "false_negatives": 1
+          "false_negatives": 3
         }
       },
       "failures": [
@@ -634,6 +634,18 @@
           "predicted": "redact"
         },
         {
+          "case_id": "pii-0109",
+          "kind": "decision_mismatch",
+          "expected": "redact",
+          "predicted": "allow"
+        },
+        {
+          "case_id": "pii-0110",
+          "kind": "decision_mismatch",
+          "expected": "redact",
+          "predicted": "allow"
+        },
+        {
           "case_id": "pii-0031",
           "kind": "false_negative",
           "expected": "US_SSN@(4, 13)",
@@ -661,6 +673,18 @@
           "case_id": "pii-0036",
           "kind": "false_negative",
           "expected": "EMAIL@(5, 32)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "pii-0109",
+          "kind": "false_negative",
+          "expected": "US_SSN@(4, 15)",
+          "predicted": "nothing"
+        },
+        {
+          "case_id": "pii-0110",
+          "kind": "false_negative",
+          "expected": "US_SSN@(4, 15)",
           "predicted": "nothing"
         },
         {
@@ -1096,20 +1120,20 @@
       "detector_version": "0.2.0",
       "corpus_name": "secrets/in-repo",
       "corpus_source": "in-repo",
-      "corpus_version": "f6b5be59464c",
-      "cases": 182,
-      "precision": 0.8934,
-      "recall": 0.879,
-      "f1": 0.8862,
-      "true_positives": 109,
+      "corpus_version": "70e73afff7e0",
+      "cases": 184,
+      "precision": 0.8943,
+      "recall": 0.88,
+      "f1": 0.8871,
+      "true_positives": 110,
       "false_positives": 13,
       "false_negatives": 15,
       "decision_mismatches": 9,
       "per_type": {
         "ANTHROPIC_KEY": {
-          "precision": 0.9091,
-          "recall": 0.8333,
-          "true_positives": 10,
+          "precision": 0.9167,
+          "recall": 0.8462,
+          "true_positives": 11,
           "false_positives": 1,
           "false_negatives": 2
         },

@@ -61,14 +61,18 @@ the same credential.
 
 **What takes the slow path.** Content that is ASCII with no `%` in it is its own
 view, and costs one `str.isascii` and one substring test. Anything else is
-walked: one regex pass for runs of non-ASCII code points and percent triplets,
-then each run's distinct code points folded once. That includes content that
-needs nothing changed, an emoji carrying U+FE0F or a ZWJ, any `%20`, any
-accented letter, so the slow path is the ordinary one for most text that is not
-plain ASCII. It is linear, the map holds only edits that change length, and
-the view is built once per piece of content and shared by every check in a
-chain run. Content over `MAX_CHARS` is refused rather than read, by every check
-that reads the view.
+folded by one `str.translate` over a table that learns each code point the first
+time it meets it, then searched once for the code points whose fold changes
+length and once for percent triplets. That includes content that needs nothing
+changed, an emoji carrying U+FE0F or a ZWJ, any `%20`, any accented letter, so
+the slow path is the ordinary one for most text that is not plain ASCII. It is
+linear, all three passes run in C, and the map holds only edits that change
+length. The view of a whole piece of content is memoised, so `secrets`, `pii`
+and `rules` share it within one chain run, and the chain drops it when the run
+ends; `url-exfiltration` reads fragments of a URL through `build_view`, which
+does not touch the memo. Content over `MAX_CHARS` that needs a view is refused
+rather than read, by every check that reads the view; ASCII with no `%` needs
+none and is never refused.
 
 **What still passes.** A token split by a line break is two lines to this view,
 because joining lines would also join every line of a PEM body and every
@@ -93,6 +97,7 @@ from bisect import bisect_right
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from functools import lru_cache
+from heapq import merge
 
 from jamjet_guardrails.errors import GuardrailUnavailableError
 
@@ -107,16 +112,6 @@ Scan = Callable[[str], Iterable[tuple[str, tuple[int, int]]]]
 # every offset in the map inside a 32-bit integer.
 MAX_CHARS = 16_000_000
 
-# One pass finds both things that can change: a run of percent triplets, or a
-# run of non-ASCII code points. They cannot overlap, because a triplet is ASCII,
-# and finding them with one pattern hands them over in source order, which is
-# the order the offset map is built in.
-#
-# The percent alternative is spelled with its first triplet outside the repeat
-# on purpose. As `(?:%XX)+` it had no literal prefix and cost 13.7 ms on a
-# megabyte with no `%` in it; led by a literal it is found by a fast scan.
-_CHANGEABLE = re.compile(r"%[0-9A-Fa-f]{2}(?:%[0-9A-Fa-f]{2})*|[^\x00-\x7f]+")
-
 # Printable ASCII, the single-byte triplets that are decoded. Space is in, so a
 # card written `4111%201111%201111%201111` reads as the card it is; every control
 # character is out.
@@ -130,8 +125,14 @@ _FIRST_DECODED = 0xA0
 # The two categories of combining mark, the ones `marks` drops.
 _MARKS = ("Mn", "Me")
 
-# U+2212 MINUS SIGN is Sm, not Pd, and reads as a hyphen in every font.
-_MINUS = "\u2212"
+# Code points outside Dash_Punctuation that are drawn as a hyphen and read as
+# one: U+2212 MINUS SIGN, U+2043 HYPHEN BULLET, U+02D7 MODIFIER LETTER MINUS
+# SIGN, U+2796 HEAVY MINUS SIGN and U+2500 BOX DRAWINGS LIGHT HORIZONTAL. Two
+# that look as much like one are left alone on purpose: U+30FC KATAKANA-HIRAGANA
+# PROLONGED SOUND MARK and U+4E00, the CJK ideograph for one, are letters in
+# Japanese and Chinese text, and folding them would put hyphens into prose.
+# The corpora carry both as labelled misses.
+_HYPHEN_LIKE = frozenset("\u2212\u2043\u02d7\u2796\u2500")
 # An ideographic full stop between two ASCII letters or digits reads as the dot
 # of a host name: `corp。com`. Only there: in Japanese prose it ends a sentence,
 # and `@tanaka。よろしく` must not become an address. U+FF61, the halfwidth form,
@@ -161,12 +162,12 @@ def fold_character(character: str, marks: bool = False) -> str:
     """What one code point reads as.
 
     Nothing if it renders as nothing. Otherwise its compatibility form with
-    every default-ignorable code point removed and every dash, Pd or U+2212,
-    written `-`, because `sk‐ant‐` with U+2010 and `123–45–6789` with U+2013
+    every default-ignorable code point removed and every dash, Pd or one of
+    `_HYPHEN_LIKE`, written `-`, because `sk‐ant‐` with U+2010 and `123–45–6789` with U+2013
     read as the hyphenated values they spell.
 
-    With ``marks``, the form is NFKD and every combining mark, Mn or Me, is
-    removed as well, so an accented letter reads as its base letter and a mark
+    With ``marks``, the form is NFKD wherever that decomposition carries a
+    combining mark, and every combining mark, Mn or Me, is removed as well, so an accented letter reads as its base letter and a mark
     stacked on a character, U+0336 on every character of a token for instance,
     reads as nothing. `secrets` and `pii` ask for that: their patterns are ASCII,
     and a credential with a dot below one of its letters is the credential.
@@ -180,14 +181,24 @@ def fold_character(character: str, marks: bool = False) -> str:
     ignorable = _ignorable()
     if character in ignorable:
         return ""
+    form = unicodedata.normalize("NFKC", character)
+    if marks:
+        decomposed = unicodedata.normalize("NFKD", character)
+        # NFKD ONLY WHERE IT CARRIES A MARK. Decomposing every character split
+        # each Hangul syllable into its jamo, so Korean prose became one
+        # length-changing edit per syllable and `secrets` went from 4.8 to 492 ms
+        # a megabyte on it, with nothing dropped. A syllable's decomposition
+        # carries no mark, so it keeps its NFKC form and maps one for one.
+        if any(unicodedata.category(c) in _MARKS for c in decomposed):
+            form = decomposed
     folded: list[str] = []
-    for produced in unicodedata.normalize("NFKD" if marks else "NFKC", character):
+    for produced in form:
         if produced in ignorable:
             continue
         category = unicodedata.category(produced)
         if marks and category in _MARKS:
             continue
-        folded.append("-" if category == "Pd" or produced == _MINUS else produced)
+        folded.append("-" if category == "Pd" or produced in _HYPHEN_LIKE else produced)
     return "".join(folded)
 
 
@@ -298,45 +309,136 @@ def _percent_edits(start: int, run: str, marks: bool) -> Iterable[tuple[int, int
         index += width
 
 
-# Runs at most this long are folded one character at a time.
-_SHORT_RUN = 16
-
-
-@lru_cache(maxsize=256)
-def _class_of(characters: frozenset[str]) -> re.Pattern[str]:
-    """One character class over a set of code points, compiled once per set."""
-    return re.compile("[" + "".join(re.escape(c) for c in sorted(characters)) + "]")
-
-
-@lru_cache(maxsize=4)
 def normalise(content: str, marks: bool = False) -> Normalised:
     """The view of ``content`` the module docstring describes, with its map.
 
-    Memoised on the content, so the checks in one chain run, which are all
-    handed the same string, build its view once between them. Up to four views
-    and the strings they were built from are kept alive by that cache.
+    Memoised on the content, so the checks that read a whole piece of content
+    in one chain run, `secrets`, `pii` and `rules`, build its view once between
+    them. Only an exact `str` is memoised: a subclass can define its own
+    `__hash__` and `__eq__`, and one that called itself equal to an earlier
+    string would be handed that string's view. `GuardrailChain.run` clears the
+    cache when it returns, so the content of a finished run is not held, and a
+    caller outside a chain holds at most the four most recent.
 
     Raises:
-        GuardrailUnavailableError: for content over ``MAX_CHARS``.
+        GuardrailUnavailableError: for content over ``MAX_CHARS`` that needs a
+            view built at all.
     """
+    if type(content) is not str:
+        return build_view(content, marks)
+    return _memoised(content, marks)
+
+
+@lru_cache(maxsize=4)
+def _memoised(content: str, marks: bool) -> Normalised:
+    return build_view(content, marks)
+
+
+def forget_views() -> None:
+    """Drop every memoised view, and the content each one was built from."""
+    _memoised.cache_clear()
+
+
+class _FoldTable(dict[int, str]):
+    """A `str.translate` table that folds each code point the first time it is seen.
+
+    `str.translate` looks every code point up in C and calls `__missing__` only
+    for one it has not met, so text in any script is folded at the speed of a
+    dictionary lookup per character, and only the distinct code points cost a
+    call into Python. The code points whose fold changes LENGTH are collected
+    as they are met, because those are the only ones the offset map needs.
+    """
+
+    def __init__(self, marks: bool) -> None:
+        super().__init__((point, chr(point)) for point in range(0x80))
+        self.marks = marks
+        self.resized: set[str] = set()
+
+    def __missing__(self, point: int) -> str:
+        character = chr(point)
+        folded = fold_character(character, self.marks)
+        if len(self) < _TABLE_LIMIT:
+            self[point] = folded
+        if len(folded) != 1:
+            self.resized.add(character)
+        return folded
+
+
+# How many code points a fold table remembers before it stops growing. Every
+# assigned code point would be 1.1 million entries; text in a handful of
+# scripts meets a few thousand. Past the limit a code point is folded on each
+# meeting rather than remembered, which is slower and never wrong.
+_TABLE_LIMIT = 65536
+
+_PERCENT_RUN = re.compile(r"%[0-9A-Fa-f]{2}(?:%[0-9A-Fa-f]{2})*")
+
+
+@lru_cache(maxsize=2)
+def _table(marks: bool) -> _FoldTable:
+    return _FoldTable(marks)
+
+
+def build_view(content: str, marks: bool = False) -> Normalised:
+    """``normalise`` without the memo, for callers whose content is a fragment.
+
+    `url-exfiltration` reads every URL component through this, and going
+    through the memo evicted the view of the whole content between the checks
+    that share it: in a chain of `secrets`, `url-exfiltration` and `pii`, every
+    lookup missed.
+
+    THREE PASSES, ALL OF THEM IN C. `str.translate` folds every code point
+    through `_FoldTable`. The code points whose fold changes length are then
+    found by one character class compiled over the ones this content holds, and
+    the percent triplets by one more pattern; only those two kinds of edit enter
+    the map, in source order. An earlier version walked runs of non-ASCII code
+    points in Python and compiled a class per run, which an attacker drawing a
+    new set for every run turned into 10.7 seconds a megabyte, and which cost
+    Korean prose 233 ms a megabyte with nothing in it to change.
+    """
+    empty = array("i")
+    if content.isascii() and "%" not in content:
+        return Normalised(content, len(content), False, empty, empty, empty, empty)
     if len(content) > MAX_CHARS:
         raise GuardrailUnavailableError(
             f"content of {len(content)} characters is over the {MAX_CHARS}-character "
             "limit this package builds a normalised view for; a check that cannot "
             "read it refuses rather than reporting it clean. Split the content"
         )
-    empty = array("i")
-    if content.isascii() and "%" not in content:
-        return Normalised(content, len(content), False, empty, empty, empty, empty)
 
-    pieces: list[str] = []
-    cursor = 0
-    delta = 0
+    table = _table(marks)
+    translated = content.translate(table) if not content.isascii() else content
+
+    # Every edit that changes length, as (source start, source end, reading,
+    # whether the translated text already carries the reading), streamed in
+    # source order and never held as a list: half a million removals held as
+    # tuples cost 85 MB where the arrays below hold them in 8.
+    streams: list[Iterable[tuple[int, int, str, bool]]] = []
+    present = table.resized.intersection(content) if table.resized else set()
+    if present:
+        pattern = re.compile("[" + "".join(re.escape(c) for c in sorted(present)) + "]")
+        streams.append(
+            (found.start(), found.start() + 1, table[ord(found.group())], True)
+            for found in pattern.finditer(content)
+        )
+    if "%" in content:
+        streams.append(
+            (start, end, reading, False)
+            for run in _PERCENT_RUN.finditer(content)
+            for start, end, reading in _percent_edits(run.start(), run.group(), marks)
+        )
+    edits = streams[0] if len(streams) == 1 else merge(*streams, key=lambda edit: edit[0])
+
     source_starts, source_ends = array("i"), array("i")
     view_starts, view_ends = array("i"), array("i")
-
-    def record(start: int, end: int, reading: str) -> None:
-        nonlocal delta
+    pieces: list[str] = []
+    cursor = 0  # in the translated text
+    shift = 0  # translated offset minus source offset
+    delta = 0  # view offset minus source offset
+    for start, end, reading, translated_already in edits:
+        if not translated_already:
+            pieces.append(translated[cursor : start + shift])
+            pieces.append(reading)
+            cursor = end + shift
         view_start = start + delta
         if (
             not reading
@@ -351,59 +453,13 @@ def normalise(content: str, marks: bool = False) -> Normalised:
             view_starts.append(view_start)
             view_ends.append(view_start + len(reading))
         delta += len(reading) - (end - start)
-
-    for match in _CHANGEABLE.finditer(content):
-        run = match.group()
-        if run[0] == "%":
-            for start, end, reading in _percent_edits(match.start(), run, marks):
-                pieces.append(content[cursor:start])
-                pieces.append(reading)
-                cursor = end
-                record(start, end, reading)
-            continue
-        if len(run) == 1:
-            reading = fold_character(run, marks)
-            if reading == run:
-                continue
-            start = match.start()
-            pieces.append(content[cursor:start])
-            pieces.append(reading)
-            cursor = start + 1
-            if len(reading) != 1:
-                record(start, cursor, reading)
-            continue
-        if len(run) <= _SHORT_RUN:
-            # A short run, which is what a stray invisible character between two
-            # letters is, folded character by character: building a translation
-            # table and a pattern per run cost more than the run, and an
-            # alternating `a` and U+200B is half a million one-character runs.
-            readings = [fold_character(character, marks) for character in run]
-            if all(reading == character for reading, character in zip(readings, run)):
-                continue
-            pieces.append(content[cursor : match.start()])
-            pieces.append("".join(readings))
-            cursor = match.end()
-            for offset, reading in enumerate(readings, match.start()):
-                if len(reading) != 1:
-                    record(offset, offset + 1, reading)
-            continue
-        folds = {character: fold_character(character, marks) for character in set(run)}
-        table = {ord(c): f for c, f in folds.items() if f != c}
-        if not table:
-            continue
-        pieces.append(content[cursor : match.start()])
-        pieces.append(run.translate(table))
-        cursor = match.end()
-        resized = frozenset(c for c, f in folds.items() if len(f) != 1)
-        if resized:
-            for found in _class_of(resized).finditer(run):
-                start = match.start() + found.start()
-                record(start, start + 1, folds[found.group()])
-    if not pieces:
-        text = content
-    else:
-        pieces.append(content[cursor:])
+        if translated_already:
+            shift += len(reading) - (end - start)
+    if pieces:
+        pieces.append(translated[cursor:])
         text = "".join(pieces)
+    else:
+        text = translated
     if "\u3002" in text:
         text = _IDEOGRAPHIC_STOP.sub(".", text)
     if text == content:
