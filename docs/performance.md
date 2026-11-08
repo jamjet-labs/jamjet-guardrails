@@ -75,12 +75,29 @@ taken on the machine and the interpreter named above.
 | `confusables` | 2026-09-03 | 2026-09-04, when the two quadratic sites below were fixed |
 | `encoded-content` | 2026-09-04 | |
 | `injection-structural` | 2026-09-03 | 2026-10-10, when the variation-selector signal was added; same machine and interpreter, macOS 27.0.1 |
-| `pii` | 2026-09-03 | |
-| `rules` | 2026-09-03 | 2026-09-03, when the fixture set `fold_confusables=True` |
+| `pii` | 2026-09-03 | 2026-11-08, when it began matching over the normalised view as well; same machine and interpreter, macOS 27.0.1 |
+| `rules` | 2026-09-03 | 2026-09-03, when the fixture set `fold_confusables=True`; 2026-11-08, when the fixture went back to the default and patterns began matching over the normalised view |
 | `script-constraint` | 2026-09-03 | |
-| `secrets` | 2026-09-03 | |
+| `secrets` | 2026-09-03 | 2026-11-08, when it began matching over the normalised view as well |
 | `template-integrity` | 2026-09-04 | |
-| `url-exfiltration` | 2026-09-03 | 2026-09-04, when the two quadratic sites below were fixed |
+| `url-exfiltration` | 2026-09-03 | 2026-09-04, when the two quadratic sites below were fixed; 2026-11-08, when it began reading components as a reader sees them |
+
+**The 2026-11-08 rows cost more for the three checks that match text, and the
+seeded input is why.** `secrets`, `pii` and `rules` now also scan a normalised
+view of the content (`jamjet_guardrails._normalise`), and the seeded input
+carries a run of U+200B every kilobyte or so, so every size takes the slow path:
+the view is built, the patterns run twice, and the two sets of spans are
+reconciled. `secrets` went from 4.7 to 25.3 ms a megabyte, `pii` from 207 to 473
+and `rules` from 731 to 273, the last because its fixture no longer builds a
+confusable skeleton. Each call is timed cold: the view is memoised so the
+checks reading one piece of content in a chain run can share it, and the script
+clears it before every timed call. Content that is ASCII with no `%` in it takes
+the fast path and pays one `str.isascii` and one substring test on top of the old cost;
+these rows do not show that case, because the input was chosen to carry
+something for every check to find. `url-exfiltration` is unchanged within
+noise, 129.7 to 123.3, because the input carries no URL. The same session
+measured `confusables`, which did not change, at 149.9 against the 146.9 above,
+which is the evidence the two sessions are comparable.
 
 **A row IS re-measured when the check under it changes, and `url-exfiltration`
 was, on 2026-09-04.** Its six rows moved from 0.112 / 0.439 / 1.733 / 6.961 /
@@ -155,42 +172,42 @@ Milliseconds per call. `MB/s` is derived from the p50.
 | injection-structural | 65 536 | 61 | 8.129 | 8.482 | 8.714 | 7.8 |
 | injection-structural | 262 144 | 244 | 31.430 | 32.358 | 33.691 | 8.0 |
 | injection-structural | 1 048 576 | 979 | 125.319 | 127.298 | 129.517 | 8.1 |
-| pii | 1 024 | 1 | 0.204 | 0.215 | 0.250 | 4.8 |
-| pii | 4 096 | 4 | 0.820 | 0.841 | 0.879 | 4.8 |
-| pii | 16 384 | 16 | 3.289 | 3.701 | 3.770 | 4.8 |
-| pii | 65 536 | 62 | 12.996 | 13.551 | 13.769 | 4.9 |
-| pii | 262 144 | 245 | 51.916 | 53.372 | 54.060 | 4.9 |
-| pii | 1 048 576 | 979 | 206.674 | 211.254 | 215.892 | 4.9 |
-| rules | 1 024 | 2 | 0.699 | 0.763 | 0.838 | 1.4 |
-| rules | 4 096 | 9 | 2.769 | 2.925 | 2.999 | 1.4 |
-| rules | 16 384 | 31 | 10.844 | 11.312 | 11.536 | 1.4 |
-| rules | 65 536 | 123 | 43.738 | 45.006 | 45.828 | 1.4 |
-| rules | 262 144 | 491 | 175.289 | 178.582 | 182.292 | 1.4 |
-| rules | 1 048 576 | 1 959 | 730.951 | 752.094 | 766.248 | 1.4 |
+| pii | 1 024 | 1 | 0.477 | 0.484 | 0.488 | 2.1 |
+| pii | 4 096 | 4 | 1.894 | 2.087 | 2.158 | 2.1 |
+| pii | 16 384 | 16 | 7.587 | 7.788 | 7.903 | 2.1 |
+| pii | 65 536 | 62 | 30.258 | 31.459 | 34.377 | 2.1 |
+| pii | 262 144 | 245 | 121.262 | 126.958 | 132.725 | 2.1 |
+| pii | 1 048 576 | 979 | 472.855 | 486.404 | 488.205 | 2.1 |
+| rules | 1 024 | 2 | 0.262 | 0.272 | 0.280 | 3.8 |
+| rules | 4 096 | 9 | 1.031 | 1.070 | 1.094 | 3.8 |
+| rules | 16 384 | 31 | 4.036 | 4.191 | 4.428 | 3.9 |
+| rules | 65 536 | 123 | 16.218 | 16.563 | 16.869 | 3.9 |
+| rules | 262 144 | 491 | 66.893 | 68.947 | 71.457 | 3.8 |
+| rules | 1 048 576 | 1 959 | 272.935 | 290.189 | 292.984 | 3.7 |
 | script-constraint | 1 024 | 0 | 0.248 | 0.274 | 0.320 | 4.0 |
 | script-constraint | 4 096 | 0 | 0.998 | 1.094 | 1.118 | 3.9 |
 | script-constraint | 16 384 | 0 | 4.049 | 4.252 | 4.312 | 3.9 |
 | script-constraint | 65 536 | 0 | 15.961 | 16.535 | 17.112 | 4.0 |
 | script-constraint | 262 144 | 0 | 63.889 | 66.362 | 68.548 | 3.9 |
 | script-constraint | 1 048 576 | 0 | 255.746 | 263.393 | 267.481 | 3.9 |
-| secrets | 1 024 | 1 | 0.008 | 0.010 | 0.010 | 125.9 |
-| secrets | 4 096 | 4 | 0.021 | 0.026 | 0.027 | 184.1 |
-| secrets | 16 384 | 15 | 0.073 | 0.078 | 0.087 | 216.9 |
-| secrets | 65 536 | 61 | 0.290 | 0.326 | 0.335 | 217.2 |
-| secrets | 262 144 | 244 | 1.141 | 1.232 | 1.276 | 221.2 |
-| secrets | 1 048 576 | 979 | 4.697 | 4.990 | 5.199 | 214.9 |
+| secrets | 1 024 | 1 | 0.032 | 0.038 | 0.042 | 31.3 |
+| secrets | 4 096 | 4 | 0.104 | 0.117 | 0.124 | 38.0 |
+| secrets | 16 384 | 15 | 0.398 | 0.425 | 0.447 | 39.7 |
+| secrets | 65 536 | 61 | 1.564 | 1.662 | 1.727 | 40.3 |
+| secrets | 262 144 | 244 | 6.273 | 6.357 | 6.442 | 40.2 |
+| secrets | 1 048 576 | 979 | 25.254 | 26.145 | 26.791 | 40.0 |
 | template-integrity | 1 024 | 0 | 0.033 | 0.034 | 0.034 | 29.7 |
 | template-integrity | 4 096 | 0 | 0.121 | 0.129 | 0.135 | 32.6 |
 | template-integrity | 16 384 | 0 | 0.465 | 0.480 | 0.518 | 33.9 |
 | template-integrity | 65 536 | 0 | 1.866 | 1.949 | 2.037 | 33.8 |
 | template-integrity | 262 144 | 0 | 7.493 | 8.280 | 8.544 | 33.7 |
 | template-integrity | 1 048 576 | 0 | 29.724 | 31.835 | 32.471 | 34.0 |
-| url-exfiltration | 1 024 | 0 | 0.130 | 0.142 | 0.155 | 7.6 |
-| url-exfiltration | 4 096 | 0 | 0.510 | 0.541 | 0.576 | 7.7 |
-| url-exfiltration | 16 384 | 0 | 2.025 | 2.134 | 2.164 | 7.8 |
-| url-exfiltration | 65 536 | 0 | 8.058 | 8.404 | 8.534 | 7.8 |
-| url-exfiltration | 262 144 | 0 | 32.241 | 33.407 | 33.769 | 7.8 |
-| url-exfiltration | 1 048 576 | 0 | 129.702 | 134.430 | 135.108 | 7.8 |
+| url-exfiltration | 1 024 | 0 | 0.124 | 0.128 | 0.137 | 7.9 |
+| url-exfiltration | 4 096 | 0 | 0.483 | 0.498 | 0.524 | 8.1 |
+| url-exfiltration | 16 384 | 0 | 1.924 | 2.034 | 2.066 | 8.2 |
+| url-exfiltration | 65 536 | 0 | 7.695 | 7.762 | 7.860 | 8.2 |
+| url-exfiltration | 262 144 | 0 | 30.768 | 31.502 | 32.954 | 8.2 |
+| url-exfiltration | 1 048 576 | 0 | 123.267 | 130.578 | 138.413 | 8.2 |
 
 ## What each check does with the length
 
@@ -244,22 +261,26 @@ of it, so 4.0 is exactly linear.
   and 0.94, 3.84 and 17.04 ms when a left-to-right mark follows every selector.
   Those are one machine's numbers from one session and are not re-measured by
   anything.
-- **`pii`** is linear. Ratios run 3.95 to 4.02 and the rate holds at 4.8 to 4.9
+- **`pii`** is linear. Ratios run 3.90 to 4.01 and the rate holds at 2.1
   megabytes per second across three orders of magnitude. It is the slowest check
-  here, and the Luhn validation of every candidate digit run is why: it redacts,
-  so the number includes rewriting the content.
+  here. Every pattern now runs over the content and over its normalised view,
+  which this input always needs, and the Luhn validation of every candidate digit
+  run happens in both; it redacts, so the number includes rewriting the content.
 - **`rules`** is near-linear, drifting slightly above 4.0 at the top of the
-  range: 4.01 at 256 KB and 4.17 at 1 MB. The drift is the finding count, which
+  range: 4.12 at 256 KB and 4.08 at 1 MB. The drift is the finding count, which
   grows faster than for the other checks because this fixture has more patterns
   matching this input, and merging spans is what those extra findings cost. The
   fixture also sets `max_chars=2000`, so above that size every call reports a
   `LENGTH_LIMIT` finding and the redacted output is truncated. The patterns are
   still scanned over the whole content, which is what these rows measure.
 
-  **These figures are 5.1x the ones this page carried before, and the cause is a
-  configuration change rather than a regression.** The fixture now sets
-  `fold_confusables=True`, so every call builds the UTS #39 skeleton of the whole
-  content: two normalisation passes, a fold through the confusables table, and an
+  **These figures are 0.38x the ones this page carried from 2026-09-03 to
+  2026-11-07, and the cause is again the fixture.** It no longer sets
+  `fold_confusables`, so the published row is measured at the engine's default,
+  and patterns and banned substrings now also match over the normalised view,
+  which this input always needs. What follows is what the option costs a caller
+  who sets it, measured then. With it set, every call builds the UTS #39 skeleton
+  of the whole content: two normalisation passes, a fold through the confusables table, and an
   offset map composed through all three. That is five passes over the content and
   one integer per character per pass, and it is what the option costs. It is off
   by default, and a caller who does not set it pays none of it. There is no ASCII
@@ -361,17 +382,77 @@ of it, so 4.0 is exactly linear.
       print(label, round(percentile(samples, 0.50), 3))
   EOF
   ```
-- **`secrets`** is linear from 16 KB upward, at ratios of 3.97, 3.93 and 4.12.
-  Below that it is dominated by fixed overhead rather than by the content: the
-  first step reads as 2.62x and the second as 3.48x, climbing towards 4.0 as the
-  content starts to matter. At 8 microseconds a call the measurement is close to
-  the cost of taking it, and those two ratios are that cost rather than a
-  property of the check. It is the fastest check here by more than an order of
-  magnitude because every pattern is anchored on an issuer prefix, so almost
-  every start position fails on the first character. The reasoning behind the one
+- **`secrets`** is linear from 16 KB upward, at ratios of 3.93, 4.01 and 4.03.
+  Below that fixed overhead shows: the first step reads as 3.25x and the second
+  as 3.83x. It is still the fastest check that scans text, at about 40
+  megabytes per second, because every pattern is anchored on an issuer prefix,
+  so almost every start position fails on the first character. Most of a call
+  on this input is now building the normalised view rather than the two
+  scans, which are about 3 ms each. The reasoning behind the one
   pattern that had to be bounded to stay linear, and the quadratic behaviour that
   bound removed, is recorded in
   `src/jamjet_guardrails/detectors/secrets.py`.
+
+## Input the seeded rows do not show: dense non-ASCII text
+
+The seeded input carries one invisible run a kilobyte, so it pays for the
+normalised view and shows little of what the view costs when nearly every
+character goes through it. Two reviews measured those cases and found the view
+amplifying them, first in memory and then in time, so these rows exist to keep
+the answer published. One-megabyte inputs, each check called cold (the memoised
+view dropped before each call), medians of three, peak traced memory of one cold
+call, same machine and interpreter as above. The middle column is the version of
+the view the second review measured.
+
+| Check | Input | `main`, no view | earlier view | now |
+|---|---|---:|---:|---:|
+| secrets | fullwidth letters | 4.4 ms, 3 MB | 58 ms, 6 MB | 54 ms, 6 MB |
+| secrets | `a` then U+200B, repeated | 4.0 ms, 3 MB | 286 ms, 17 MB | 199 ms, 12 MB |
+| secrets | Korean prose | 5.1 ms, 3 MB | 478 ms, 40 MB | 50 ms, 3 MB |
+| secrets | Vietnamese prose | 3.5 ms, 3 MB | 92 ms, 14 MB | 29 ms, 4 MB |
+| secrets | `a` with three combining marks, repeated | 3.9 ms, 3 MB | 385 ms, 9 MB | 320 ms, 7 MB |
+| secrets | 17-character runs, each a new set of length-changing code points | 5.9 ms, 4 MB | 9731 ms, 21 MB | 563 ms, 17 MB |
+| pii | fullwidth letters | 521 ms, 3 MB | 1068 ms, 4 MB | 1058 ms, 4 MB |
+| pii | `a` then U+200B, repeated | 181 ms, 3 MB | 706 ms, 17 MB | 660 ms, 12 MB |
+| pii | Korean prose | 191 ms, 3 MB | 1250 ms, 40 MB | 269 ms, 3 MB |
+| pii | Vietnamese prose | 192 ms, 3 MB | 504 ms, 14 MB | 444 ms, 4 MB |
+| pii | `a` with three combining marks, repeated | 430 ms, 3 MB | 950 ms, 9 MB | 877 ms, 7 MB |
+| pii | 17-character runs, each a new set of length-changing code points | 180 ms, 4 MB | 10079 ms, 21 MB | 990 ms, 17 MB |
+
+What the earlier version got wrong, and what changed. It walked runs of
+non-ASCII code points in Python and compiled a character class for every long
+run, so an attacker drawing a new set of length-changing code points for each
+run defeated the class cache and paid a compile per run: nearly ten seconds a
+megabyte. And it decomposed every character for the checks that drop marks, so
+each Hangul syllable split into jamo and Korean prose became one edit per
+syllable with nothing removed. Now one `str.translate` folds everything, a
+character's decomposition is used only where it carries a mark, and the code
+points that change length are found by one class per call over the ones the
+content holds.
+
+What is left is real. A removed or expanded code point is an edit, and half a
+million of them cost what half a million entries cost: `secrets` pays 50 times
+what it paid before the view on alternating zero-width spaces, because before
+the view it did not look. That is the price of reading what a reader sees, and
+it is linear. `tests/test_normalise.py` holds the 17-character-run shape under a
+time bound. Content over 16 million code points that needs a view is refused
+rather than read.
+
+    PYTHONPATH=src python -c '
+    import time
+    from jamjet_guardrails import Context, _normalise
+    from jamjet_guardrails.detectors.secrets import SecretsGuardrail
+    text = "a​" * (1 << 19)
+    guardrail = SecretsGuardrail()
+    context = Context(direction="input", origin="user")
+    samples = []
+    for _ in range(5):
+        _normalise.forget_views()
+        start = time.perf_counter()
+        guardrail.check(text, context)
+        samples.append((time.perf_counter() - start) * 1000)
+    print(sorted(samples)[2])
+    '
 
 ## Which rows were re-measured, and when
 

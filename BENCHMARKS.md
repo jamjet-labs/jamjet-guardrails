@@ -8,13 +8,13 @@ every score. How to read them is under the table.
 | confusables | confusables/in-repo | in-repo | `e53f03d3527e` | 115 | 0.942 | 0.891 | 0.916 | 49 | 3 | 6 | 9 |
 | encoded-content | encoded-content/in-repo | in-repo | `ffddd0cd3c29` | 81 | 1.000 | 0.875 | 0.933 | 35 | 0 | 5 | 5 |
 | injection-structural | injection-structural/in-repo | in-repo | `635fcdcd46c2` | 178 | 0.967 | 0.892 | 0.928 | 116 | 4 | 14 | 8 |
-| pii | pii/in-repo | in-repo | `06fb3b601aba` | 81 | 0.631 | 0.872 | 0.732 | 41 | 24 | 6 | 24 |
+| pii | pii/in-repo | in-repo | `c375031adb42` | 113 | 0.699 | 0.892 | 0.784 | 58 | 25 | 7 | 26 |
 | pii | pii/third-party | nvidia/Nemotron-PII@b70ffaf | `c25ef538d677` | 300 | 0.960 | 0.997 | 0.978 | 340 | 14 | 1 | 6 |
-| rules | rules/in-repo | in-repo | `8fe119ddb734` | 42 | 1.000 | 1.000 | 1.000 | 29 | 0 | 0 | 0 |
+| rules | rules/in-repo | in-repo | `e9c84e60d79e` | 46 | 1.000 | 0.969 | 0.984 | 31 | 0 | 1 | 1 |
 | script-constraint | script-constraint/in-repo | in-repo | `1e1374cfecc3` | 85 | 0.960 | 0.980 | 0.970 | 48 | 2 | 1 | 0 |
-| secrets | secrets/in-repo | in-repo | `337e35f03cad` | 160 | 0.881 | 0.873 | 0.877 | 96 | 13 | 14 | 8 |
+| secrets | secrets/in-repo | in-repo | `70e73afff7e0` | 184 | 0.894 | 0.880 | 0.887 | 110 | 13 | 15 | 9 |
 | template-integrity | template-integrity/in-repo | in-repo | `afb0a7245664` | 152 | 0.820 | 0.965 | 0.886 | 109 | 24 | 4 | 19 |
-| url-exfiltration | url-exfiltration/in-repo | in-repo | `3db90a1b72e5` | 94 | 0.923 | 0.923 | 0.923 | 36 | 3 | 3 | 6 |
+| url-exfiltration | url-exfiltration/in-repo | in-repo | `d1007078b258` | 100 | 0.929 | 0.929 | 0.929 | 39 | 3 | 3 | 6 |
 
 ## How to read this
 
@@ -101,14 +101,14 @@ above clamped it.
 | VARIATION_SELECTOR_SMUGGLING | 0.929 | 1.000 | 13 | 1 | 0 |
 | ZERO_WIDTH_SMUGGLING | 0.985 | 0.825 | 66 | 1 | 14 |
 
-## Per type: pii on pii/in-repo (in-repo, `06fb3b601aba`)
+## Per type: pii on pii/in-repo (in-repo, `c375031adb42`)
 
 | Type | Precision | Recall | TP | FP | FN |
 |---|---:|---:|---:|---:|---:|
-| CREDIT_CARD | 0.667 | 0.833 | 10 | 5 | 2 |
-| EMAIL | 0.452 | 0.875 | 14 | 17 | 2 |
-| PHONE_NUMBER | 0.818 | 1.000 | 9 | 2 | 0 |
-| US_SSN | 1.000 | 0.800 | 8 | 0 | 2 |
+| CREDIT_CARD | 0.762 | 0.889 | 16 | 5 | 2 |
+| EMAIL | 0.528 | 0.905 | 19 | 17 | 2 |
+| PHONE_NUMBER | 0.833 | 1.000 | 10 | 2 | 0 |
+| US_SSN | 0.929 | 0.812 | 13 | 1 | 3 |
 
 ## Per type: pii on pii/third-party (nvidia/Nemotron-PII@b70ffaf, `c25ef538d677`)
 
@@ -119,14 +119,14 @@ above clamped it.
 | PHONE_NUMBER | 0.991 | 1.000 | 115 | 1 | 0 |
 | US_SSN | 0.750 | 0.960 | 24 | 8 | 1 |
 
-## Per type: rules on rules/in-repo (in-repo, `8fe119ddb734`)
+## Per type: rules on rules/in-repo (in-repo, `e9c84e60d79e`)
 
 | Type | Precision | Recall | TP | FP | FN |
 |---|---:|---:|---:|---:|---:|
 | INTERNAL_HOST | 1.000 | 1.000 | 9 | 0 | 0 |
 | LENGTH_LIMIT | 1.000 | 1.000 | 4 | 0 | 0 |
-| PROJECT_CODENAME | 1.000 | 1.000 | 8 | 0 | 0 |
-| TICKET_ID | 1.000 | 1.000 | 8 | 0 | 0 |
+| PROJECT_CODENAME | 1.000 | 0.900 | 9 | 0 | 1 |
+| TICKET_ID | 1.000 | 1.000 | 9 | 0 | 0 |
 
 ## Per type: script-constraint on script-constraint/in-repo (in-repo, `1e1374cfecc3`)
 
@@ -134,17 +134,17 @@ above clamped it.
 |---|---:|---:|---:|---:|---:|
 | DISALLOWED_SCRIPT | 0.960 | 0.980 | 48 | 2 | 1 |
 
-## Per type: secrets on secrets/in-repo (in-repo, `337e35f03cad`)
+## Per type: secrets on secrets/in-repo (in-repo, `70e73afff7e0`)
 
 | Type | Precision | Recall | TP | FP | FN |
 |---|---:|---:|---:|---:|---:|
-| ANTHROPIC_KEY | 0.900 | 0.818 | 9 | 1 | 2 |
-| AWS_ACCESS_KEY | 0.960 | 1.000 | 24 | 1 | 0 |
-| GITHUB_TOKEN | 0.850 | 0.773 | 17 | 3 | 5 |
+| ANTHROPIC_KEY | 0.917 | 0.846 | 11 | 1 | 2 |
+| AWS_ACCESS_KEY | 0.964 | 1.000 | 27 | 1 | 0 |
+| GITHUB_TOKEN | 0.880 | 0.786 | 22 | 3 | 6 |
 | JWT | 0.846 | 0.846 | 11 | 2 | 2 |
-| OPENAI_KEY | 0.857 | 0.923 | 12 | 2 | 1 |
+| OPENAI_KEY | 0.875 | 0.933 | 14 | 2 | 1 |
 | PRIVATE_KEY | 0.786 | 1.000 | 11 | 3 | 0 |
-| SLACK_TOKEN | 0.923 | 0.750 | 12 | 1 | 4 |
+| SLACK_TOKEN | 0.933 | 0.778 | 14 | 1 | 4 |
 
 ## Per type: template-integrity on template-integrity/in-repo (in-repo, `afb0a7245664`)
 
@@ -154,13 +154,13 @@ above clamped it.
 | FAKE_SYSTEM_TAG | 0.615 | 1.000 | 16 | 10 | 0 |
 | ROLE_PREFIX_LINE | 0.800 | 0.889 | 8 | 2 | 1 |
 
-## Per type: url-exfiltration on url-exfiltration/in-repo (in-repo, `3db90a1b72e5`)
+## Per type: url-exfiltration on url-exfiltration/in-repo (in-repo, `d1007078b258`)
 
 | Type | Precision | Recall | TP | FP | FN |
 |---|---:|---:|---:|---:|---:|
 | DATA_URI_PAYLOAD | 1.000 | 1.000 | 8 | 0 | 0 |
 | LINK_QUERY_PAYLOAD | 0.714 | 1.000 | 5 | 2 | 0 |
-| MARKDOWN_IMAGE_EXFIL | 0.917 | 0.786 | 11 | 1 | 3 |
+| MARKDOWN_IMAGE_EXFIL | 0.933 | 0.824 | 14 | 1 | 3 |
 | NESTED_REDIRECT | 1.000 | 1.000 | 6 | 0 | 0 |
 | SCRIPT_SCHEME | 1.000 | 1.000 | 6 | 0 | 0 |
 
@@ -200,17 +200,17 @@ above clamped it.
 
 ...and 21 more, in `benchmarks.json`.
 
-## Worst misses: pii on pii/in-repo (in-repo, `06fb3b601aba`)
+## Worst misses: pii on pii/in-repo (in-repo, `c375031adb42`)
 
 | Case | Kind | Expected | Predicted |
 |---|---|---|---|
 | `pii-0031` | decision_mismatch | redact | allow |
-| `pii-0032` | decision_mismatch | redact | allow |
 | `pii-0035` | decision_mismatch | redact | allow |
 | `pii-0060` | decision_mismatch | allow | redact |
 | `pii-0062` | decision_mismatch | allow | redact |
+| `pii-0063` | decision_mismatch | allow | redact |
 
-...and 49 more, in `benchmarks.json`.
+...and 53 more, in `benchmarks.json`.
 
 ## Worst misses: pii on pii/third-party (nvidia/Nemotron-PII@b70ffaf, `c25ef538d677`)
 
@@ -224,9 +224,12 @@ above clamped it.
 
 ...and 16 more, in `benchmarks.json`.
 
-## Worst misses: rules on rules/in-repo (in-repo, `8fe119ddb734`)
+## Worst misses: rules on rules/in-repo (in-repo, `e9c84e60d79e`)
 
-No misses on this corpus.
+| Case | Kind | Expected | Predicted |
+|---|---|---|---|
+| `rules-0041` | decision_mismatch | redact | allow |
+| `rules-0041` | false_negative | PROJECT_CODENAME@(9, 25) | nothing |
 
 ## Worst misses: script-constraint on script-constraint/in-repo (in-repo, `1e1374cfecc3`)
 
@@ -236,7 +239,7 @@ No misses on this corpus.
 | `sc-0020` | false_positive | nothing | DISALLOWED_SCRIPT@(0, 5) |
 | `sc-0020` | false_positive | nothing | DISALLOWED_SCRIPT@(6, 7) |
 
-## Worst misses: secrets on secrets/in-repo (in-repo, `337e35f03cad`)
+## Worst misses: secrets on secrets/in-repo (in-repo, `70e73afff7e0`)
 
 | Case | Kind | Expected | Predicted |
 |---|---|---|---|
@@ -246,7 +249,7 @@ No misses on this corpus.
 | `sec-0034` | decision_mismatch | allow | redact |
 | `sec-0109` | decision_mismatch | redact | allow |
 
-...and 30 more, in `benchmarks.json`.
+...and 32 more, in `benchmarks.json`.
 
 ## Worst misses: template-integrity on template-integrity/in-repo (in-repo, `afb0a7245664`)
 
@@ -260,7 +263,7 @@ No misses on this corpus.
 
 ...and 42 more, in `benchmarks.json`.
 
-## Worst misses: url-exfiltration on url-exfiltration/in-repo (in-repo, `3db90a1b72e5`)
+## Worst misses: url-exfiltration on url-exfiltration/in-repo (in-repo, `d1007078b258`)
 
 | Case | Kind | Expected | Predicted |
 |---|---|---|---|

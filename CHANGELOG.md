@@ -130,6 +130,41 @@ a number that changes quietly is a number nobody can rely on.
 
 ### Changed
 
+- **Published figures, old to new.** Each corpus gained the cases for the
+  shapes under Fixed, positives and the negatives that hold the view down, so
+  every version key below moved too.
+  - `secrets`: 0.881 / 0.873 over 160 cases, 8 wrong, to **0.894 / 0.880**
+    over 184, 9 wrong. The code before this change scores the first 174 of
+    them at 0.873 / 0.814 with 15 wrong; the last eight, combining marks,
+    dash variants and a token split by a line break, took the first version
+    of this change from 0.889 / 0.839 with 14 wrong, and two more, a heavy
+    minus sign and Korean prose, are in the published row.
+  - `pii` in-repo: 0.631 / 0.872 over 81, 24 wrong, to **0.699 / 0.892** over
+    113, 26 wrong (0.631 / 0.732 with 33 wrong on the first 101 before the
+    change; the last seven, dash variants and ideographic full stops, took
+    the first version of it from 0.675 / 0.853 with 28 wrong; the last five
+    are hyphen lookalikes outside Pd, two of them CJK letters labelled as
+    misses, `pii-0109` and `pii-0110`). The
+    Nemotron row does not move: 0.960 / 0.997.
+  - `url-exfiltration`: 0.923 / 0.923 over 94, 6 wrong, to **0.929 / 0.929**
+    over 100, 6 wrong (0.923 / 0.857 with 9 wrong before the change). Every
+    prose and decode floor plateau is where it was; the F1 values the
+    docstrings, `corpora/NOTICE.md` and the tests quote were re-taken.
+  - `rules`: 1.000 / 1.000 over 42, 0 wrong, to **1.000 / 0.969** over 46, 1
+    wrong. Under the old fixture and the old code the 46 score 1.000 / 0.906
+    with 3 wrong.
+- **Published latency, old to new, per megabyte of the seeded input:**
+  `secrets` 4.7 to 25.3 ms, `pii` 207 to 473 ms, `rules` 731 to 273 ms (its
+  fixture no longer builds a skeleton), `url-exfiltration` 129.7 to 123.3 ms,
+  each call timed cold. Dense non-ASCII input, a megabyte of fullwidth letters
+  or of `a` and U+200B alternating, gets its own table in
+  `docs/performance.md`, with Korean, Vietnamese, combining-mark and
+  attacker-chosen rows: `secrets` 4.4 to 54 ms, 4.0 to 199 ms, and 5.1 to
+  50 ms on Korean prose.
+  That input carries zero-width spaces, so every row pays for the normalised
+  view and a second scan; ASCII content with no `%` in it does not.
+  `docs/performance.md` says which rows were re-measured and why.
+
 - **The README starts with what a new user needs.** What the library is,
   the install line, an executed five-line example, three paths in (your own
   calls, an agent framework, a repository scan), how it fails and what it
@@ -137,6 +172,55 @@ a number that changes quietly is a number nobody can rely on.
   and NeMo Guardrails. The reference material below is unchanged.
 
 ### Fixed
+
+- **One character a reader does not see no longer takes a credential or a
+  card past the whole output chain.** A zero-width space inside a `ghp_` token
+  or between two groups of a card number got `allow` from every check:
+  `secrets` and `pii` matched the bytes, and `injection-structural` lets up to
+  four scattered invisible characters through by design. A fullwidth `ＡＫＩＡ`,
+  `%5F` for the underscore of `ghp_`, `alice%40corp.com`, a fullwidth `＠` and
+  a card with no-break or ideographic spaces did the same. `secrets`, `pii`,
+  `url-exfiltration` and `rules` now also match over a normalised view of the
+  content: safe percent escapes decoded one level, every
+  Default_Ignorable_Code_Point removed (the table `injection-structural`
+  already counts), and NFKC one code point at a time. Spans still index into
+  the content, and cover the removed characters inside a match. Content that
+  needs no normalising, which is ASCII without a `%`, is scored exactly as
+  before. `docs/conformance.md` has a new section, "The normalised view".
+  The view is built with one `str.translate`, decomposes a character only where
+  that decomposition carries a combining mark, is shared by `secrets`, `pii`
+  and `rules` within a chain run and dropped when the run ends, is never shared
+  with a `str` subclass, and reads U+2043, U+02D7, U+2796 and U+2500 as hyphens.
+  Content over 16 million code points that needs a view is refused.
+  Detector versions: `secrets`, `pii`, `url-exfiltration` and `rules` 0.1.0
+  to 0.2.0.
+- **`url-exfiltration` reads a component the way a reader sees it.** A
+  sentence in an image URL written in fullwidth letters, percent-encoded with
+  ideographic spaces, or with a zero-width space between every two letters was
+  not prose to the check and allowed. A side effect, measured: the
+  `_decode` percent floor no longer moves this check's F1 at all, from 1 to a
+  million, because the normalised reading decodes every safe triplet.
+- **The UTS #39 skeleton removes default-ignorable code points**, which is
+  step 2 of `internalSkeleton` in the 16.0.0 standard this package pins and
+  was missing, so `project` U+200B `bluebird` dodged a banned substring under
+  `fold_confusables=True`. The `confusables` and `template-integrity` rows do
+  not move: the first never asks the skeleton about an ignorable and the
+  second removed them itself.
+- **`pii` matches a space-separated SSN**, `123 45 6789`, under the Social
+  Security Administration's issuance rules (no area 000, 666 or 900 to 999, no
+  group 00, no serial 0000) and not beside another space-separated digit
+  group. It was a disclosed miss, `pii-0032`. Zero matches over 32 MB of
+  CPython's standard library and no new false positive in either published
+  corpus; `512 64 1024` standing alone is still read as one, and `pii-0101`
+  carries it as a labelled `allow`. The unseparated nine digits stay a
+  deliberate miss.
+- **The published `rules` row was measured with `fold_confusables=True` and
+  the engine defaults it to off**, so the 1.000 / 1.000 row described a
+  configuration a caller does not get by default. The default stays off,
+  because the skeleton folds `m` to `rn` and a banned `corn` would deny every
+  `.com`, and the fixture now leaves it at the default. `rules-0041`, the
+  Cyrillic-dodged codename only that option catches, is a labelled miss in the
+  row.
 
 - **A benchmark guard compared two different corpora and agreed by
   coincidence.** `benchmarks/RESULTS.md` was measured on 146 inputs and

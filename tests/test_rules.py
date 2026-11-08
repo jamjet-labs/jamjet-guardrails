@@ -61,3 +61,22 @@ def test_the_declared_types_are_the_fixture_types_plus_the_length_limit() -> Non
     declared |= set(fixture.get("banned", {}))  # type: ignore[call-overload]
     assert RULES_TYPES == declared
     assert TYPES["rules"] == RULES_TYPES
+
+
+def test_the_published_row_is_measured_with_confusable_folding_at_its_default() -> None:
+    """The row said 1.000 / 1.000 and the default could not reach it.
+
+    The fixture set `fold_confusables=True` while `PatternGuardrail` defaults it
+    to False, so a caller configuring `rules` the way the README shows got a
+    check that scored 0.966 recall on the same corpus, with `rules-0041` a wrong
+    decision. The default stays off because the skeleton costs precision a
+    caller has to choose (`m` folds to `rn`, so banning "corn" denies every
+    `.com`), so the row moved to the default instead and publishes the miss.
+    """
+    import inspect
+
+    from jamjet_guardrails.authoring import PatternGuardrail
+    from jamjet_guardrails.eval.fixtures import FIXTURES
+
+    default = inspect.signature(PatternGuardrail).parameters["fold_confusables"].default
+    assert FIXTURES["rules"].get("fold_confusables", default) == default

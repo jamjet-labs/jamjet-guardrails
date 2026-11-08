@@ -8,6 +8,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import cast
 
+from jamjet_guardrails._normalise import forget_views
 from jamjet_guardrails._spans import _rewrite
 from jamjet_guardrails.errors import GuardrailChainError, GuardrailUnavailableError
 from jamjet_guardrails.protocol import Guardrail, saw
@@ -1043,6 +1044,9 @@ class GuardrailChain:
         # `sorted` is stable, so equal spans keep the order their guardrails ran
         # in and the result is total either way.
         rewritten = _rewrite(content, sorted(found, key=lambda pair: pair[1])) if found else content
+        # The normalised views this run's checks shared are dropped with it, so
+        # a finished run's content is not held in memory by a cache.
+        forget_views()
         return ChainResult(decision=decision, content=rewritten, verdicts=verdicts)
 
     @staticmethod

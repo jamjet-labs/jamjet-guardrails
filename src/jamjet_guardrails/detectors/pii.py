@@ -14,10 +14,13 @@ output. In a redactor an ambiguous span has to resolve toward more redaction,
 never less.
 
 Cost, and the shape of it. Linear in the content length, and this is the slowest
-check in the package. 207 ms median for one megabyte of the seeded input recorded
+check in the package. 473 ms median for one megabyte of the seeded input recorded
 in `docs/performance.md`, on an Apple M3 Max under CPython 3.14.5, rising 4.0x
-per 4x of input across the whole range from 1 KB. Validating every candidate
-digit run is what that buys, and the figure includes the redaction rewrite.
+per 4x of input across the whole range from 1 KB. It was 207 ms before the check
+also matched over the normalised view, which that input always needs because it
+carries zero-width spaces, so the patterns run twice; ASCII content with no `%`
+in it skips the view. Validating every candidate digit run is most of the rest,
+and the figure includes the redaction rewrite.
 `scripts/measure_throughput.py` reruns it, and `docs/performance.md` states the
 machine, the input and the method.
 """
@@ -26,6 +29,7 @@ from __future__ import annotations
 
 import re
 
+from jamjet_guardrails._normalise import matched_both_ways
 from jamjet_guardrails._spans import _rewrite, _scan
 from jamjet_guardrails.errors import GuardrailUnavailableError
 from jamjet_guardrails.protocol import saw
@@ -145,18 +149,38 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         re.compile(rf"[\w{_MARKS}.%+-]{{1,64}}@[\w{_MARKS}.-]{{1,255}}\.[^\W\d_]{{2,}}"),
     ),
     #
-    # TWO GAPS ARE LEFT OPEN HERE ON PURPOSE, and they are recall, not oversight.
-    # An unseparated `123456789` and a space- or dot-separated `123 45 6789` are
-    # both real ways to write an SSN and neither is matched. Nine bare digits is
-    # also a zip+4, an order number, a part number and half the identifiers in
-    # any log, and unlike a card number this type carries NO check digit to buy
-    # the precision back: the contiguous-card pattern below is only safe because
-    # Luhn rejects roughly nine in ten runs, and there is no equivalent here. A
-    # pattern that matched them would fire on ordinary log lines all day, so the
-    # miss is the cheaper error. Task 14's corpus carries both shapes as expected
-    # findings anyway, so the published recall number pays for them rather than
-    # hiding them.
-    ("US_SSN", re.compile(rf"{_BEFORE}\d{{3}}-\d{{2}}-\d{{4}}{_AFTER}")),
+    # ONE GAP IS LEFT OPEN HERE ON PURPOSE, and it is recall, not oversight. An
+    # unseparated `123456789` is a real way to write an SSN and is not matched.
+    # Nine bare digits is also a zip+4, an order number, a part number and half
+    # the identifiers in any log, and unlike a card number this type carries NO
+    # check digit to buy the precision back: the contiguous-card pattern below is
+    # only safe because Luhn rejects roughly nine in ten runs, and there is no
+    # equivalent here. A pattern that matched them would fire on ordinary log
+    # lines all day, so the miss is the cheaper error. `pii-0031` carries the
+    # shape as an expected finding, so the published recall pays for it.
+    #
+    # THE SPACE-SEPARATED FORM WAS THE SECOND GAP AND IS CLOSED, because the
+    # argument above does not reach it. `123 45 6789` is three groups of exactly
+    # three, two and four digits with one space between each, and it is matched
+    # under the Social Security Administration's issuance rules, which the
+    # hyphenated form does not need: no area 000, 666 or 900 to 999, no group 00,
+    # no serial 0000. A neighbouring space-separated digit group on either side
+    # turns it away, so a row of numbers in a table is not read as one. Measured
+    # before it landed: zero matches over 32 MB of CPython's standard library
+    # source, no new false positive on either published corpus, and `pii-0032`
+    # becomes a hit. What it still costs is any three numbers of exactly that
+    # shape standing alone, `512 64 1024`, which is a valid SSN by every rule
+    # here; `pii-0101` carries it as a labelled allow so the row pays for it.
+    # A no-break or ideographic space reads as a space through the normalised
+    # view, so those spellings are the same case.
+    (
+        "US_SSN",
+        re.compile(
+            rf"{_BEFORE}(?:\d{{3}}-\d{{2}}-\d{{4}}"
+            r"|(?<!\d )(?!000|666|9\d\d)\d{3} (?!00)\d{2} (?!0000)\d{4}(?! \d)"
+            rf"){_AFTER}"
+        ),
+    ),
     #
     # The 4-6-5 alternative is how Amex actually prints a card, and it was a
     # complete miss: "3782 822463 10005" has no four-group layout to match.
@@ -277,7 +301,7 @@ def _contiguous_cards(text: str) -> list[tuple[str, tuple[int, int]]]:
     ]
 
 
-_VERSION = "0.1.0"
+_VERSION = "0.2.0"
 
 
 class PiiGuardrail:
@@ -346,15 +370,25 @@ class PiiGuardrail:
         grouped pattern exactly as two patterns already do: a card written
         "4111111111111111" inside text that also matches something else must
         collapse into one region, not stand beside it.
+
+        Over the content AND over what a reader sees in it, which is
+        `jamjet_guardrails._normalise`. One zero-width space between two groups
+        of a card number, `alice%40corp.com` and a fullwidth `＠` each took the
+        value past this check and past the rest of the output chain. The spans
+        still index into the content.
         """
+        return matched_both_ways(content, self._claims, marks=True)
+
+    def _claims(self, text: str) -> list[tuple[str, tuple[int, int]]]:
+        """Every span every selected pattern claims in one string."""
         found = [
             (pii_type, match.span())
             for pii_type, pattern in self._patterns
-            for match in _scan(pattern, content)
+            for match in _scan(pattern, text)
         ]
         if self._scan_contiguous_cards:
-            found += _contiguous_cards(content)
-        return sorted(found, key=lambda pair: pair[1])
+            found += _contiguous_cards(text)
+        return found
 
     def check(self, content: str, context: Context) -> Verdict:
         provenance = Provenance(kind="constraint", detector=self.name, version=self.version)

@@ -38,7 +38,7 @@ tried to tell parsing from fetching inside a package would be a guard nobody
 could check.
 
 Cost, and the shape of it. Linear in the content length: a fixed number of
-``finditer`` passes, then one bounded decode per URL component. 112 ms median
+``finditer`` passes, then one bounded decode per URL component. 123 ms median
 for one megabyte of the seeded input recorded in `docs/performance.md`, on an
 Apple M3 Max under CPython 3.14.5, rising 3.9x to 4.0x per 4x of input across
 the whole range from 1 KB. That input carries no URL, so the figure is the
@@ -73,6 +73,7 @@ from dataclasses import dataclass
 from html import unescape
 
 from jamjet_guardrails._decode import decode, is_prose
+from jamjet_guardrails._normalise import build_view, fold_character
 from jamjet_guardrails._spans import _rewrite
 from jamjet_guardrails.errors import GuardrailUnavailableError
 from jamjet_guardrails.protocol import saw
@@ -96,7 +97,7 @@ URL_EXFILTRATION_TYPES = frozenset(
     }
 )
 
-_VERSION = "0.1.0"
+_VERSION = "0.2.0"
 
 # The default decision per direction, and the ONLY place in this module that
 # names the directions it runs in. `_RUNNABLE` is derived from these keys
@@ -130,11 +131,11 @@ _OUTPUT_ONLY = frozenset({"LINK_QUERY_PAYLOAD"})
 #
 # | Floor | Value | Plateau | One below | One above the plateau |
 # |---|---:|---|---|---|
-# | image | 30 | 30 to 64 | 29: P 0.9000, F1 0.9114 | 65: R 0.8974, F1 0.9091 |
-# | link | 136 | 136 to 176 | 135: P 0.9000, F1 0.9114 | 177: R 0.7949, F1 0.8493 |
+# | image | 30 | 30 to 64 | 29: P 0.9070, F1 0.9176 | 65: R 0.9048, F1 0.9157 |
+# | link | 136 | 136 to 176 | 135: P 0.9070, F1 0.9176 | 177: R 0.8095, F1 0.8608 |
 #
-# Re-taken over the 94-case corpus. Both plateaus are where they were on the
-# 88-case one and every figure beside them moved, which is what a floor fitted
+# Re-taken over the 100-case corpus. Both plateaus are where they were on the
+# 88-case and 94-case ones and every figure beside them moved, which is what a floor fitted
 # to a corpus looks like when the corpus grows and the fit survives.
 #
 # The image floor is bounded from below by legitimate caption parameters: at 29
@@ -528,14 +529,35 @@ def _url_decoded(component: str) -> str:
 
 
 def _readings(component: str) -> list[str]:
-    """Every way this component could be read as text, at one payload level."""
-    plain = _url_decoded(component)
-    readings = [plain]
-    for encoding in ("base64", "hex", "rot13"):
-        text = decode(plain, encoding)
-        if text is not None:
-            readings.append(text)
-    return readings
+    """Every way this component could be read as text, at one payload level.
+
+    Two transport readings, then each payload decoding of each. The first is
+    `_url_decoded`, as before. The second is what a reader of the component
+    sees, `jamjet_guardrails._normalise.normalise`: percent escapes undone one
+    level, default-ignorable code points removed, every code point through NFKC.
+    Every reading that is not ASCII is offered folded the same way as well.
+
+    Both were needed, measured. A sentence in fullwidth letters, or with a
+    zero-width space between every two letters, was not prose to `is_prose`,
+    whose word pattern is ASCII. And `_url_decoded` refuses a percent run whose
+    decoding is under 90% printable, which a zero-width space or an ideographic
+    space between every word is, so the same sentence percent-encoded was never
+    decoded at all. In both shapes a whole conversation rode out in an image
+    URL with nothing reported, and the receiving server reads it back in one
+    call. The fold is not an extra decoding level: it changes no character a
+    reader can see, which is why the one-level rule on payloads still holds.
+    """
+    readings: dict[str, None] = {}
+    for plain in (_url_decoded(component), build_view(component, True).text.replace("+", " ")):
+        readings[plain] = None
+        for encoding in ("base64", "hex", "rot13"):
+            text = decode(plain, encoding)
+            if text is not None:
+                readings[text] = None
+    for reading in list(readings):
+        if not reading.isascii():
+            readings["".join(fold_character(c, True) for c in reading)] = None
+    return list(readings)
 
 
 def _data_uri_payload(url: str) -> bool:

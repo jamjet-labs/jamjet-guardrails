@@ -108,8 +108,20 @@ Every value in it is invented. The ticket ids are not any tracker's, the host
 names use the `example` label reserved by RFC 2606, and the codename is a
 colour and a bird.
 
-**The disclosed misses.** There are none. The fixture scores 1.000 precision
-and 1.000 recall over all 40 cases, with zero wrong decisions. That is a claim
+**Four cases were added for what a reader does not see.** `rules-0043` and
+`rules-0044` are the codename with a zero-width space inside it and the codename
+in fullwidth letters, `rules-0045` is a ticket id with a zero-width space after
+`JIRA`, and `rules-0046` is Japanese prose naming a different project in
+katakana beside fullwidth `ＪＩＲＡ`, which stays allowed. The first three
+allowed before patterns and banned substrings were also matched over the
+normalised view.
+
+**The disclosed misses: one.** `rules-0041`, the codename with a Cyrillic o and
+a Ukrainian i, is caught only with `fold_confusables=True`, and the row is now
+measured with that option at its default, off, because the default is what a
+caller gets. The row used to be measured with it on and published 1.000 /
+1.000, a figure the default could not reach. It is 1.000 precision and 0.969
+recall over 46 cases with one wrong decision. That is a claim
 about the engine under one fixed configuration and not about any rule a user
 writes, so it carries none of the weight a perfect score on a heuristic check
 like `pii` or `secrets` would: a corpus a detector passes completely is a
@@ -175,6 +187,37 @@ A number that improved because the corpus got easier would be worse than one
 that dropped because the corpus got honest, so the drop is the point and the
 old figure is recorded beside it in `CHANGELOG.md`.
 
+**Fourteen cases were added on 2026-11-07 for what a reader does not see, and
+the figures moved again, up this time because the detector changed.** Eight
+are positives that allowed before, each a credential with one character in it
+that renders as nothing or a spelling that reads the same: a zero-width space
+inside a GitHub token (`sec-0161`), Amazon's example key in fullwidth letters
+(`sec-0162`), `%5F` for the underscore of `ghp_` (`sec-0163`), a word joiner, a
+zero-width joiner, a right-to-left override and a soft hyphen inside a Slack,
+an OpenAI, an AWS and a GitHub value (`sec-0164` to `sec-0167`), and a
+percent-encoded zero-width space inside an AWS key (`sec-0168`). Six are
+negatives the normalised view must leave alone: Japanese prose with fullwidth
+letters and digits, a search URL with ordinary escapes, `my%5Fconfig%5Fv2.yaml`,
+`AKIA` with a zero-width space before prose, format strings, and a fullwidth
+`ｓｋ－ｌｅａｒｎ`. Over those 174 cases the row was 0.889 precision and 0.881 recall
+with 8 wrong decisions; over these cases on the code before the change it is
+0.873 and 0.814 with 15.
+
+**Eight more were added after review, and one of them is a miss.** `sec-0175`
+and `sec-0176` are a GitHub token with a dot below and an acute accent on two
+of its letters, and the same token struck through, U+0336 after every
+character; `sec-0177` to `sec-0179` are an Anthropic, an OpenAI and a Slack
+value whose hyphens are U+2011, U+2212 and U+2013. All five allowed until the
+view `secrets` reads dropped combining marks and wrote every dash as `-`.
+`sec-0181` and `sec-0182` are the negatives: page and year ranges with en dashes
+and a minus sign, and Vietnamese written decomposed. `sec-0180` is a GitHub
+token split by a line break, labelled `redact` and allowed: joining lines in the
+view would join every line of a PEM body, so it is disclosed rather than
+half-fixed. A second review added `sec-0183`, an Anthropic value whose hyphens
+are U+2796 HEAVY MINUS SIGN, read as hyphens now, and `sec-0184`, Korean prose
+with box-drawing rules that must stay allowed. 184 cases, 0.894 precision and
+0.880 recall with 9 wrong decisions.
+
 **What the 39 could not see, measured rather than argued.** `_scan` in
 `src/jamjet_guardrails/_spans.py` tries every start position instead of resuming
 at the end of each match, and its docstring records why: with `finditer`
@@ -187,7 +230,7 @@ Critical is about was in none of them. The 160 score 0.884 and 0.827, five
 findings lost. A corpus that cannot tell a fixed detector from the bug it was
 fixed for is not measuring the fix.
 
-**The disclosed misses: seventeen cases, and every one of them is labelled with
+**The disclosed misses: eighteen cases, and every one of them is labelled with
 what SHOULD happen.** `docs/conformance.md` groups them into eight classes and
 gives one worked input per class; they are named here by id so that a case
 cannot quietly leave the file, and
@@ -204,6 +247,8 @@ is what stops one being relabelled onto the detector's own output.
   the credential is redacted in full and the audit record is what is wrong,
   which is why they are scored rather than described: a corpus that counted
   coverage instead of findings would report all nine as successes.
+- **A token split by a line break, one case.** `sec-0180`; the view does not
+  join lines, for the reason given above.
 - **Complete misses, five cases.** `github_pat_` fine-grained tokens
   (`sec-0020`, `sec-0109`), `xapp-` Slack app-level tokens (`sec-0021`) and
   `xoxe-` Slack refresh tokens (`sec-0110`) are shapes the pattern table has
@@ -224,8 +269,8 @@ why](#what-is-deliberately-absent-and-why).
 
 ### `corpora/url-exfiltration/in-repo.jsonl`
 
-Written for this repository and covered by its Apache-2.0 licence. 94 cases, 39
-positives and 55 negatives, in both directions.
+Written for this repository and covered by its Apache-2.0 licence. 100 cases, 42
+positives and 58 negatives, in both directions.
 
 Every attacker value in it is invented and every attacker host uses a label RFC
 2606 reserves for documentation: `attacker.example`, `evil.example`,
@@ -272,11 +317,22 @@ negatives are the half that binds a port in both directions:
   whose query separators are written `&amp;`, which must stay allowed and must
   not have its payload split into pieces by the resolution either.
 
-**The disclosed misses.** 0.923 precision, 0.923 recall, 6 wrong decisions over
-94 cases. All six are below, and there are no other failures. They are the same
-six the 88-case corpus disclosed: the six new cases are all answered correctly,
-which is why the row moved from 0.914 / 0.914 and the wrong-decision count did
-not move at all.
+**Six more cases were added for text a reader does not see.** `url-0095` to
+`url-0097` are an image URL whose query carries a sentence in fullwidth letters,
+the same sentence percent-encoded with ideographic spaces between its words, and
+the same sentence with a zero-width space between every two letters. Each read
+as no prose at all, because the prose test's word pattern is ASCII and the
+percent decoder refuses a run under 90% printable, and each is denied now that
+the check also reads a component the way `jamjet_guardrails._normalise` does.
+`url-0098` to `url-0100` are the negatives: a Japanese logo image with
+a percent-encoded Japanese `alt`, a percent-encoded Japanese search link, and a
+logo whose file name is fullwidth.
+
+**The disclosed misses.** 0.929 precision, 0.929 recall, 6 wrong decisions over
+100 cases. All six are below, and there are no other failures. They are the same
+six the 88-case corpus disclosed: every case added since is answered correctly,
+which is why the row moved from 0.914 / 0.914 to 0.923 / 0.923 to 0.929 / 0.929
+and the wrong-decision count did not move at all.
 
 Three cost precision:
 
@@ -318,7 +374,11 @@ corpus. The four decode floors are NOT the sweep's argmax and the module says
 why: their curves are flat from 1 up to a ceiling, so the sweep bounds them and
 does not choose them.
 
-The rejected result is the percent floor, and the six new cases settled it.
+The rejected result was the percent floor, and it no longer exists to be
+rejected: since this check also reads every component through the shared
+normaliser, which undoes every safe percent triplet whatever the run's length,
+the percent floor's curve is flat at 0.9286 from 1 to a million. What happened
+before that is kept because it is why 6 shipped.
 On the 88-case corpus F1 rose from 0.9143 to 0.9275 anywhere between 107 and
 147, by refusing to read a 106-character `title` parameter in one case and
 shutting again one past a 147-character run in another. A window bounded at both
@@ -332,9 +392,9 @@ down instead of argued.
 **Rot13 ships, and here is the measurement it shipped on.** Every alphabetic run
 is a rot13 candidate, so the test is two-sided: the original run must fail the
 prose test and the rotated run must pass it. Removing rot13 with nothing else
-changed moves this corpus from 0.9231 / 0.9231 / 6 wrong to 0.9189 precision,
-0.8718 recall and 8 wrong. Two positives are lost, `url-0071` and `url-0072`, and
-the false-positive count does not move: 3 either way, over 55 negatives that are
+changed moves this corpus from 0.9286 / 0.9286 / 6 wrong to 0.9250 precision,
+0.8810 recall and 8 wrong. Two positives are lost, `url-0071` and `url-0072`, and
+the false-positive count does not move: 3 either way, over 58 negatives that are
 almost entirely ordinary English prose and therefore rot13 candidates every one.
 
 **The function-word list behind the prose test is a substitute, and it is named
@@ -714,13 +774,13 @@ injection-structural, rules, secrets and url-exfiltration numbers are.
 ## How to read the numbers these corpora produce
 
 **`corpora/pii/in-repo.jsonl` is a stress set, not a sample of real text, and
-its precision figure should be read that way.** It carries all twenty-five false
+its precision figure should be read that way.** It carries all twenty-six false
 positives `tests/test_pii.py` records, and sixteen of those are one shape: a
 dotted tail that reads as a TLD (`img@sha256.abcdef`, `build@node.js18`). That
 shape was measured at zero occurrences across 400 MB of source, logs, lockfiles
 and docs, so it is close to absent from ordinary text and is heavily
 over-represented here on purpose. The same corpus without those sixteen cases
-scores 0.837 precision against the 0.631 it publishes. Neither figure is wrong;
+scores 0.866 precision against the 0.699 it publishes. Neither figure is wrong;
 they answer different questions, and only the third-party corpus answers "what
 happens on realistic documents".
 
@@ -728,6 +788,42 @@ Carrying all of them is a checked fact rather than a promise:
 `tests/test_corpora.py::test_every_recorded_false_positive_is_in_the_corpus`
 reads both lists out of `tests/test_pii.py`, so deleting a case to raise the
 number fails, and so does recording a new false positive without adding one.
+
+**Twenty cases were added on 2026-11-07, and two kinds of miss closed.**
+`pii-0082` to `pii-0089` are a card, an email and an SSN that one character a
+reader does not see used to hide: a zero-width space between or inside card
+groups, `alice%40corp.com` on its own and inside a URL, a fullwidth `＠`, a
+zero-width space inside an SSN, a card in fullwidth digits with ideographic
+spaces, and one with no-break spaces. `pii-0090` to `pii-0093` are the
+negatives for that: Japanese with fullwidth dates and a Tokyo telephone number,
+a shop URL with ordinary escapes, a fullwidth order number and stray percent
+signs. The space-separated SSN, `pii-0032`, was a disclosed miss and is matched
+now, under the issuance rules; `pii-0094` to `pii-0099` are the area, group,
+serial and neighbouring-group shapes those rules turn away, `pii-0100` is the
+SSN with no-break spaces, and `pii-0101`, `512 64 1024`, is the false positive
+the change costs, labelled `allow` so the row pays for it. Those 101 cases scored
+0.671 precision and 0.911 recall; the same cases scored 0.631 and 0.732 on the
+code before the change.
+
+**Seven more were added after review, for dashes, stops and marks.** A card, an
+SSN and a telephone number written with U+2011 or U+2013 between their groups,
+and an address whose dot is an ideographic full stop, `pii-0102` to
+`pii-0105`, allowed until every dash in the view became `-` and an ideographic
+full stop between two ASCII letters or digits became `.`. `pii-0106` is the
+negative that bounds the second fold: Japanese prose with an `@` mention ending
+in `。`. `pii-0107` is Japanese with wave dashes and an en dash between numbers,
+and `pii-0108` an address written decomposed, which must stay one finding.
+
+**Five more after a second review, for characters drawn as a hyphen outside
+Dash_Punctuation.** `pii-0111` and `pii-0112` are an SSN with U+2043 HYPHEN
+BULLET and a card with U+2500 BOX DRAWINGS LIGHT HORIZONTAL between its groups,
+both read as hyphens now, and `pii-0113` is a Korean table drawn with box
+characters that must stay allowed. `pii-0109` and `pii-0110` are the same SSN
+written with U+30FC, the katakana prolonged sound mark, and U+4E00, the CJK
+ideograph for one. Both are labelled `redact` and both allow: they are letters
+in Japanese and Chinese text, and folding them to a hyphen would put hyphens
+into prose, so they are disclosed rather than folded. 113 cases, 0.699 precision
+and 0.892 recall with 26 wrong decisions.
 
 **Some of those false positives are the right redaction under the wrong type.**
 An IMEI carries a Luhn check digit and begins 49, inside Visa's range, so
